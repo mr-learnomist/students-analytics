@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EduTrack — Admin Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet"/>
+
+  <style>
+:root {
+  --bg:#0b0d14;--surface:#111520;--surface2:#171c2e;--surface3:#1e2438;--surface4:#252c44;
+  --border:rgba(255,255,255,0.055);--border2:rgba(255,255,255,0.09);--border3:rgba(255,255,255,0.14);
+  --blue:#4f85f7;--blue-dim:rgba(79,133,247,0.12);
+  --green:#10b981;--green-dim:rgba(16,185,129,0.12);
+  --yellow:#f59e0b;--yellow-dim:rgba(245,158,11,0.12);
+  --violet:#8b5cf6;--violet-dim:rgba(139,92,246,0.12);
+  --cyan:#06b6d4;--cyan-dim:rgba(6,182,212,0.12);
+  --red:#ef4444;
+  --t1:#e8eaf6;--t2:#8892b4;--t3:#4a5270;--t4:#272d47;
+  --r-sm:8px;--r:12px;--r-lg:16px;--r-xl:22px;
+  --sidebar-w:240px;--sidebar-collapsed-w:68px;--navbar-h:64px;
+  --shadow-sm:0 2px 8px rgba(0,0,0,0.25);--shadow:0 4px 24px rgba(0,0,0,0.35);--shadow-lg:0 12px 48px rgba(0,0,0,0.45);
+  --font-body:'DM Sans',sans-serif;--font-display:'Syne',sans-serif;--font-mono:'DM Mono',monospace;
+}
+body.light {
+  --bg:#f1f4fb;--surface:#fff;--surface2:#eef1f8;--surface3:#e6eaf5;--surface4:#dde2f0;
+  --border:rgba(0,0,0,0.055);--border2:rgba(0,0,0,0.09);--border3:rgba(0,0,0,0.14);
+  --t1:#0d1020;--t2:#4a5270;--t3:#8892b4;--t4:#c4cae0;
+  --shadow-sm:0 2px 8px rgba(0,0,0,0.06);--shadow:0 4px 24px rgba(0,0,0,0.08);--shadow-lg:0 12px 48px rgba(0,0,0,0.12);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:15px}
+body{font-family:var(--font-body);background:var(--bg);color:var(--t1);line-height:1.55;overflow-x:hidden;transition:background 0.3s,color 0.3s}
+a{text-decoration:none;color:inherit}
+button{cursor:pointer;border:none;background:none;font:inherit}
+input,select,textarea{font:inherit}
+svg{display:block;flex-shrink:0}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface4);border-radius:3px}
+
+/* App shell */
+.app{display:flex;min-height:100vh}
+.main{flex:1;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh;transition:margin-left 0.25s cubic-bezier(0.4,0,0.2,1)}
+
+/* Sidebar */
+.sidebar{width:var(--sidebar-w);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width 0.25s cubic-bezier(0.4,0,0.2,1);overflow:hidden}
+.sidebar.collapsed{width:var(--sidebar-collapsed-w)}
+.sidebar.collapsed .sidebar-brand-text,.sidebar.collapsed .nav-label,.sidebar.collapsed .nav-badge,.sidebar.collapsed .nav-group-label,.sidebar.collapsed .sidebar-search,.sidebar.collapsed .sidebar-user-info,.sidebar.collapsed .sidebar-brand-sub{display:none}
+.sidebar.collapsed .sidebar-collapse-btn svg{transform:rotate(180deg)}
+.sidebar.collapsed .sidebar-brand{justify-content:center;padding:0 14px}
+.sidebar.collapsed .nav-item{justify-content:center;padding:0 10px;height:42px}
+.sidebar.collapsed .sidebar-user{justify-content:center}
+.sidebar.collapsed~.main{margin-left:var(--sidebar-collapsed-w)}
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 16px;height:var(--navbar-h);border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar-logo{width:34px;height:34px;background:var(--blue);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.sidebar-brand-text{flex:1;min-width:0}
+.sidebar-brand-name{display:block;font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--t1);white-space:nowrap}
+.sidebar-brand-sub{display:block;font-size:10.5px;color:var(--t3);white-space:nowrap;margin-top:1px}
+.sidebar-collapse-btn{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--t3);flex-shrink:0;transition:background 0.15s,color 0.15s}
+.sidebar-collapse-btn:hover{background:var(--surface3);color:var(--t2)}
+.sidebar-collapse-btn svg{transition:transform 0.25s}
+.sidebar-search{padding:12px 12px 8px;flex-shrink:0}
+.sidebar-search-inner{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:7px 10px;color:var(--t3);transition:border-color 0.15s}
+.sidebar-search-inner:focus-within{border-color:var(--blue);color:var(--blue)}
+.sidebar-search-inner input{background:none;border:none;outline:none;color:var(--t1);font-size:12.5px;width:100%}
+.sidebar-search-inner input::placeholder{color:var(--t3)}
+.sidebar-nav{flex:1;overflow-y:auto;padding:4px 10px 12px;scrollbar-width:thin}
+.nav-group{margin-bottom:4px}
+.nav-group-label{display:block;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);padding:14px 8px 5px}
+.nav-item{display:flex;align-items:center;gap:9px;height:38px;padding:0 10px;border-radius:var(--r-sm);color:var(--t2);font-size:13.5px;font-weight:500;transition:background 0.15s,color 0.15s;position:relative;white-space:nowrap}
+.nav-item:hover{background:var(--surface2);color:var(--t1)}
+.nav-item.active{background:var(--blue-dim);color:var(--blue)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--blue);border-radius:0 3px 3px 0}
+.nav-icon{width:18px;height:18px;flex-shrink:0}
+.nav-label{flex:1}
+.nav-badge{font-size:10.5px;font-family:var(--font-mono);background:var(--surface3);color:var(--t3);padding:1px 6px;border-radius:20px;border:1px solid var(--border)}
+.sidebar-footer{padding:10px;border-top:1px solid var(--border);flex-shrink:0}
+.sidebar-user{display:flex;align-items:center;gap:9px;padding:8px;border-radius:var(--r-sm);cursor:pointer;transition:background 0.15s}
+.sidebar-user:hover{background:var(--surface2)}
+.sidebar-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.sidebar-user-info{flex:1;min-width:0}
+.sidebar-user-name{display:block;font-size:12.5px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-user-role{display:block;font-size:11px;color:var(--t3)}
+.sidebar-user-menu{color:var(--t3);padding:4px;border-radius:4px;transition:background 0.15s}
+
+/* Navbar */
+.navbar{height:var(--navbar-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:50;gap:16px}
+.navbar-left{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+.navbar-menu-btn{display:none;width:36px;height:36px;border-radius:var(--r-sm);align-items:center;justify-content:center;color:var(--t2);transition:background 0.15s}
+.navbar-menu-btn:hover{background:var(--surface2)}
+.navbar-title{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--t1)}
+.breadcrumb{display:flex;align-items:center;gap:4px;margin-top:1px}
+.breadcrumb-item{font-size:11.5px;color:var(--t3)}
+.breadcrumb-sep{color:var(--t4);font-size:12px}
+.navbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.navbar-icon-btn{width:36px;height:36px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--t2);transition:background 0.15s,color 0.15s}
+.navbar-icon-btn:hover{background:var(--surface2);color:var(--t1)}
+.navbar-profile{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:var(--r-sm);cursor:pointer;transition:background 0.15s;border:1px solid var(--border);margin-left:4px}
+.navbar-profile:hover{background:var(--surface2)}
+.navbar-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+.navbar-profile-info{display:flex;flex-direction:column}
+.navbar-profile-name{font-size:12.5px;font-weight:600;color:var(--t1)}
+.navbar-profile-role{font-size:10.5px;color:var(--t3)}
+
+/* Page */
+.page-content{flex:1;padding:28px 28px 40px;display:flex;flex-direction:column;gap:0}
+
+/* Tabs */
+.tab-nav{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto;scrollbar-width:none}
+.tab-nav::-webkit-scrollbar{display:none}
+.tab-btn{display:flex;align-items:center;gap:7px;padding:10px 16px;border-radius:var(--r-sm) var(--r-sm) 0 0;color:var(--t2);font-size:13px;font-weight:500;white-space:nowrap;transition:color 0.15s,background 0.15s;border-bottom:2px solid transparent;margin-bottom:-1px;position:relative;z-index:1}
+.tab-btn:hover{color:var(--t1);background:var(--surface2)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);background:var(--blue-dim)}
+
+/* Module panels */
+.module-panel{display:none}
+.module-panel.active{display:block}
+
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);transition:transform 0.25s}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .main{margin-left:0!important}
+  .navbar-menu-btn{display:flex}
+  .page-content{padding:16px}
+  .navbar-profile-info{display:none}
+}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp 0.3s ease both}
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-mount"></div>
+
+  <div class="main" id="mainArea">
+    <header class="navbar">
+      <div class="navbar-left">
+        <button class="navbar-menu-btn" id="mobileMenuBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div>
+          <div class="navbar-title">Admin Panel</div>
+          <div class="breadcrumb">
+            <span class="breadcrumb-item">EduTrack</span>
+            <span class="breadcrumb-sep">›</span>
+            <span class="breadcrumb-item">Configuration</span>
+            <span class="breadcrumb-sep">›</span>
+            <span class="breadcrumb-item">Admin</span>
+          </div>
+        </div>
+      </div>
+      <div class="navbar-right">
+        <button class="navbar-icon-btn" id="themeToggle" title="Toggle theme">
+          <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+        <a href="../index.html" class="navbar-icon-btn" title="Dashboard">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        </a>
+        <div class="navbar-profile">
+          <div class="navbar-avatar" id="navAvatar">UM</div>
+          <div class="navbar-profile-info">
+            <span class="navbar-profile-name" id="navName">Loading…</span>
+            <span class="navbar-profile-role" id="navRole">—</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <!-- Tab bar -->
+      <nav class="tab-nav" id="tabNav">
+        <button class="tab-btn active" data-tab="institutes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Institutes
+        </button>
+        <button class="tab-btn" data-tab="campuses">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+          Campuses
+        </button>
+        <button class="tab-btn" data-tab="disciplines">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          Disciplines
+        </button>
+        <button class="tab-btn" data-tab="levels">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          Levels
+        </button>
+        <button class="tab-btn" data-tab="subjects">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Subjects
+        </button>
+        <button class="tab-btn" data-tab="policies">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Policies
+        </button>
+        <button class="tab-btn" data-tab="rooms">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Rooms
+        </button>
+        <button class="tab-btn" data-tab="bank">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          Bank
+        </button>
+      </nav>
+
+      <!-- Panels — lazily mounted by JS -->
+      <div id="panel-institutes"  class="module-panel active fade-up"></div>
+      <div id="panel-campuses"    class="module-panel fade-up"></div>
+      <div id="panel-disciplines" class="module-panel fade-up"></div>
+      <div id="panel-levels"      class="module-panel fade-up"></div>
+      <div id="panel-subjects"    class="module-panel fade-up"></div>
+      <div id="panel-policies"   class="module-panel fade-up"></div>
+      <div id="panel-rooms"      class="module-panel fade-up"></div>
+      <div id="panel-bank"       class="module-panel fade-up"></div>
+    </main>
+  </div>
+</div>
+
+<script type="module">
+import { Sidebar }          from '../components/sidebar.js';
+import { AppState }         from '../utils/state.js';
+import { Toast }            from '../utils/helpers.js';
+import { InstituteModule }  from '../modules/institute.js';
+import { CampusModule }     from '../modules/campus.js';
+import { DisciplineModule } from '../modules/discipline.js';
+import { LevelsModule }     from '../modules/levels.js';
+import { SubjectsModule }   from '../modules/subjects.js';
+import { PoliciesModule }   from '../modules/policies.js';
+import { BankModule }       from '../modules/bank.js';
+import { RoomsModule }      from '../modules/Room.js';
+
+// 1. Boot
+AppState.loadState();
+
+// 2. Sidebar
+Sidebar.render('#sidebar-mount', 'admin');
+const user = { name: 'Usman Malik', role: 'Admin', avatar: 'UM',
+               institute: 'FAST National University' };
+Sidebar.updateUser(user);
+document.getElementById('navName').textContent = user.name;
+document.getElementById('navRole').textContent = user.role;
+
+// 3. Theme
+const themeBtn = document.getElementById('themeToggle');
+const applyTheme = (t) => {
+  document.body.classList.toggle('light', t === 'light');
+  themeBtn.querySelector('.icon-moon').style.display = t === 'light' ? 'none' : '';
+  themeBtn.querySelector('.icon-sun').style.display  = t === 'light' ? '' : 'none';
+};
+applyTheme(localStorage.getItem('sms_theme') || 'dark');
+themeBtn.addEventListener('click', () => {
+  const next = document.body.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('sms_theme', next);
+  applyTheme(next);
+});
+
+// 4. Mobile menu
+document.getElementById('mobileMenuBtn').addEventListener('click', () => {
+  document.getElementById('sidebar')?.classList.toggle('mobile-open');
+});
+
+// 5. Module map
+const MODULE_MAP = {
+  institutes:  (el) => InstituteModule.mount(el),
+  campuses:    (el) => CampusModule.mount(el),
+  disciplines: (el) => DisciplineModule.mount(el),
+  levels:      (el) => LevelsModule.mount(el),
+  subjects:    (el) => SubjectsModule.mount(el),
+  policies:    (el) => PoliciesModule.mount(el),
+  rooms:       (el) => RoomsModule.mount(el),
+  bank:        (el) => BankModule.mount(el),
+};
+const mounted = new Set();
+
+function activateTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.module-panel').forEach(p =>
+    p.classList.toggle('active', p.id === `panel-${tab}`));
+
+  if (!mounted.has(tab)) {
+    const el = document.getElementById(`panel-${tab}`);
+    MODULE_MAP[tab]?.(el);
+    mounted.add(tab);
+  }
+  localStorage.setItem('sms_admin_tab', tab);
+}
+
+document.getElementById('tabNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn');
+  if (btn?.dataset.tab) activateTab(btn.dataset.tab);
+});
+
+// 6. Boot — restore or default
+activateTab(localStorage.getItem('sms_admin_tab') || 'institutes');
+setTimeout(() => Toast.success('Admin panel ready.'), 500);
+</script>
+</body>
+</html>

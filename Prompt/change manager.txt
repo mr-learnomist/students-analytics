@@ -1,0 +1,283 @@
+You are a senior JavaScript architect designing a modular ERP-style system in vanilla JavaScript. I need you to implement a **Centralized Change Impact Management System with Hierarchical Master Data Support**.
+
+---
+
+## 🧩 Project Context
+
+* Tech: Vanilla JavaScript (no frameworks)
+* State: Custom `AppState` (get, set, update, remove, getDependents)
+* UI: Custom Modal + Toast system
+* Architecture: Modular (each entity has its own module)
+
+---
+
+## 🏗️ Data Structure
+
+### MASTER DATA (Hierarchical)
+
+* institute
+* campuses
+* disciplines
+* levels
+* subjects
+
+Hierarchy:
+Institute → Campuses → Disciplines → Levels → Subjects
+
+---
+
+### TRANSACTIONAL DATA
+
+* lecturePlans
+* batches
+* enrolments
+* attendance (future)
+
+---
+
+## ⚠️ Core Problem
+
+Changes in MASTER DATA (e.g., subject rename, level change) can impact multiple modules:
+
+* Lecture Plans
+* Batches
+* Enrolments
+
+We must:
+
+* Preserve historical data
+* Allow controlled updates
+* Prevent unsafe cascading
+
+---
+
+## 🎯 Objective
+
+Build a **Central Change Management System** that:
+
+1. Detects impact across modules (including deep dependencies)
+2. Uses centralized configuration to control behavior
+3. Provides user with safe, limited options
+4. Applies changes selectively (NOT automatically)
+5. Preserves historical records via snapshot strategy
+
+---
+
+## 🧠 Key Design Rules
+
+### ❗ Rule 1: History must NEVER auto-update
+
+Existing lecture plans, batches, enrolments must remain unchanged by default.
+
+### ❗ Rule 2: Snapshot Strategy is mandatory
+
+Transactional data must store names (not just IDs):
+
+Example:
+
+```js
+{
+  subjectId,
+  subjectName,
+  levelName,
+  disciplineName,
+  campusName,
+  instituteName
+}
+```
+
+UI should prefer snapshot over live reference.
+
+---
+
+### ❗ Rule 3: No full cascade updates
+
+Never allow updates to enrolments or deep historical records.
+
+---
+
+## 🏗️ Required Implementation
+
+---
+
+### 1. Create Config File
+
+📁 `utils/changeConfig.js`
+
+```js
+export const CHANGE_CONFIG = {
+
+  institute: {
+    type: 'MASTER',
+    allow: ['SAFE']
+  },
+
+  campuses: {
+    type: 'MASTER',
+    allow: ['SAFE']
+  },
+
+  disciplines: {
+    type: 'MASTER',
+    allow: ['SAFE', 'STRUCTURE_ONLY']
+  },
+
+  levels: {
+    type: 'MASTER',
+    allow: ['SAFE', 'STRUCTURE_ONLY']
+  },
+
+  subjects: {
+    type: 'MASTER',
+    allow: ['SAFE', 'LP_ONLY']
+  }
+};
+```
+
+---
+
+### 2. Create Change Manager
+
+📁 `utils/changeManager.js`
+
+Responsibilities:
+
+* Analyze impact (including deep dependencies)
+* Show modal with impact summary
+* Restrict options based on config
+* Return selected mode
+
+API:
+
+```js
+handleUpdate({
+  entity,
+  id,
+  oldData,
+  newData
+})
+```
+
+Return:
+
+```js
+{
+  cancelled: boolean,
+  mode: 'SAFE' | 'STRUCTURE_ONLY' | 'LP_ONLY'
+}
+```
+
+---
+
+### 3. Deep Impact Detection
+
+Implement:
+
+```js
+getDeepDependents(entity, id)
+```
+
+Should detect:
+
+* Lecture Plans
+* Batches
+* Enrolments
+
+Return:
+
+```js
+[
+  { label: 'Lecture Plans', count: 3 },
+  { label: 'Batches', count: 5 },
+  { label: 'Enrolments', count: 120 }
+]
+```
+
+---
+
+### 4. Modal UI
+
+Must display:
+
+* Old value vs new value
+* Impact summary
+* Allowed options only
+
+Options example (for subject):
+
+* Keep history unchanged (default)
+* Update lecture plans only
+
+Do NOT show unsafe options.
+
+---
+
+### 5. DO NOT:
+
+* Do NOT update data inside ChangeManager
+* Do NOT tightly couple modules
+* Do NOT allow full cascade updates
+* Do NOT override historical transactional data
+
+---
+
+### 6. Module Integration Example
+
+In `subjects.js`:
+
+```js
+const result = await ChangeManager.handleUpdate({
+  entity: 'subjects',
+  id: existing.id,
+  oldData: existing,
+  newData: data
+});
+
+if (result.cancelled) return;
+
+AppState.update('subjects', existing.id, data);
+
+// Apply impact separately
+applySubjectImpact(existing.id, data, result.mode);
+```
+
+---
+
+### 7. Impact Handler
+
+📁 `modules/subjectImpact.js`
+
+Responsibilities:
+
+* Update lecturePlans only if mode = LP_ONLY
+* NEVER update enrolments
+
+---
+
+### 8. Code Quality
+
+* Modular and reusable
+* No duplication
+* Clean separation of concerns
+* Defensive coding
+* Scalable for future modules
+
+---
+
+## 🚀 Final Goal
+
+Build a **mini ERP-grade change control engine** that:
+
+* Keeps historical data safe
+* Allows controlled updates
+* Is fully configurable
+* Works across all modules
+
+Provide full implementation:
+
+* changeManager.js
+* changeConfig.js
+* deep impact detection
+* subjectImpact.js
+* integration example
+* comments explaining logic

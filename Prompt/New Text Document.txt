@@ -1,0 +1,29 @@
+You are a senior JavaScript code reviewer. I have a modular vanilla JS project (ERP-style student analytics system).
+
+I need you to analyze my codebase and identify how master data is being used across modules.
+
+Master Data:
+institute
+campuses
+disciplines
+levels
+subjects
+Your Tasks:
+Find where each master entity is used (lecturePlans, batches, enrolments, etc.)
+Explain how it is used:
+Is it using only id (reference)?
+Or storing name as well (snapshot)?
+Identify whether the system is using:
+Live data (dynamic lookup via id)
+Snapshot data (stored values at time of creation)
+Highlight risks:
+Where historical data may change if master data is updated
+Suggest improvements:
+Where snapshot fields should be added
+Where change impact control is needed
+Output format:
+Module-wise analysis
+Clear identification of LIVE vs SNAPSHOT usage
+Practical recommendations
+
+Focus on real code patterns, not theory.

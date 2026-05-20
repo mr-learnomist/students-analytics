@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EduTrack — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+:root{--bg:#0b0d14;--surface:#111520;--surface2:#171c2e;--surface3:#1e2438;--surface4:#252c44;
+--border:rgba(255,255,255,0.055);--border2:rgba(255,255,255,0.09);
+--blue:#4f85f7;--blue-dim:rgba(79,133,247,0.12);
+--green:#10b981;--green-dim:rgba(16,185,129,0.12);
+--yellow:#f59e0b;--yellow-dim:rgba(245,158,11,0.12);
+--violet:#8b5cf6;--violet-dim:rgba(139,92,246,0.12);
+--cyan:#06b6d4;--cyan-dim:rgba(6,182,212,0.12);
+--red:#ef4444;--red-dim:rgba(239,68,68,0.12);
+--t1:#e8eaf6;--t2:#8892b4;--t3:#4a5270;--t4:#272d47;
+--r-sm:8px;--r:12px;--r-lg:16px;--r-xl:22px;
+--sw:240px;--scw:68px;--nh:64px;
+--shadow:0 4px 24px rgba(0,0,0,0.35);--shadow-lg:0 12px 48px rgba(0,0,0,0.45);
+--font-body:'DM Sans',sans-serif;--font-display:'Syne',sans-serif;--font-mono:'DM Mono',monospace;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:15px}
+body{font-family:var(--font-body);background:var(--bg);color:var(--t1);line-height:1.55;overflow-x:hidden}
+a{text-decoration:none;color:inherit}button{cursor:pointer;border:none;background:none;font:inherit}
+input,select,textarea{font:inherit}svg{display:block;flex-shrink:0}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface4);border-radius:3px}
+
+/* LOGIN */
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;
+background:radial-gradient(ellipse at 20% 50%,rgba(79,133,247,0.08) 0%,transparent 60%),
+radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),var(--bg);}
+.login-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-xl);padding:40px;box-shadow:var(--shadow-lg)}
+.login-logo{width:44px;height:44px;background:var(--blue);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;margin-bottom:20px}
+.login-title{font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--t1);margin-bottom:6px}
+.login-sub{font-size:13.5px;color:var(--t3);margin-bottom:28px}
+.login-field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.login-label{font-size:12.5px;font-weight:600;color:var(--t2)}
+.login-input{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--t1);font-size:13.5px;padding:10px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
+.login-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(79,133,247,0.15)}
+.login-input::placeholder{color:var(--t3)}.login-input.error{border-color:var(--red)}
+.login-err{font-size:12px;color:var(--red);margin-top:4px;display:none}
+.login-btn{width:100%;padding:11px;background:var(--blue);color:#fff;border-radius:var(--r-sm);font-size:13.5px;font-weight:700;transition:opacity .15s,transform .15s;margin-top:8px}
+.login-btn:hover{opacity:.9;transform:translateY(-1px)}.login-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.login-demo{margin-top:20px;padding:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm)}
+.demo-title{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.demo-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)}
+.demo-row:last-child{border-bottom:none}
+.demo-role{font-size:11.5px;font-weight:600}
+.demo-creds{font-family:var(--font-mono);font-size:11px;color:var(--t3)}
+.demo-btn{font-size:11px;color:var(--blue);font-weight:600;padding:2px 8px;border-radius:4px;background:var(--blue-dim)}
+.demo-btn:hover{opacity:.75}
+
+/* APP */
+#appShell{display:none}
+.app{display:flex;min-height:100vh}
+.sidebar{width:var(--sw);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.sidebar.collapsed{width:var(--scw)}
+.sidebar.collapsed .sb-hide{display:none!important}
+.sidebar.collapsed .nav-item{justify-content:center;padding:0 10px;height:42px}
+.sidebar.collapsed #collapseBtn svg{transform:rotate(180deg)}
+.sidebar.collapsed .sb-brand{justify-content:center;padding:0 14px}
+.sidebar.collapsed .sb-user{justify-content:center}
+.sidebar.collapsed ~ .main{margin-left:var(--scw)}
+.sb-brand{display:flex;align-items:center;gap:10px;padding:0 16px;height:var(--nh);border-bottom:1px solid var(--border);flex-shrink:0}
+.sb-logo{width:34px;height:34px;background:var(--blue);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.sb-brand-name{font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--t1);white-space:nowrap}
+.sb-brand-sub{font-size:10.5px;color:var(--t3);white-space:nowrap;margin-top:1px}
+#collapseBtn{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--t3);flex-shrink:0;transition:background .15s}
+#collapseBtn:hover{background:var(--surface3)}
+#collapseBtn svg{transition:transform .25s}
+.sb-search{padding:10px 10px 6px;flex-shrink:0}
+.sb-search-wrap{display:flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:7px 10px;color:var(--t3)}
+.sb-search-wrap:focus-within{border-color:var(--blue)}
+.sb-search-wrap input{background:none;border:none;outline:none;color:var(--t1);font-size:12.5px;width:100%}
+.sb-search-wrap input::placeholder{color:var(--t3)}
+.sb-nav{flex:1;overflow-y:auto;padding:4px 10px 12px;scrollbar-width:thin}
+.nav-group-label{display:block;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);padding:14px 8px 5px}
+.nav-item{display:flex;align-items:center;gap:9px;height:38px;padding:0 10px;border-radius:var(--r-sm);color:var(--t2);font-size:13.5px;font-weight:500;transition:background .15s,color .15s;position:relative;white-space:nowrap;cursor:pointer;text-decoration:none}
+.nav-item:hover{background:var(--surface2);color:var(--t1)}
+.nav-item.active{background:var(--blue-dim);color:var(--blue)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--blue);border-radius:0 3px 3px 0}
+.nav-icon{width:18px;height:18px;flex-shrink:0}.nav-label{flex:1}
+.nav-badge{font-size:10.5px;font-family:var(--font-mono);background:var(--surface3);color:var(--t3);padding:1px 6px;border-radius:20px;border:1px solid var(--border)}
+.sb-footer{padding:10px;border-top:1px solid var(--border);flex-shrink:0}
+.sb-user{display:flex;align-items:center;gap:9px;padding:8px;border-radius:var(--r-sm);cursor:pointer;transition:background .15s}
+.sb-user:hover{background:var(--surface2)}
+.sb-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.sb-user-name{display:block;font-size:12.5px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-user-role{display:block;font-size:11px;color:var(--t3)}
+.main{flex:1;margin-left:var(--sw);display:flex;flex-direction:column;min-height:100vh;transition:margin-left .25s cubic-bezier(.4,0,.2,1)}
+.navbar{height:var(--nh);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:50;gap:16px}
+.nb-left{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+.nb-title{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--t1)}
+.nb-bc{font-size:11.5px;color:var(--t3);margin-top:2px}
+.nb-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.nb-date{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t3);padding-right:10px;border-right:1px solid var(--border2)}
+.nb-icon-btn{width:36px;height:36px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--t2);transition:background .15s;position:relative}
+.nb-icon-btn:hover{background:var(--surface2)}
+.notif-dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--blue);border:2px solid var(--surface)}
+.nb-profile{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:var(--r-sm);cursor:pointer;border:1px solid var(--border);margin-left:4px;transition:background .15s}
+.nb-profile:hover{background:var(--surface2)}
+.nb-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+.nb-name{font-size:12.5px;font-weight:600;color:var(--t1);white-space:nowrap}
+.nb-role{font-size:10.5px;color:var(--t3)}
+.nb-menu-btn{display:none;width:36px;height:36px;border-radius:var(--r-sm);align-items:center;justify-content:center;color:var(--t2);transition:background .15s}
+.nb-menu-btn:hover{background:var(--surface2)}
+.logout-btn{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:var(--r-sm);font-size:12.5px;font-weight:600;color:var(--red);background:var(--red-dim);border:1px solid rgba(239,68,68,.15);transition:opacity .15s}
+.logout-btn:hover{opacity:.8}
+.role-pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:600}
+.role-admin{background:var(--blue-dim);color:var(--blue)}
+.role-teacher{background:var(--green-dim);color:var(--green)}
+.role-viewer{background:rgba(136,146,180,0.12);color:var(--t2)}
+.page-content{flex:1;padding:28px;display:flex;flex-direction:column;gap:24px}
+[data-view]{display:none}[data-view].view--active{display:block}
+.view-hdr{margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.view-hdr h2{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--t1)}
+.view-hdr p{font-size:13px;color:var(--t3);margin-top:4px}
+.tab-nav{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto;scrollbar-width:none}
+.tab-nav::-webkit-scrollbar{display:none}
+.tab-btn{display:flex;align-items:center;gap:7px;padding:10px 16px;border-radius:var(--r-sm) var(--r-sm) 0 0;color:var(--t2);font-size:13px;font-weight:500;white-space:nowrap;transition:color .15s,background .15s;border-bottom:2px solid transparent;margin-bottom:-1px;position:relative;z-index:1}
+.tab-btn:hover{color:var(--t1);background:var(--surface2)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);background:var(--blue-dim)}
+.module-panel{display:none}.module-panel.active{display:block}
+.welcome-banner{background:linear-gradient(120deg,#1a2240 0%,#141b30 50%,#151d38 100%);border:1px solid var(--border2);border-radius:var(--r-xl);padding:28px 32px;display:flex;align-items:center;justify-content:space-between;gap:24px;position:relative;overflow:hidden}
+.welcome-banner::before{content:'';position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(79,133,247,.12) 0%,transparent 70%);pointer-events:none}
+.wt h2{font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--t1);margin-bottom:5px}
+.wt p{font-size:13.5px;color:var(--t2)}
+.wb-badges{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.wb{display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border2);border-radius:20px;font-size:12px;color:var(--t2)}
+.wb svg{color:var(--blue)}
+.ws{flex-shrink:0;display:flex;gap:10px}
+.w-stat{background:rgba(255,255,255,.03);border:1px solid var(--border2);border-radius:var(--r-lg);padding:14px 18px;text-align:center;min-width:80px}
+.w-stat .val{font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--blue)}
+.w-stat .lbl{font-size:10.5px;color:var(--t3);margin-top:3px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;display:flex;flex-direction:column;gap:6px;transition:transform .18s,box-shadow .18s,border-color .18s;cursor:default}
+.kpi-card:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--border2)}
+.kpi-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
+.kpi-icon{width:40px;height:40px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center}
+.kpi-trend{display:flex;align-items:center;gap:3px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:20px;font-family:var(--font-mono)}
+.kpi-val{font-family:var(--font-display);font-size:28px;font-weight:800;color:var(--t1);line-height:1.1}
+.kpi-lbl{font-size:12.5px;color:var(--t2);font-weight:500}
+.kpi-sub{font-size:11px;color:var(--t3)}
+.kpi-bar-wrap{height:4px;background:var(--surface3);border-radius:4px;overflow:hidden;margin-top:10px}
+.kpi-bar{height:100%;border-radius:4px;width:0;transition:width .9s cubic-bezier(.16,1,.3,1)}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;display:flex;flex-direction:column;gap:16px}
+.ct{font-size:14px;font-weight:700;color:var(--t1);font-family:var(--font-display)}
+.cs{font-size:11.5px;color:var(--t3);margin-top:3px}
+.cb{font-size:11px;font-family:var(--font-mono);padding:4px 9px;border-radius:6px;font-weight:500;background:var(--green-dim);color:var(--green)}
+.chart-wrap{position:relative;height:210px}
+.brow{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px}
+.pt{font-family:var(--font-display);font-size:13.5px;font-weight:700;color:var(--t1)}
+.pa{font-size:12px;color:var(--blue);font-weight:500;cursor:pointer}
+.pa:hover{opacity:.75}
+.shdr{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.insight-item{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px 16px}
+.il{font-size:11px;color:var(--t3);margin-bottom:5px;font-weight:500}
+.iv{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--t1)}
+.is{font-size:11px;color:var(--t3);margin-top:3px}
+.act-list{margin-top:14px;display:flex;flex-direction:column}
+.act-item{display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.act-item:last-child{border-bottom:none}
+.act-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.act-msg{font-size:12.5px;color:var(--t1);font-weight:500;line-height:1.4}
+.act-meta{display:flex;align-items:center;gap:6px;margin-top:4px}
+.act-user{font-size:11px;color:var(--t2)}.act-sep{width:3px;height:3px;border-radius:50%;background:var(--t4)}.act-time{font-size:11px;color:var(--t3)}
+.skeleton{background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%);background-size:200% 100%;animation:shimmer 1.6s infinite;border-radius:6px}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:10px;background:#1e2433;color:#e8eaf6;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 16px;font-size:13.5px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.4);max-width:320px;min-width:220px;animation:toastIn .3s cubic-bezier(.34,1.56,.64,1)}
+@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateX(20px)}}
+@media(max-width:1280px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1024px){.charts-row,.brow{grid-template-columns:1fr}}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);transition:transform .25s;width:var(--sw)!important}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .main{margin-left:0!important}
+  .nb-menu-btn{display:flex}
+  .nb-date{display:none}
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .page-content{padding:16px}
+  .ws{display:none}
+  .insight-grid{grid-template-columns:1fr}
+}
+@media(max-width:480px){.kpi-grid{grid-template-columns:1fr}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp .4s cubic-bezier(.16,1,.3,1) both}
+.d1{animation-delay:.06s}.d2{animation-delay:.12s}.d3{animation-delay:.18s}
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2">
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+      </svg>
+    </div>
+    <h1 class="login-title">Welcome to EduTrack</h1>
+    <p class="login-sub">Sign in to access your institution dashboard.</p>
+    <div class="login-field">
+      <label class="login-label">Username</label>
+      <input id="loginUser" class="login-input" type="text" placeholder="Enter username" autocomplete="username"/>
+    </div>
+    <div class="login-field">
+      <label class="login-label">Password</label>
+      <input id="loginPass" class="login-input" type="password" placeholder="Enter password" autocomplete="current-password"/>
+      <div id="loginErr" class="login-err"></div>
+    </div>
+    <button id="loginBtn" class="login-btn">Sign In</button>
+    <div id="resetWrap" style="display:none;margin-top:10px;text-align:center">
+      <span style="font-size:12px;color:var(--t3)">Data issue? </span>
+      <button id="resetDataBtn" style="font-size:12px;color:var(--blue);font-weight:600;background:none;border:none;cursor:pointer;padding:0">Reset & reload demo data</button>
+    </div>
+    <div class="login-demo">
+      <div class="demo-title">Demo Credentials</div>
+      <div class="demo-row">
+        <span class="demo-role" style="color:#4f85f7">Admin</span>
+        <span class="demo-creds">admin / admin123</span>
+        <button class="demo-btn" data-u="admin" data-p="admin123">Login</button>
+      </div>
+      <div class="demo-row">
+        <span class="demo-role" style="color:#10b981">Teacher</span>
+        <span class="demo-creds">teacher / teacher123</span>
+        <button class="demo-btn" data-u="teacher" data-p="teacher123">Login</button>
+      </div>
+      <div class="demo-row">
+        <span class="demo-role" style="color:#8892b4">Viewer</span>
+        <span class="demo-creds">viewer / viewer123</span>
+        <button class="demo-btn" data-u="viewer" data-p="viewer123">Login</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="appShell">
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-brand">
+      <div class="sb-logo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+        </svg>
+      </div>
+      <div class="sb-hide" style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <span class="sb-brand-name">EduTrack</span>
+        <span class="sb-brand-sub">Management Suite</span>
+      </div>
+      <button id="collapseBtn" title="Collapse">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+    </div>
+    <div class="sb-search sb-hide">
+      <div class="sb-search-wrap">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="sbSearch" type="text" placeholder="Search modules..."/>
+      </div>
+    </div>
+    <nav class="sb-nav" id="sbNav">
+      <span class="nav-group-label sb-hide">Overview</span>
+      <a class="nav-item" data-route="dashboard">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+        <span class="nav-label sb-hide">Dashboard</span>
+      </a>
+      <a class="nav-item" data-route="analytics" data-requires="analytics">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="10"/></svg></span>
+        <span class="nav-label sb-hide">Analytics</span>
+      </a>
+      <span class="nav-group-label sb-hide">Academics</span>
+      <span class="nav-group-label" data-requires="admissions">ADMISSIONS</span>
+      <a class="nav-item" data-route="admissions" data-requires="admissions">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg></span>
+        <span class="nav-label sb-hide">Admissions</span>
+      </a>
+      <a class="nav-item" data-route="students" data-requires="students">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+        <span class="nav-label sb-hide">Students</span>
+      </a>
+      <a class="nav-item" data-route="attendance" data-requires="attendance">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+        <span class="nav-label sb-hide">Attendance</span>
+      </a>
+      <a class="nav-item" data-route="enrolment" data-requires="enrolment">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
+        <span class="nav-label sb-hide">Enrolment</span>
+      </a>
+      <a class="nav-item" data-route="tests" data-requires="tests">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+        <span class="nav-label sb-hide">Tests &amp; Results</span>
+      </a>
+      <span class="nav-group-label sb-hide">Management</span>
+      <a class="nav-item" data-route="batches" data-requires="batches">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
+        <span class="nav-label sb-hide">Batches</span>
+        <span class="nav-badge sb-hide" id="sbBatchBadge">0</span>
+      </a>
+      <a class="nav-item" data-route="lecturePlan" data-requires="lecturePlan">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+        <span class="nav-label sb-hide">Lecture Plans</span>
+      </a>
+      <a class="nav-item" data-route="timetable" data-requires="timetable">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="18"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="16" y1="14" x2="16" y2="18"/></svg></span>
+        <span class="nav-label sb-hide">Timetable</span>
+      </a>
+      <span class="nav-group-label sb-hide" data-requires="admin">Configuration</span>
+      <a class="nav-item" data-route="admin" data-requires="admin">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <span class="nav-label sb-hide">Admin Panel</span>
+      </a>
+    </nav>
+    <div class="sb-footer">
+      <div class="sb-user">
+        <div class="sb-avatar" id="sbAvatar">UM</div>
+        <div class="sb-hide" style="flex:1;min-width:0">
+          <span class="sb-user-name" id="sbName">-</span>
+          <span class="sb-user-role" id="sbRole">-</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main" id="mainArea">
+    <header class="navbar">
+      <div class="nb-left">
+        <button class="nb-menu-btn" id="mobileMenuBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div>
+          <div class="nb-title" id="pageTitle">Dashboard</div>
+          <div class="nb-bc">EduTrack &rsaquo; <span id="pageBc">Overview</span></div>
+        </div>
+      </div>
+      <div class="nb-right">
+        <div class="nb-date">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span id="navDate">-</span>
+        </div>
+        <button class="nb-icon-btn" id="themeToggle" title="Toggle theme">
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+        <button class="nb-icon-btn" style="position:relative">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="notif-dot"></span>
+        </button>
+        <div class="nb-profile">
+          <div class="nb-avatar" id="nbAvatar">UM</div>
+          <div style="display:flex;flex-direction:column">
+            <span class="nb-name" id="nbName">-</span>
+            <span id="nbRolePill">-</span>
+          </div>
+        </div>
+        <button class="logout-btn" id="logoutBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Logout
+        </button>
+      </div>
+    </header>
+
+    <main class="page-content" id="viewContainer">
+
+      <!-- DASHBOARD -->
+      <div data-view="dashboard">
+        <div class="welcome-banner fade-up">
+          <div class="wt">
+            <h2 id="welcomeHd">Good morning!</h2>
+            <p>Here's what's happening across your institution today.</p>
+            <div class="wb-badges">
+              <div class="wb"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span id="wDate">-</span></div>
+              <div class="wb"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span id="wInst">-</span></div>
+            </div>
+          </div>
+          <div class="ws">
+            <div class="w-stat"><div class="val" id="wS">-</div><div class="lbl">Students</div></div>
+            <div class="w-stat"><div class="val" id="wB">-</div><div class="lbl">Batches</div></div>
+            <div class="w-stat"><div class="val" id="wA">-</div><div class="lbl">Attend%</div></div>
+          </div>
+        </div>
+        <div class="fade-up d1">
+          <div class="shdr" style="margin-bottom:14px">
+            <span style="font-family:var(--font-display);font-size:13.5px;font-weight:700;color:var(--t1)">Key Metrics</span>
+            <span style="font-size:12px;color:var(--blue);font-weight:500">View reports</span>
+          </div>
+          <div class="kpi-grid" id="kpiGrid">
+            <div class="kpi-card"><div class="skeleton" style="height:40px;width:40px;border-radius:8px;margin-bottom:12px"></div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:80%"></div></div>
+            <div class="kpi-card"><div class="skeleton" style="height:40px;width:40px;border-radius:8px;margin-bottom:12px"></div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:80%"></div></div>
+            <div class="kpi-card"><div class="skeleton" style="height:40px;width:40px;border-radius:8px;margin-bottom:12px"></div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:80%"></div></div>
+            <div class="kpi-card"><div class="skeleton" style="height:40px;width:40px;border-radius:8px;margin-bottom:12px"></div><div class="skeleton" style="height:30px;width:60%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:80%"></div></div>
+          </div>
+        </div>
+        <div class="charts-row fade-up d2">
+          <div class="chart-card">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between">
+              <div><div class="ct">Attendance Trend</div><div class="cs">Monthly average</div></div>
+              <span class="cb">&#8593; 2.4%</span>
+            </div>
+            <div class="chart-wrap"><canvas id="attendanceChart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between">
+              <div><div class="ct">Student Growth</div><div class="cs">Enrollment this year</div></div>
+              <span class="cb">&#8593; 12%</span>
+            </div>
+            <div class="chart-wrap"><canvas id="growthChart"></canvas></div>
+          </div>
+        </div>
+        <div class="brow fade-up d3">
+          <div class="panel">
+            <div class="shdr"><span class="pt">Insights</span><span class="pa" id="refreshBtn">Refresh</span></div>
+            <div class="insight-grid" id="insightGrid"></div>
+          </div>
+          <div class="panel">
+            <div class="shdr" style="margin-bottom:0"><span class="pt">Recent Activity</span></div>
+            <div class="act-list" id="actList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BATCHES -->
+      <div data-view="batches">
+        <div id="batchMount"></div>
+      </div>
+
+      <!-- ADMIN -->
+      <div data-view="admin">
+        <div class="view-hdr"><h2>Admin Panel</h2><p>Configure institutes, campuses, disciplines, levels, and subjects.</p></div>
+        <nav class="tab-nav" id="adminTabs">
+          <button class="tab-btn active" data-tab="institutes"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Institutes</button>
+          <button class="tab-btn" data-tab="campuses"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg> Campuses</button>
+          <button class="tab-btn" data-tab="disciplines"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg> Disciplines</button>
+          <button class="tab-btn" data-tab="levels"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/></svg> Levels</button>
+          <button class="tab-btn" data-tab="subjects"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Subjects</button>
+          <button class="tab-btn" data-tab="rooms"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg> Rooms</button>
+          <button class="tab-btn" data-tab="users"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Users</button>
+          <button class="tab-btn" data-tab="teachers"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/></svg> Teachers</button>
+          <button class="tab-btn" data-tab="holidays"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Holidays</button>
+          <button class="tab-btn" data-tab="feeStructures" data-requires="fee"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Fee Structures</button>
+          <button class="tab-btn" data-tab="policies">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            Policies
+          </button>
+          <button class="tab-btn" data-tab="bank">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Bank
+          </button>
+        </nav>
+        <div id="panel-institutes" class="module-panel active"></div>
+        <div id="panel-campuses"   class="module-panel"></div>
+        <div id="panel-disciplines"class="module-panel"></div>
+        <div id="panel-levels"     class="module-panel"></div>
+        <div id="panel-subjects"   class="module-panel"></div>
+        <div id="panel-rooms"      class="module-panel"></div>
+        <div id="panel-users"      class="module-panel"></div>
+        <div id="panel-teachers"   class="module-panel"></div>
+        <div id="panel-holidays"      class="module-panel"></div>
+        <div id="panel-feeStructures" class="module-panel"></div>
+        <div id="panel-policies" class="module-panel fade-up"></div>
+        <div id="panel-bank"     class="module-panel fade-up"></div>
+      </div>
+
+      <!-- ADMISSIONS -->
+      <div data-view="admissions">
+        <div class="view-hdr">
+          <h2>Admissions</h2>
+          <p>Manage new and existing student admissions, challans, and payments.</p>
+        </div>
+        <div id="admissionMount"></div>
+      </div>
+
+      <!-- STUDENTS -->
+      <div data-view="students">
+        <div class="view-hdr">
+          <h2>Students</h2>
+          <p>Manage student enrollment, profiles, and batch assignments.</p>
+        </div>
+        <div id="studentMount"></div>
+      </div>
+
+      <!-- ATTENDANCE -->
+      <div data-view="attendance">
+        <div class="view-hdr">
+          <h2>Attendance</h2>
+          <p>Mark and track daily student attendance across all batches.</p>
+        </div>
+        <div id="attendanceMount"></div>
+      </div>
+
+      <!-- ENROLMENT -->
+      <div data-view="enrolment">
+        <div class="view-hdr">
+          <h2>Enrolment</h2>
+          <p>Manage student enrolment records, status tracking, and batch assignments.</p>
+        </div>
+        <div id="enrolmentMount"></div>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div data-view="analytics">
+        <div id="analyticsMount"></div>
+      </div>
+
+      <!-- TESTS -->
+      <div data-view="tests">
+        <div class="view-hdr">
+          <h2>Tests &amp; Results</h2>
+          <p>Schedule tests, record results, and track student performance across batches.</p>
+        </div>
+        <div id="testMount"></div>
+      </div>
+
+      <!-- TIMETABLE -->
+      <div data-view="timetable">
+        <div id="timetableMount"></div>
+      </div>
+
+      <!-- LECTURE PLANS -->
+      <div data-view="lecturePlan">
+        <div class="view-hdr">
+          <h2>Lecture Plans</h2>
+          <p>Create master lecture plans and assign them to batches with auto-generated dates.</p>
+        </div>
+        <div id="lecturePlanMount"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- Chart.js loaded before app module so Chart global is available -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<!-- Sidebar hover-to-expand -->
+<script>
+(function() {
+  function initSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+
+    let closeTimer = null;
+    let isPinned = false;
+
+    // CollapseBtn = pin/unpin toggle
+    const collapseBtn = document.getElementById('collapseBtn');
+    collapseBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isPinned = !isPinned;
+      if (isPinned) {
+        clearTimeout(closeTimer);
+        sidebar.classList.remove('collapsed');
+      } else {
+        sidebar.classList.add('collapsed');
+      }
+    });
+
+    // Hover expand
+    sidebar.addEventListener('mouseenter', () => {
+      clearTimeout(closeTimer);
+      sidebar.classList.remove('collapsed');
+    });
+
+    // Hover leave — sirf tab collapse karo jab pinned nahi
+    sidebar.addEventListener('mouseleave', () => {
+      if (isPinned) return;
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
+        sidebar.classList.add('collapsed');
+      }, 250);
+    });
+
+    // Mobile hamburger
+    document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
+      sidebar.classList.toggle('mobile-open');
+    });
+  }
+
+  // appShell show hone ke baad init karo
+  const appShell = document.getElementById('appShell');
+  if (appShell) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        if (m.type === 'attributes' && m.attributeName === 'style') {
+          if (appShell.style.display !== 'none') {
+            initSidebar();
+            observer.disconnect();
+          }
+        }
+      });
+    });
+    observer.observe(appShell, { attributes: true });
+  }
+
+  // Fallback: DOM ready pe bhi try karo
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initSidebar, 500);
+  });
+})();
+</script>
+
+<!-- App entry point -->
+<script type="module" src="./app.js"></script>
+
+<noscript>
+  <style>#loginScreen{display:flex!important}#appShell{display:none!important}</style>
+  <p style="text-align:center;padding:40px;color:#e8eaf6;font-family:sans-serif">
+    EduTrack requires JavaScript. Please enable it in your browser.
+  </p>
+</noscript>
+
+</body>
+</html>

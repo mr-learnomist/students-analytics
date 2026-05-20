@@ -1,0 +1,42 @@
+{
+  "kpis": {
+    "totalStudents": 1284,
+    "attendancePercent": 87.4,
+    "activeBatches": 34,
+    "performanceIndex": 79.2,
+    "trends": {
+      "students": "+12%",
+      "attendance": "-2.1%",
+      "batches": "+3",
+      "performance": "+4.6%"
+    }
+  },
+  "attendanceTrend": {
+    "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "data": [82, 85, 88, 84, 79, 91, 87, 90, 85, 88, 86, 87]
+  },
+  "studentGrowth": {
+    "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "data": [950, 980, 1010, 1045, 1080, 1100, 1130, 1160, 1195, 1230, 1258, 1284]
+  },
+  "recentActivity": [
+    { "id": 1, "type": "attendance", "message": "Batch CS-301 attendance marked", "user": "Dr. Sarah Ahmed", "time": "2 min ago", "icon": "check-circle" },
+    { "id": 2, "type": "student", "message": "New student enrolled: Ali Hassan", "user": "Admin", "time": "14 min ago", "icon": "user-plus" },
+    { "id": 3, "type": "test", "message": "Mid-term results uploaded for BBA-201", "user": "Prof. Zaid Khan", "time": "1 hr ago", "icon": "file-text" },
+    { "id": 4, "type": "batch", "message": "New batch created: MATH-401", "user": "Admin", "time": "3 hr ago", "icon": "layers" },
+    { "id": 5, "type": "holiday", "message": "Holiday added: Eid ul Adha (Jun 17-19)", "user": "Admin", "time": "Yesterday", "icon": "calendar" },
+    { "id": 6, "type": "revision", "message": "Weekly revision session logged: Physics", "user": "Dr. Nadia Malik", "time": "Yesterday", "icon": "refresh-cw" }
+  ],
+  "insights": [
+    { "label": "Top Performing Batch", "value": "CS-401", "sub": "94.2% avg attendance" },
+    { "label": "Lowest Attendance", "value": "BBA-102", "sub": "71.3% — needs attention" },
+    { "label": "Tests This Week", "value": "7", "sub": "3 pending results" },
+    { "label": "Active Teachers", "value": "42", "sub": "Out of 48 total" }
+  ],
+  "currentUser": {
+    "name": "Usman Malik",
+    "role": "Admin",
+    "avatar": "UM",
+    "institute": "FAST National University"
+  }
+}
