@@ -370,7 +370,7 @@ export const UsersModule = {
           label: isEdit ? 'Save Changes' : 'Add User',
           variant: 'primary',
           close: false,
-          handler: (modalEl) => {
+          handler: async (modalEl) => {
             // Validate
             const rules = { ...RULES };
             if (!isEdit) rules.password = { required: true, minLen: 4, message: 'Password must be at least 4 characters.' };
@@ -406,7 +406,7 @@ export const UsersModule = {
               if (!data.password) data.password = existing.password;
               AppState.update(KEY, existing.id, data);
 
-              // Update live session if this is the logged-in user
+              // Update live session if this is the currently logged-in user
               const currentUser = AppState.get('currentUser');
               if (currentUser && (currentUser.id === existing.id || currentUser.username === existing.username)) {
                 const updatedUser = { ...currentUser, ...data };
@@ -422,15 +422,60 @@ export const UsersModule = {
                 if (G('nbAvatar')) G('nbAvatar').textContent = newInitials;
                 if (G('nbName'))   G('nbName').textContent   = data.name;
                 if (G('sbRole'))   G('sbRole').textContent   = data.role.charAt(0).toUpperCase() + data.role.slice(1);
+              } else {
+                // Kisi aur user ki permissions badli — unka stored session bhi update karo
+                // taake agli baar page refresh pe naye permissions foran mil jayein (bina logout ke)
+                try {
+                  const raw = localStorage.getItem('sms_session');
+                  if (raw) {
+                    const storedSession = JSON.parse(raw);
+                    if (storedSession && (storedSession.userId === existing.id || storedSession.username === existing.username)) {
+                      const updatedSession = {
+                        ...storedSession,
+                        customPermissions: data.customPermissions || [],
+                        role: data.role,
+                      };
+                      localStorage.setItem('sms_session', JSON.stringify(updatedSession));
+                    }
+                  }
+                } catch(e) {}
               }
               Toast.success(`User "${data.name}" updated successfully.`);
             } else {
               AppState.add(KEY, { ...data, id: generateID('user') });
-              Toast.success(`User "${data.name}" added successfully.`);
             }
 
-            Modal.closeAll();
-            this._render(container);
+            // Save button disable karo jab tak MongoDB confirm na kare
+            const saveBtn = [...modalEl.querySelectorAll('button')].find(b =>
+              b.textContent.includes('Save') || b.textContent.includes('Add User'));
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+            try {
+              await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('timeout')), 8000);
+                const check = async () => {
+                  try {
+                    const res  = await fetch('/api/data');
+                    const json = await res.json();
+                    const users = json.data?.appState?.users || json.data?.users || [];
+                    const saved = isEdit
+                      ? users.find(u => u.id === existing.id)
+                      : users.find(u => u.username?.toLowerCase() === data.username?.toLowerCase());
+                    if (saved) { clearTimeout(timeout); resolve(); }
+                    else setTimeout(check, 700);
+                  } catch { setTimeout(check, 700); }
+                };
+                check();
+              });
+              Toast.success(isEdit
+                ? `User "${data.name}" updated successfully.`
+                : `User "${data.name}" added — ab login kar sakta hai.`);
+              Modal.closeAll();
+              this._render(container);
+            } catch {
+              Toast.error('Save failed — internet connection check karo aur dobara try karo.');
+              if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = isEdit ? 'Save Changes' : 'Add User'; }
+            }
           }
         }
       ]
