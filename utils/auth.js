@@ -6,6 +6,13 @@
 import { AppState, generateID } from './state.js';
 import Storage from './storage.js';
 
+// Session localStorage mein rahega (per-device) — MongoDB mein nahi
+const _sessionStore = {
+  get: (key) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set: (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} },
+  remove: (key) => { try { localStorage.removeItem(key); } catch {} },
+};
+
 const SESSION_KEY = 'session';
 
 // ── Permission map per role ────────────────────────────────────
@@ -136,7 +143,7 @@ export const Auth = {
         customPermissions: user.customPermissions || [],   // ← granular perms
         loginAt:          Date.now(),
       };
-      Storage.set(SESSION_KEY, session);
+      _sessionStore.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return { success: true, user: session };
     }
@@ -162,7 +169,7 @@ export const Auth = {
         loginAt:   Date.now(),
         isTeacher: true,
       };
-      Storage.set(SESSION_KEY, session);
+      _sessionStore.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return { success: true, user: session };
     }
@@ -171,12 +178,12 @@ export const Auth = {
   },
 
   logout() {
-    Storage.remove(SESSION_KEY);
+    _sessionStore.remove(SESSION_KEY);
     AppState.set('currentUser', null);
   },
 
   restoreSession() {
-    const session = Storage.get(SESSION_KEY);
+    const session = _sessionStore.get(SESSION_KEY);
     if (session) {
       // Always re-merge customPermissions from the live users list
       // so changes made in Users module take effect on next boot
@@ -188,7 +195,7 @@ export const Auth = {
       } else if (!session.customPermissions) {
         session.customPermissions = [];
       }
-      Storage.set(SESSION_KEY, session); // updated session save karo
+      _sessionStore.set(SESSION_KEY, session); // updated session save karo
       AppState.set('currentUser', session);
       return session;
     }
@@ -218,7 +225,9 @@ export const Auth = {
     if (user.role === 'admin') return true;
 
     // If user has custom permissions defined, use ONLY those
+    // dashboard is always allowed so app doesn't break
     if (Array.isArray(user.customPermissions) && user.customPermissions.length > 0) {
+      if (permission === 'dashboard') return true;
       return user.customPermissions.includes(permission);
     }
 
