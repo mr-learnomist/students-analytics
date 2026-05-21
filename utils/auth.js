@@ -6,13 +6,6 @@
 import { AppState, generateID } from './state.js';
 import Storage from './storage.js';
 
-// Session localStorage mein rahega (per-device) — MongoDB mein nahi
-const _sessionStore = {
-  get: (key) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } },
-  set: (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} },
-  remove: (key) => { try { localStorage.removeItem(key); } catch {} },
-};
-
 const SESSION_KEY = 'session';
 
 // ── Permission map per role ────────────────────────────────────
@@ -143,7 +136,7 @@ export const Auth = {
         customPermissions: user.customPermissions || [],   // ← granular perms
         loginAt:          Date.now(),
       };
-      _sessionStore.set(SESSION_KEY, session);
+      Storage.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return { success: true, user: session };
     }
@@ -169,7 +162,7 @@ export const Auth = {
         loginAt:   Date.now(),
         isTeacher: true,
       };
-      _sessionStore.set(SESSION_KEY, session);
+      Storage.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return { success: true, user: session };
     }
@@ -178,24 +171,36 @@ export const Auth = {
   },
 
   logout() {
-    _sessionStore.remove(SESSION_KEY);
+    Storage.remove(SESSION_KEY);
     AppState.set('currentUser', null);
   },
 
   restoreSession() {
     const session = _sessionStore.get(SESSION_KEY);
     if (session) {
-      // Always re-merge customPermissions from the live users list
-      // so changes made in Users module take effect on next boot
       const users = AppState.get('users') || [];
       const liveUser = users.find(u => u.id === session.userId || u.username === session.username);
+
+      // ── If user was deleted — force logout immediately ──────────
+      if (!liveUser && !session.role === 'admin') {
+        _sessionStore.remove(SESSION_KEY);
+        AppState.set('currentUser', null);
+        return null;
+      }
+      // Also handle non-admin deleted users
+      if (!liveUser && users.length > 0) {
+        _sessionStore.remove(SESSION_KEY);
+        AppState.set('currentUser', null);
+        return null;
+      }
+
       if (liveUser) {
         session.customPermissions = liveUser.customPermissions || [];
-        session.role = liveUser.role; // role change bhi pick up karo
+        session.role = liveUser.role;
       } else if (!session.customPermissions) {
         session.customPermissions = [];
       }
-      _sessionStore.set(SESSION_KEY, session); // updated session save karo
+      _sessionStore.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return session;
     }
@@ -203,7 +208,7 @@ export const Auth = {
   },
 
   getCurrentUser() {
-    return AppState.get('currentUser') || Storage.get(SESSION_KEY);
+    return AppState.get('currentUser') || _sessionStore.get(SESSION_KEY);
   },
 
   // ── Campus-aware data filter ──────────────────────────────────
@@ -221,13 +226,23 @@ export const Auth = {
     const user = this.getCurrentUser();
     if (!user) return false;
 
+    // ── Deleted user check — agar user ab exist nahi karta ──────
+    const users = AppState.get('users') || [];
+    if (users.length > 0) {
+      const liveUser = users.find(u => u.id === user.userId || u.username === user.username);
+      if (!liveUser) {
+        // User delete ho gaya — session clear karo aur access deny karo
+        _sessionStore.remove(SESSION_KEY);
+        AppState.set('currentUser', null);
+        return false;
+      }
+    }
+
     // Admin always has everything
     if (user.role === 'admin') return true;
 
     // If user has custom permissions defined, use ONLY those
-    // dashboard is always allowed so app doesn't break
     if (Array.isArray(user.customPermissions) && user.customPermissions.length > 0) {
-      if (permission === 'dashboard') return true;
       return user.customPermissions.includes(permission);
     }
 
