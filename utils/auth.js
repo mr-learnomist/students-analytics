@@ -26,6 +26,9 @@ const ROLE_PERMISSIONS = {
     'users', 'users:create', 'users:edit', 'users:delete',
     'teachers', 'teachers:create', 'teachers:edit', 'teachers:delete',
     'roles', 'admin',
+    'analytics',
+    'enrolment',
+    'timetable',
     'lecturePlan', 'lecturePlan:create', 'lecturePlan:edit', 'lecturePlan:delete',
     'admissions', 'admissions:create', 'admissions:edit', 'admissions:delete',
     'fee', 'fee:create', 'fee:edit', 'fee:delete', 'fee:payment',
@@ -130,7 +133,6 @@ export const Auth = {
         avatar:           user.avatar,
         institute:        user.institute,
         campusId:         user.campusId || null,
-        campusIds:        user.campusIds || (user.campusId ? [user.campusId] : []),
         customPermissions: user.customPermissions || [],   // ← granular perms
         loginAt:          Date.now(),
       };
@@ -182,9 +184,7 @@ export const Auth = {
       const liveUser = users.find(u => u.id === session.userId || u.username === session.username);
       if (liveUser) {
         session.customPermissions = liveUser.customPermissions || [];
-        session.role     = liveUser.role;
-        session.campusId  = liveUser.campusId || null;
-        session.campusIds = liveUser.campusIds || (liveUser.campusId ? [liveUser.campusId] : []);
+        session.role = liveUser.role; // role change bhi pick up karo
       } else if (!session.customPermissions) {
         session.customPermissions = [];
       }
@@ -200,41 +200,12 @@ export const Auth = {
   },
 
   // ── Campus-aware data filter ──────────────────────────────────
-  // Supports both single campusId and multiple campusIds array
+  // Kisi bhi list ko current user ke campus se filter karo
+  // campusKey = us list me campus field ka naam (default: 'campusId')
   filterByCampus(list, campusKey = 'campusId') {
     const user = this.getCurrentUser();
-    if (!user) return list;
-
-    // Admin = sab campuses
-    if (user.role === 'admin') return list;
-
-    // Get user campus IDs (support both campusIds array and legacy campusId)
-    const userCampusIds = Array.isArray(user.campusIds) && user.campusIds.length > 0
-      ? user.campusIds
-      : (user.campusId ? [user.campusId] : []);
-
-    // No campus restriction = all campuses
-    if (!userCampusIds.length) return list;
-
-    return list.filter(item => {
-      const itemCampus = item[campusKey];
-      if (!itemCampus) return false;
-      // Item campusKey can be string or array
-      if (Array.isArray(itemCampus)) {
-        return itemCampus.some(cid => userCampusIds.includes(cid));
-      }
-      return userCampusIds.includes(itemCampus);
-    });
-  },
-
-  // Get current user's allowed campus IDs
-  getAllowedCampusIds() {
-    const user = this.getCurrentUser();
-    if (!user || user.role === 'admin') return null; // null = all
-    const ids = Array.isArray(user.campusIds) && user.campusIds.length > 0
-      ? user.campusIds
-      : (user.campusId ? [user.campusId] : []);
-    return ids.length ? ids : null; // null = all
+    if (!user || !user.campusId) return list; // admin = sab
+    return list.filter(item => item[campusKey] === user.campusId);
   },
 
   // ── Permission checks ─────────────────────────────────────────
@@ -247,9 +218,7 @@ export const Auth = {
     if (user.role === 'admin') return true;
 
     // If user has custom permissions defined, use ONLY those
-    // dashboard is always allowed so app doesn't break
     if (Array.isArray(user.customPermissions) && user.customPermissions.length > 0) {
-      if (permission === 'dashboard') return true;
       return user.customPermissions.includes(permission);
     }
 
@@ -280,12 +249,17 @@ export const Auth = {
   // All available permissions grouped for checkbox UI
   ALL_PERMISSIONS: [
     { group: 'Dashboard',      perms: ['dashboard'] },
+    { group: 'Analytics',      perms: ['analytics'] },
+    { group: 'Admissions',     perms: ['admissions', 'admissions:create', 'admissions:edit', 'admissions:delete'] },
     { group: 'Students',       perms: ['students', 'students:create', 'students:edit', 'students:delete'] },
+    { group: 'Enrolment',      perms: ['enrolment'] },
     { group: 'Attendance',     perms: ['attendance', 'attendance:create', 'attendance:edit'] },
-    { group: 'Teachers',       perms: ['teachers', 'teachers:create', 'teachers:edit', 'teachers:delete'] },
+    { group: 'Tests',          perms: ['tests', 'tests:create', 'tests:edit', 'tests:delete'] },
     { group: 'Batches',        perms: ['batches', 'batches:create', 'batches:edit', 'batches:delete', 'batches:management', 'batches:configuration'] },
     { group: 'Lecture Plan',   perms: ['lecturePlan', 'lecturePlan:create', 'lecturePlan:edit', 'lecturePlan:delete'] },
-    { group: 'Tests',          perms: ['tests', 'tests:create', 'tests:edit', 'tests:delete'] },
+    { group: 'Timetable',      perms: ['timetable'] },
+    { group: 'Teachers',       perms: ['teachers', 'teachers:create', 'teachers:edit', 'teachers:delete'] },
+    { group: 'Fee',            perms: ['fee', 'fee:create', 'fee:edit', 'fee:payment'] },
     { group: 'Revision',       perms: ['revision', 'revision:create', 'revision:edit'] },
     { group: 'Disciplines',    perms: ['disciplines', 'disciplines:create', 'disciplines:edit', 'disciplines:delete'] },
     { group: 'Levels',         perms: ['levels', 'levels:create', 'levels:edit', 'levels:delete'] },
