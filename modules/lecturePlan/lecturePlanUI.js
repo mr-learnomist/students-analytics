@@ -1036,7 +1036,7 @@ function _initLPAsgMF(wrap, label, items, selectedVals, onChange) {
 // ═══════════════════════════════════════════════════
 function renderAssignTab(container) {
   const el       = container.querySelector('#lp-panel-assign');
-  const allBatch = AppState.get('batches')     || [];
+  const allBatch = Auth.filterByCampus(AppState.get('batches') || [], 'campusId');
   const allMeta  = getLPMeta();
   const discs    = AppState.get('disciplines') || [];
   const levels   = AppState.get('levels')      || [];
@@ -2846,7 +2846,7 @@ function renderTimelineTab(container) {
 
   _injectTLFilterStyles();
 
-  const allBatches  = AppState.get('batches')     || [];
+  const allBatches  = Auth.filterByCampus(AppState.get('batches') || [], 'campusId');
   const campuses    = AppState.get('campuses')     || [];
   const subjects    = AppState.get('subjects')     || [];
   const levels      = AppState.get('levels')       || [];
