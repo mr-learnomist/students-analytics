@@ -445,14 +445,14 @@ export const UsersModule = {
               AppState.add(KEY, { ...data, id: generateID('user') });
             }
 
-            // Save button disable karo jab tak MongoDB confirm na kare
+            // Disable save button until MongoDB confirms
             const saveBtn = [...modalEl.querySelectorAll('button')].find(b =>
               b.textContent.includes('Save') || b.textContent.includes('Add User'));
-            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
             try {
               await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('timeout')), 8000);
+                const timeout = setTimeout(() => reject(new Error('timeout')), 4000);
                 const check = async () => {
                   try {
                     const res  = await fetch('/api/data');
@@ -462,18 +462,18 @@ export const UsersModule = {
                       ? users.find(u => u.id === existing.id)
                       : users.find(u => u.username?.toLowerCase() === data.username?.toLowerCase());
                     if (saved) { clearTimeout(timeout); resolve(); }
-                    else setTimeout(check, 700);
-                  } catch { setTimeout(check, 700); }
+                    else setTimeout(check, 500);
+                  } catch { setTimeout(check, 500); }
                 };
                 check();
               });
               Toast.success(isEdit
                 ? `User "${data.name}" updated successfully.`
-                : `User "${data.name}" added — ab login kar sakta hai.`);
+                : `User "${data.name}" added successfully. They can now log in.`);
               Modal.closeAll();
               this._render(container);
             } catch {
-              Toast.error('Save failed — internet connection check karo aur dobara try karo.');
+              Toast.error('Save failed. Please check your connection and try again.');
               if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = isEdit ? 'Save Changes' : 'Add User'; }
             }
           }
