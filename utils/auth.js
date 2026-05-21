@@ -136,7 +136,7 @@ export const Auth = {
         customPermissions: user.customPermissions || [],   // ← granular perms
         loginAt:          Date.now(),
       };
-      Storage.set(SESSION_KEY, session);
+      _sessionStore.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return { success: true, user: session };
     }
@@ -162,7 +162,7 @@ export const Auth = {
         loginAt:   Date.now(),
         isTeacher: true,
       };
-      Storage.set(SESSION_KEY, session);
+      _sessionStore.set(SESSION_KEY, session);
       AppState.set('currentUser', session);
       return { success: true, user: session };
     }
@@ -171,7 +171,7 @@ export const Auth = {
   },
 
   logout() {
-    Storage.remove(SESSION_KEY);
+    _sessionStore.remove(SESSION_KEY);
     AppState.set('currentUser', null);
   },
 
