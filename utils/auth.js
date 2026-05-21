@@ -130,6 +130,7 @@ export const Auth = {
         avatar:           user.avatar,
         institute:        user.institute,
         campusId:         user.campusId || null,
+        campusIds:        user.campusIds || (user.campusId ? [user.campusId] : []),
         customPermissions: user.customPermissions || [],   // ← granular perms
         loginAt:          Date.now(),
       };
@@ -181,7 +182,9 @@ export const Auth = {
       const liveUser = users.find(u => u.id === session.userId || u.username === session.username);
       if (liveUser) {
         session.customPermissions = liveUser.customPermissions || [];
-        session.role = liveUser.role; // role change bhi pick up karo
+        session.role     = liveUser.role;
+        session.campusId  = liveUser.campusId || null;
+        session.campusIds = liveUser.campusIds || (liveUser.campusId ? [liveUser.campusId] : []);
       } else if (!session.customPermissions) {
         session.customPermissions = [];
       }
@@ -197,12 +200,41 @@ export const Auth = {
   },
 
   // ── Campus-aware data filter ──────────────────────────────────
-  // Kisi bhi list ko current user ke campus se filter karo
-  // campusKey = us list me campus field ka naam (default: 'campusId')
+  // Supports both single campusId and multiple campusIds array
   filterByCampus(list, campusKey = 'campusId') {
     const user = this.getCurrentUser();
-    if (!user || !user.campusId) return list; // admin = sab
-    return list.filter(item => item[campusKey] === user.campusId);
+    if (!user) return list;
+
+    // Admin = sab campuses
+    if (user.role === 'admin') return list;
+
+    // Get user campus IDs (support both campusIds array and legacy campusId)
+    const userCampusIds = Array.isArray(user.campusIds) && user.campusIds.length > 0
+      ? user.campusIds
+      : (user.campusId ? [user.campusId] : []);
+
+    // No campus restriction = all campuses
+    if (!userCampusIds.length) return list;
+
+    return list.filter(item => {
+      const itemCampus = item[campusKey];
+      if (!itemCampus) return false;
+      // Item campusKey can be string or array
+      if (Array.isArray(itemCampus)) {
+        return itemCampus.some(cid => userCampusIds.includes(cid));
+      }
+      return userCampusIds.includes(itemCampus);
+    });
+  },
+
+  // Get current user's allowed campus IDs
+  getAllowedCampusIds() {
+    const user = this.getCurrentUser();
+    if (!user || user.role === 'admin') return null; // null = all
+    const ids = Array.isArray(user.campusIds) && user.campusIds.length > 0
+      ? user.campusIds
+      : (user.campusId ? [user.campusId] : []);
+    return ids.length ? ids : null; // null = all
   },
 
   // ── Permission checks ─────────────────────────────────────────
