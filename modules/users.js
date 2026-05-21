@@ -107,6 +107,17 @@ export const UsersModule = {
           label: 'Institute',
           render: (val) => `<span style="font-size:12.5px;color:var(--t3)">${val || '—'}</span>`
         },
+        {
+          key: 'campusIds',
+          label: 'Campus Access',
+          render: (val, row) => {
+            const campuses = AppState.get('campuses') || [];
+            const ids = Array.isArray(val) && val.length ? val : (row.campusId ? [row.campusId] : []);
+            if (!ids.length) return '<span style="font-size:11.5px;color:#10b981;font-weight:600">All Campuses</span>';
+            const names = ids.map(id => campuses.find(c => c.id === id)?.campusName || id).join(', ');
+            return `<span style="font-size:11.5px;color:var(--t2)">${names}</span>`;
+          }
+        },
       ],
       rows,
       emptyMsg: 'No users found. Click "Add User" to create one.',
@@ -165,6 +176,24 @@ export const UsersModule = {
         </div>`;
     }).join('');
 
+    // Build campus checkboxes
+    const campuses = AppState.get('campuses') || [];
+    const allInstitutes = (AppState.get('institutes') || []);
+    const existingCampusIds = existing?.campusIds || (existing?.campusId ? [existing.campusId] : []);
+
+    const campusCheckboxesHTML = campuses.length === 0
+      ? '<span style="font-size:12px;color:var(--t3)">No campuses available.</span>'
+      : campuses.map(c => {
+          const inst = allInstitutes.find(i => i.id === c.instituteId);
+          const instName = inst ? ` <span style="font-size:10.5px;color:var(--t3)">(${inst.instituteName})</span>` : '';
+          const checked = existingCampusIds.includes(c.id) ? 'checked' : '';
+          return `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12.5px;color:var(--t2)">
+            <input type="checkbox" class="campus-checkbox" data-campus-id="${c.id}" ${checked}
+                   style="width:14px;height:14px;accent-color:#4f85f7;cursor:pointer;flex-shrink:0"/>
+            <span>${c.campusName}${instName}</span>
+          </label>`;
+        }).join('');
+
     Modal.open({
       title: isEdit ? 'Edit User' : 'Add New User',
       size: 'lg',
@@ -187,8 +216,20 @@ export const UsersModule = {
         <div class="form-row cols-2">
           <div class="form-group">
             <label class="form-label">${isEdit ? 'New Password' : 'Password'} ${isEdit ? '' : '<span class="req">*</span>'}</label>
-            <input name="password" class="form-input" type="password"
-                   placeholder="${isEdit ? 'Leave blank to keep existing' : 'Set a password'}"/>
+            <div style="position:relative">
+              <input name="password" id="passwordField" class="form-input" type="password"
+                     placeholder="${isEdit ? 'Leave blank to keep existing' : 'Set a password'}"
+                     value="${isEdit ? (existing?.password || '') : ''}"
+                     style="padding-right:40px"/>
+              <button type="button" id="togglePassword"
+                      style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--t3);padding:0;display:flex;align-items:center"
+                      title="Show/Hide password">
+                <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+            ${isEdit ? '<span class="form-hint">Current password shown. Leave as-is or change it.</span>' : ''}
           </div>
           <div class="form-group">
             <label class="form-label">Role <span class="req">*</span></label>
@@ -207,6 +248,16 @@ export const UsersModule = {
             <option value="">— Select (optional) —</option>
             ${instituteOptions}
           </select>
+        </div>
+
+        <!-- Campus Access -->
+        <div class="form-group">
+          <label class="form-label">Campus Access
+            <span style="font-size:11px;font-weight:400;color:var(--t3);margin-left:6px">(Leave empty = all campuses)</span>
+          </label>
+          <div id="campusCheckboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px">
+            ${campusCheckboxesHTML}
+          </div>
         </div>
 
         <!-- ── Permissions Panel ── -->
@@ -236,6 +287,20 @@ export const UsersModule = {
         </div>
       `,
       onOpen: (modalEl) => {
+        // ── Password show/hide toggle ──
+        const toggleBtn   = modalEl.querySelector('#togglePassword');
+        const passwordFld = modalEl.querySelector('#passwordField');
+        const eyeIcon     = modalEl.querySelector('#eyeIcon');
+        if (toggleBtn && passwordFld) {
+          toggleBtn.addEventListener('click', () => {
+            const isHidden = passwordFld.type === 'password';
+            passwordFld.type = isHidden ? 'text' : 'password';
+            const eyeOpen  = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+            const eyeClosed = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+            eyeIcon.innerHTML = isHidden ? eyeClosed : eyeOpen;
+          });
+        }
+
         const roleSelect   = modalEl.querySelector('#userRoleSelect');
         const permsSection = modalEl.querySelector('#permsSection');
         const summaryEl    = modalEl.querySelector('#permsSummary');
@@ -313,6 +378,12 @@ export const UsersModule = {
             if (!valid) return;
 
             const data = Form.collect(modalEl.querySelector('.modal-body'));
+
+            // Collect selected campus IDs
+            const selectedCampusIds = [...modalEl.querySelectorAll('.campus-checkbox:checked')]
+              .map(cb => cb.dataset.campusId);
+            data.campusIds = selectedCampusIds;
+            data.campusId  = selectedCampusIds.length === 1 ? selectedCampusIds[0] : (selectedCampusIds[0] || null);
 
             // Collect checked permissions (only if not admin)
             if (data.role !== 'admin') {
