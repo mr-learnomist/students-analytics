@@ -1,7 +1,8 @@
 // api/data.js — Vercel Serverless Function
 const { MongoClient } = require('mongodb');
 
-const MONGO_URI = process.env.MONGO_URI;
+// ✅ FIXED: MONGO_URI → MONGODB_URI (Vercel env variable se match)
+const MONGO_URI = process.env.MONGODB_URI;
 const DB_NAME   = 'sms';
 const COL_NAME  = 'appstate';
 
@@ -16,7 +17,6 @@ async function connectDB() {
 }
 
 module.exports = async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -30,7 +30,7 @@ module.exports = async function handler(req, res) {
     const db = client.db(DB_NAME);
 
     if (req.method === 'GET') {
-      const doc = await db.collection(COL_NAME).findOne({ _id: 'main' });
+      const doc  = await db.collection(COL_NAME).findOne({ _id: 'main' });
       const data = doc ? doc.data : {};
       return res.status(200).json({ success: true, data });
     }
