@@ -640,6 +640,9 @@ export const BatchModule = {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
     let rows = AppState.get(KEY) || [];
 
+    // ── Campus access filter — restrict by user's assigned campuses ──
+    rows = Auth.filterByCampus(rows, 'campusId');
+
     if (discFilter.length)   rows = rows.filter(b => discFilter.includes(b.disciplineId));
     if (campusFilter.length)  rows = rows.filter(b => campusFilter.includes(b.campusId || ''));
     if (sessionFilter.length) rows = rows.filter(b => sessionFilter.includes(b.sessionPeriod || ''));
