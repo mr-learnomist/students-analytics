@@ -1,12 +1,14 @@
 // ============================================================
 // utils/auth.js — Authentication & RBAC
 // v2: campusId session me save, granular permissions added
+// PATCH: _sessionStore defined, restoreSession bug fixed
 // ============================================================
 
 import { AppState, generateID } from './state.js';
 import Storage from './storage.js';
 
 const SESSION_KEY = 'session';
+const _sessionStore = Storage; // ✅ FIX 1: _sessionStore define kiya
 
 // ── Permission map per role ────────────────────────────────────
 const ROLE_PERMISSIONS = {
@@ -182,7 +184,7 @@ export const Auth = {
       const liveUser = users.find(u => u.id === session.userId || u.username === session.username);
 
       // ── If user was deleted — force logout immediately ──────────
-      if (!liveUser && !session.role === 'admin') {
+      if (!liveUser && session.role !== 'admin') { // ✅ FIX 2: !session.role === 'admin' → session.role !== 'admin'
         _sessionStore.remove(SESSION_KEY);
         AppState.set('currentUser', null);
         return null;
