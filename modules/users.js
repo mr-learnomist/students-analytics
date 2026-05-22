@@ -1,6 +1,7 @@
 // ============================================================
 // modules/users.js — User Management Module (Admin only)
 // Fields: id, username, password, name, role, avatar, institute
+// PATCH: MongoDB response structure fix for save confirmation
 // ============================================================
 
 import { AppState, generateID } from '../utils/state.js';
@@ -145,7 +146,6 @@ export const UsersModule = {
       `<option value="${n}" ${existing?.institute === n ? 'selected' : ''}>${n}</option>`
     ).join('');
 
-    // Build permissions checkbox panel
     const existingCustomPerms = existing?.customPermissions || [];
     const isAdminRole = existing?.role === 'admin';
 
@@ -176,7 +176,6 @@ export const UsersModule = {
         </div>`;
     }).join('');
 
-    // Build campus checkboxes
     const campuses = AppState.get('campuses') || [];
     const allInstitutes = (AppState.get('institutes') || []);
     const existingCampusIds = existing?.campusIds || (existing?.campusId ? [existing.campusId] : []);
@@ -287,7 +286,6 @@ export const UsersModule = {
         </div>
       `,
       onOpen: (modalEl) => {
-        // ── Password show/hide toggle ──
         const toggleBtn   = modalEl.querySelector('#togglePassword');
         const passwordFld = modalEl.querySelector('#passwordField');
         const eyeIcon     = modalEl.querySelector('#eyeIcon');
@@ -305,7 +303,6 @@ export const UsersModule = {
         const permsSection = modalEl.querySelector('#permsSection');
         const summaryEl    = modalEl.querySelector('#permsSummary');
 
-        // Show/hide permissions panel based on role
         const updatePermsVisibility = () => {
           const isAdmin = roleSelect.value === 'admin';
           permsSection.style.display = isAdmin ? 'none' : '';
@@ -313,7 +310,6 @@ export const UsersModule = {
         };
         roleSelect?.addEventListener('change', updatePermsVisibility);
 
-        // Summary counter
         const updateSummary = () => {
           const checked = modalEl.querySelectorAll('.perm-checkbox:checked').length;
           summaryEl.textContent = checked > 0
@@ -321,7 +317,6 @@ export const UsersModule = {
             : 'No custom permissions — role default will apply';
         };
 
-        // Individual checkbox → update group toggle state
         modalEl.querySelectorAll('.perm-checkbox').forEach(cb => {
           cb.addEventListener('change', () => {
             const perm  = cb.dataset.perm;
@@ -338,7 +333,6 @@ export const UsersModule = {
           });
         });
 
-        // Group "All" toggle
         modalEl.querySelectorAll('.perm-group-toggle').forEach(toggle => {
           toggle.addEventListener('change', () => {
             const group = Auth.ALL_PERMISSIONS.find(g => g.group === toggle.dataset.group);
@@ -352,7 +346,6 @@ export const UsersModule = {
           });
         });
 
-        // Select All / Clear All
         modalEl.querySelector('#selectAllPerms')?.addEventListener('click', () => {
           modalEl.querySelectorAll('.perm-checkbox,.perm-group-toggle').forEach(cb => cb.checked = true);
           updateSummary();
@@ -371,7 +364,6 @@ export const UsersModule = {
           variant: 'primary',
           close: false,
           handler: async (modalEl) => {
-            // Validate
             const rules = { ...RULES };
             if (!isEdit) rules.password = { required: true, minLen: 4, message: 'Password must be at least 4 characters.' };
             const { valid } = Form.validate(modalEl.querySelector('.modal-body'), rules);
@@ -379,42 +371,33 @@ export const UsersModule = {
 
             const data = Form.collect(modalEl.querySelector('.modal-body'));
 
-            // Collect selected campus IDs
             const selectedCampusIds = [...modalEl.querySelectorAll('.campus-checkbox:checked')]
               .map(cb => cb.dataset.campusId);
             data.campusIds = selectedCampusIds;
             data.campusId  = selectedCampusIds.length === 1 ? selectedCampusIds[0] : (selectedCampusIds[0] || null);
 
-            // Collect checked permissions (only if not admin)
             if (data.role !== 'admin') {
               const checkedPerms = [...modalEl.querySelectorAll('.perm-checkbox:checked')]
                 .map(cb => cb.dataset.perm);
-              data.customPermissions = checkedPerms; // empty = use role default
+              data.customPermissions = checkedPerms;
             } else {
-              data.customPermissions = []; // admin = no override needed
+              data.customPermissions = [];
             }
 
-            // Username unique check
             const all = AppState.get(KEY) || [];
             const duplicate = all.find(u => u.username.toLowerCase() === data.username.toLowerCase() && u.id !== existing?.id);
             if (duplicate) { Toast.error('This username already exists.'); return; }
 
-            // Generate avatar initials
             data.avatar = data.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
             if (isEdit) {
               if (!data.password) data.password = existing.password;
               AppState.update(KEY, existing.id, data);
 
-              // Update live session if this is the currently logged-in user
               const currentUser = AppState.get('currentUser');
               if (currentUser && (currentUser.id === existing.id || currentUser.username === existing.username)) {
                 const updatedUser = { ...currentUser, ...data };
                 AppState.set('currentUser', updatedUser);
-                try {
-                  const raw = localStorage.getItem('sms_session');
-                  if (raw) localStorage.setItem('sms_session', JSON.stringify(updatedUser));
-                } catch(e) {}
                 const newInitials = data.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
                 const G = id => document.getElementById(id);
                 if (G('sbAvatar')) G('sbAvatar').textContent = newInitials;
@@ -422,30 +405,12 @@ export const UsersModule = {
                 if (G('nbAvatar')) G('nbAvatar').textContent = newInitials;
                 if (G('nbName'))   G('nbName').textContent   = data.name;
                 if (G('sbRole'))   G('sbRole').textContent   = data.role.charAt(0).toUpperCase() + data.role.slice(1);
-              } else {
-                // Kisi aur user ki permissions badli — unka stored session bhi update karo
-                // taake agli baar page refresh pe naye permissions foran mil jayein (bina logout ke)
-                try {
-                  const raw = localStorage.getItem('sms_session');
-                  if (raw) {
-                    const storedSession = JSON.parse(raw);
-                    if (storedSession && (storedSession.userId === existing.id || storedSession.username === existing.username)) {
-                      const updatedSession = {
-                        ...storedSession,
-                        customPermissions: data.customPermissions || [],
-                        role: data.role,
-                      };
-                      localStorage.setItem('sms_session', JSON.stringify(updatedSession));
-                    }
-                  }
-                } catch(e) {}
               }
               Toast.success(`User "${data.name}" updated successfully.`);
             } else {
               AppState.add(KEY, { ...data, id: generateID('user') });
             }
 
-            // Disable save button until MongoDB confirms
             const saveBtn = [...modalEl.querySelectorAll('button')].find(b =>
               b.textContent.includes('Save') || b.textContent.includes('Add User'));
             if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
@@ -457,7 +422,11 @@ export const UsersModule = {
                   try {
                     const res  = await fetch('/api/data');
                     const json = await res.json();
-                    const users = json.data?.appState?.users || json.data?.users || [];
+                    // ✅ FIX: Handle all possible MongoDB response structures
+                    const users = json.data?.appState?.users
+                               || json.data?.users
+                               || json.appState?.users
+                               || [];
                     const saved = isEdit
                       ? users.find(u => u.id === existing.id)
                       : users.find(u => u.username?.toLowerCase() === data.username?.toLowerCase());
