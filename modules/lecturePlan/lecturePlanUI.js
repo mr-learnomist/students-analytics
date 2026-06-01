@@ -413,8 +413,9 @@ function _renderPlanDetail(lpId) {
           ${disc || discAbbr ? `<span style="font-size:11px;color:var(--t3)">${discAbbr}${subjCode ? ' › ' + subjCode : ''}${subjDisplay ? ' — ' + subjDisplay : ''}</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button id="lpEditInfoBtn"  class="add-btn" style="background:var(--surface3);color:var(--t2);border:1px solid var(--border);font-size:11.5px">✏️ Edit Info</button>
-          <button id="lpEditRowsBtn"  class="add-btn" style="font-size:11.5px">📝 Edit Rows</button>
+          <button id="lpEditInfoBtn"   class="add-btn" style="background:var(--surface3);color:var(--t2);border:1px solid var(--border);font-size:11.5px">✏️ Edit Info</button>
+          <button id="lpEditRowsBtn"   class="add-btn" style="font-size:11.5px">📝 Edit Rows</button>
+          <button id="lpExportCsvBtn"  class="add-btn" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.25);font-size:11.5px">⬇ Export CSV</button>
           <button id="lpDeletePlanBtn" class="add-btn" style="background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2);font-size:11.5px">🗑 Delete</button>
         </div>
       </div>
@@ -469,6 +470,33 @@ function _wirePlanDetail(container, lpId) {
   el.querySelector('#lpEditRowsBtn')?.addEventListener('click', () => {
     _openRowEditor(lpId, container);
   });
+
+  // ── Export CSV — same format as Import CSV ──────────────────
+  el.querySelector('#lpExportCsvBtn')?.addEventListener('click', () => {
+    const meta = getLPMeta().find(m => m.id === lpId);
+    const rows = getLPRows(lpId);
+    if (!rows.length) { Toast.error('No rows to export.'); return; }
+
+    const lines = ['Date,Particulars,Status'];
+    rows.forEach(r => {
+      const date   = r.date   || '';
+      const topic  = r.topic  ? `"${r.topic.replace(/"/g, '""')}"` : '';
+      const status = r.status || '';
+      lines.push(`${date},${topic},${status}`);
+    });
+
+    const csv  = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href:     url,
+      download: `LP_${meta.code}_${new Date().toISOString().slice(0,10)}.csv`,
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+    Toast.success(`Exported: LP_${meta.code}.csv`);
+  });
+
   el.querySelector('#lpDeletePlanBtn')?.addEventListener('click', async () => {
     const meta = getLPMeta().find(m => m.id === lpId);
     const ok   = await Modal.confirm({
