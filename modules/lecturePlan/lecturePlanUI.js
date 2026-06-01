@@ -295,14 +295,12 @@ function _batchTeacherNames(batch) {
 function _refreshPlanCards(container) {
   const el = container.querySelector('#lp-panel-plans');
   if (!el) return;
-
   const planArea = el.querySelector('#lpPlanArea');
   if (!planArea) { renderPlansTab(container); return; }
+  if (_lpActiveLPId) { renderPlansTab(container); return; }
 
-  const { getLPMeta, getLPRows } = LecturePlanService;
   const allMeta  = getLPMeta();
-  const subjects = AppState.getAll('subjects')  || [];
-  const levels   = AppState.getAll('levels')    || [];
+  const subjects = AppState.get('subjects') || [];
 
   const hasDiscF  = _lpPlanFilter.discIds.length  > 0;
   const hasLevelF = _lpPlanFilter.levelIds.length > 0;
@@ -318,11 +316,8 @@ function _refreshPlanCards(container) {
     if (hasSubjF && !_lpPlanFilter.subjIds.includes(p.subjectId)) return false;
     if (hasSearch) {
       const q = _lpPlanFilter.search.toLowerCase();
-      const subj = subjects.find(s => s.id === p.subjectId);
-      if (!(p.code||'').toLowerCase().includes(q) &&
-          !(p.title||'').toLowerCase().includes(q) &&
-          !(subj?.subjectCode||'').toLowerCase().includes(q) &&
-          !(subj?.subjectName||'').toLowerCase().includes(q)) return false;
+      const hay = `${p.code} ${p.title} ${p.desc||''} ${p.subjectCode||''} ${p.subjectName||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
     }
     return true;
   });
@@ -330,26 +325,71 @@ function _refreshPlanCards(container) {
   // Update record count
   const totalRows = plans.reduce((s, m) => s + getLPRows(m.id).length, 0);
   const rc = el.querySelector('.record-count');
-  if (rc) rc.textContent = `${plans.length}/${allMeta.length} plan${allMeta.length !== 1 ? 's' : ''} · ${totalRows} rows`;
+  if (rc) rc.textContent = `${plans.length}/${allMeta.length} plan${allMeta.length !== 1 ? "s" : ""} · ${totalRows} rows`;
 
-  // Re-render only the cards area
-  // (reuse existing card builder by calling renderPlansTab only if we can't build inline)
-  // Simple: just call renderPlansTab but restore focus after
-  const activeEl   = document.activeElement;
-  const selStart   = activeEl?.selectionStart;
-  const selEnd     = activeEl?.selectionEnd;
-  const activeId   = activeEl?.id;
-
-  renderPlansTab(container);
-
-  // Restore focus + cursor position
-  if (activeId) {
-    const restored = container.querySelector(`#${activeId}`);
-    if (restored) {
-      restored.focus();
-      try { restored.setSelectionRange(selStart, selEnd); } catch(_) {}
-    }
+  // Build cards HTML directly — no full re-render, input keeps focus
+  let html = '';
+  if (plans.length) {
+    const sorted = [
+      ...plans.filter(p => _lpSelectedIds.has(p.id)),
+      ...plans.filter(p => !_lpSelectedIds.has(p.id)),
+    ];
+    html = sorted.map(meta => {
+      const rows = getLPRows(meta.id);
+      const hrs  = calcHours(rows);
+      const liveSubj      = AppState.findById('subjects', meta.subjectId);
+      const cardSubjLabel = meta.subjectName || liveSubj?.subjectName || '';
+      const cardSubjCode  = meta.subjectCode || liveSubj?.subjectCode || '';
+      const masterCode    = liveSubj?.subjectCode || '';
+      const snapCode      = meta.subjectCode || '';
+      const snapStale     = snapCode && masterCode && snapCode !== masterCode;
+      const staleTag      = snapStale
+        ? `<span title="Subject was renamed." style="font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 7px;border-radius:10px;border:1px solid #fcd34d;margin-left:6px">⚠ ${snapCode}→${masterCode}</span>`
+        : '';
+      const cardSubjTag = cardSubjCode
+        ? `<span style="font-size:10.5px;color:var(--t3);margin-left:8px;padding:1px 7px;background:var(--surface3);border-radius:10px;border:1px solid var(--border)">${cardSubjCode}${cardSubjLabel ? ' · ' + cardSubjLabel : ''}</span>${staleTag}`
+        : '';
+      const isSelected = _lpSelectedIds.has(meta.id);
+      return `<div class="lp-card${isSelected ? ' lp-card-selected' : ''}" data-lp-select="${meta.id}">
+        <div class="lp-card-head" style="padding:10px 16px">
+          <div class="lp-plan-row-grid" style="display:grid;grid-template-columns:32px 60px 1fr 180px 120px 110px 120px;align-items:center;width:100%;gap:4px">
+            <input type="checkbox" class="lp-plan-chk" data-lp-id="${meta.id}" ${isSelected ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue)" onclick="event.stopPropagation()"/>
+            <span class="lp-code-badge" style="cursor:pointer">${meta.code}</span>
+            <span style="font-size:14px;font-weight:400;color:var(--t1);padding-left:8px;cursor:pointer">${meta.title}${meta.desc ? `<span style="font-size:12px;color:var(--t3);margin-left:10px">${meta.desc}</span>` : ''}${cardSubjTag}</span>
+            <span style="font-size:12px;color:var(--blue);font-weight:500;white-space:nowrap">🎓 ${hrs.teaching}h</span>
+            <span style="font-size:12px;color:var(--yellow);font-weight:500;white-space:nowrap">📝 ${hrs.test}h</span>
+            <span style="font-size:12px;color:var(--violet);font-weight:500;white-space:nowrap">🔁 ${hrs.mock}h</span>
+            <span style="font-size:12px;color:var(--cyan);font-weight:500;white-space:nowrap">🔄 ${hrs.revision||0}h</span>
+            <span style="font-size:13px;font-weight:700;color:var(--t1);white-space:nowrap">${hrs.total}h total</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    html = `<div class="lp-empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" style="opacity:.4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <p>No plans match your search.</p><span>Try a different term.</span>
+    </div>`;
   }
+
+  // Update ONLY the cards div — search input keeps focus ✅
+  planArea.innerHTML = html;
+
+  // Re-wire events on new card elements
+  planArea.querySelectorAll('.lp-plan-chk').forEach(chk => {
+    chk.addEventListener('change', () => {
+      if (chk.checked) _lpSelectedIds.add(chk.dataset.lpId);
+      else _lpSelectedIds.delete(chk.dataset.lpId);
+      _refreshPlanCards(container);
+    });
+  });
+  planArea.querySelectorAll('.lp-card[data-lp-select]').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.classList.contains('lp-plan-chk')) return;
+      _lpActiveLPId = card.dataset.lpSelect;
+      renderPlansTab(container);
+    });
+  });
 }
 
 function renderPlansTab(container) {
