@@ -29,6 +29,8 @@ import {
 let _lpActiveDiscId  = '';
 let _lpActiveSubjId  = '';
 let _lpActiveLPId    = '';
+let _lpPlanFilter    = { discIds: [], levelIds: [], subjIds: [], search: '' };
+let _lpSelectedIds   = new Set(); // checkboxes for plan row selection
 let _lpEditingRows   = [];
 let _lpEditingLPId   = '';
 let _lpAssignState   = {};
@@ -131,6 +133,7 @@ function injectLPStyles() {
 
     .lp-card{background:var(--surface2);border:1px solid var(--border);
       border-radius:var(--r-sm);overflow:hidden;margin-bottom:14px}
+    .lp-card.lp-card-selected{border-color:var(--blue);background:rgba(37,99,235,.04)}
     .lp-card-head{padding:12px 16px;border-bottom:1px solid var(--border);
       display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
     .lp-code-badge{font-family:'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:600;
@@ -226,41 +229,55 @@ function _batchTeacherNames(batch) {
 }
 function renderPlansTab(container) {
   // ── One-time backfill: freeze snapshots on old LP records ────────────────
-  // Runs silently — only patches LPs that have no subjectCode/Name yet.
-  // After first run, no-ops immediately (all records already have snapshots).
   LecturePlanService.backfillSnapshots();
-  // ─────────────────────────────────────────────────────────────────────────
 
-  const el        = container.querySelector('#lp-panel-plans');
-  const discs     = AppState.get('disciplines') || [];
-  const subjects  = _lpActiveDiscId
-    ? (AppState.get('subjects') || []).filter(s => {
-        const lvl = AppState.findById('levels', s.levelId);
-        return lvl?.disciplineId === _lpActiveDiscId;
-      })
-    : AppState.get('subjects') || [];
-
+  const el      = container.querySelector('#lp-panel-plans');
+  const discs   = AppState.get('disciplines') || [];
+  const levels  = AppState.get('levels')      || [];
+  const subjects= AppState.get('subjects')    || [];
   const allMeta = getLPMeta();
-  const plans   = allMeta.filter(p =>
-    (!_lpActiveDiscId || p.disciplineId === _lpActiveDiscId) &&
-    (!_lpActiveSubjId || p.subjectId    === _lpActiveSubjId)
-  );
 
-  const discOpts = discs.map(d =>
-    `<option value="${d.id}" ${d.id === _lpActiveDiscId ? 'selected' : ''}>${d.abbreviation} — ${d.fullName}</option>`
-  ).join('');
+  // ── Multi-filter: apply discipline, level, subject filters ───
+  const hasDiscF  = _lpPlanFilter.discIds.length  > 0;
+  const hasLevelF = _lpPlanFilter.levelIds.length > 0;
+  const hasSubjF  = _lpPlanFilter.subjIds.length  > 0;
+  const hasSearch = _lpPlanFilter.search.trim().length > 0;
 
-  const subjOpts = subjects.map(s =>
-    `<option value="${s.id}" ${s.id === _lpActiveSubjId ? 'selected' : ''}>${s.subjectCode} — ${s.subjectName}</option>`
-  ).join('');
+  const plans = allMeta.filter(p => {
+    // Discipline filter
+    if (hasDiscF && !_lpPlanFilter.discIds.includes(p.disciplineId)) return false;
+    // Level filter — match via subject's levelId
+    if (hasLevelF) {
+      const subj = subjects.find(s => s.id === p.subjectId);
+      if (!subj || !_lpPlanFilter.levelIds.includes(subj.levelId)) return false;
+    }
+    // Subject filter
+    if (hasSubjF && !_lpPlanFilter.subjIds.includes(p.subjectId)) return false;
+    // Search
+    if (hasSearch) {
+      const q = _lpPlanFilter.search.toLowerCase();
+      const hay = `${p.code} ${p.title} ${p.desc || ''} ${p.subjectCode || ''} ${p.subjectName || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Legacy single-select kept for plan selector dropdown only
+  const _lpActiveDiscId = _lpPlanFilter.discIds[0] || '';
+  const _lpActiveSubjId = _lpPlanFilter.subjIds[0] || '';
 
   // KPIs
   const totalRows = allMeta.reduce((n, p) => n + getLPRows(p.id).length, 0);
 
   let plansHTML = '';
   if (!_lpActiveLPId && plans.length) {
-    // Show plan cards
-    plansHTML = plans.map(meta => {
+    // Sort: selected plans float to top, unselected sink to bottom
+    const sortedPlans = [
+      ...plans.filter(p => _lpSelectedIds.has(p.id)),
+      ...plans.filter(p => !_lpSelectedIds.has(p.id)),
+    ];
+    // Show plan rows (no cards — flat rows with checkboxes)
+    plansHTML = sortedPlans.map(meta => {
       const rows = getLPRows(meta.id);
       const hrs  = calcHours(rows);
       // Prefer snapshot subject name (frozen at save) over live lookup
@@ -283,12 +300,17 @@ function renderPlansTab(container) {
       const cardSubjTag   = cardSubjCode
         ? `<span style="font-size:10.5px;color:var(--t3);margin-left:8px;padding:1px 7px;background:var(--surface3);border-radius:10px;border:1px solid var(--border)">${cardSubjCode}${cardSubjLabel ? ' · ' + cardSubjLabel : ''}</span>${staleTag}`
         : '';
+      const isSelected = _lpSelectedIds.has(meta.id);
       return `
-        <div class="lp-card" style="cursor:pointer" data-lp-select="${meta.id}">
+        <div class="lp-card${isSelected ? ' lp-card-selected' : ''}" data-lp-select="${meta.id}">
           <div class="lp-card-head" style="padding:10px 16px">
-            <div style="display:grid;grid-template-columns:60px 1fr 180px 120px 110px 120px;align-items:center;width:100%">
-              <span class="lp-code-badge">${meta.code}</span>
-              <span style="font-size:14px;font-weight:400;color:var(--t1);padding-left:8px">${meta.title}${meta.desc ? `<span style="font-size:12px;color:var(--t3);margin-left:10px">${meta.desc}</span>` : ''}${cardSubjTag}</span>
+            <div style="display:grid;grid-template-columns:32px 60px 1fr 180px 120px 110px 120px;align-items:center;width:100%;gap:4px">
+              <input type="checkbox" class="lp-plan-chk" data-lp-id="${meta.id}"
+                     ${isSelected ? 'checked' : ''}
+                     style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue)"
+                     onclick="event.stopPropagation()"/>
+              <span class="lp-code-badge" style="cursor:pointer">${meta.code}</span>
+              <span style="font-size:14px;font-weight:400;color:var(--t1);padding-left:8px;cursor:pointer">${meta.title}${meta.desc ? `<span style="font-size:12px;color:var(--t3);margin-left:10px">${meta.desc}</span>` : ''}${cardSubjTag}</span>
               <span style="font-size:12px;color:var(--blue);font-weight:500;white-space:nowrap">🎓 ${hrs.teaching}h</span>
               <span style="font-size:12px;color:var(--yellow);font-weight:500;white-space:nowrap">📝 ${hrs.test}h</span>
               <span style="font-size:12px;color:var(--violet);font-weight:500;white-space:nowrap">🔁 ${hrs.mock}h</span>
@@ -312,70 +334,103 @@ function renderPlansTab(container) {
   }
 
   el.innerHTML = `
-    <div class="module-toolbar" style="margin-bottom:16px">
+    <div class="module-toolbar" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div class="search-wrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="lpSearch" class="search-input" placeholder="Search plans…"/>
+        <input id="lpSearch" class="search-input" placeholder="Search by code, title, subject…" value="${_lpPlanFilter.search}"/>
       </div>
-      <span class="record-count">${allMeta.length} plan${allMeta.length !== 1 ? 's' : ''} · ${totalRows} total rows</span>
-      <button id="lpNewBtn" class="add-btn" style="margin-left:auto">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <div id="lpFiltDisc" class="lp-asg-mf"></div>
+        <div id="lpFiltLevel" class="lp-asg-mf"></div>
+        <div id="lpFiltSubj" class="lp-asg-mf"></div>
+        ${(hasDiscF||hasLevelF||hasSubjF||hasSearch) ? `<button id="lpFiltClearAll" style="font-size:11px;padding:4px 10px;border-radius:6px;background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2);cursor:pointer;font-family:var(--font)">✕ Clear All</button>` : ''}
+      </div>
+      <span class="record-count" style="margin-left:auto">${plans.length}/${allMeta.length} plan${allMeta.length !== 1 ? 's' : ''} · ${totalRows} rows</span>
+      <button id="lpNewBtn" class="add-btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         New Plan
       </button>
     </div>
 
-    <div class="lp-selectors">
-      <div>
-        <span class="lp-sel-label">1 — Discipline</span>
-        <select id="lpDiscSel" class="form-select form-input">
-          <option value="">All Disciplines</option>
-          ${discOpts}
-        </select>
-      </div>
-      <div>
-        <span class="lp-sel-label">2 — Subject</span>
-        <select id="lpSubjSel" class="form-select form-input" ${!_lpActiveDiscId ? 'disabled' : ''}>
-          <option value="">All Subjects</option>
-          ${subjOpts}
-        </select>
-      </div>
-      <div>
-        <span class="lp-sel-label">3 — Plan</span>
-        <select id="lpPlanSel" class="form-select form-input" ${!plans.length ? 'disabled' : ''}>
-          <option value="">— Show all cards —</option>
-          ${plans.map(p => `<option value="${p.id}" ${p.id === _lpActiveLPId ? 'selected' : ''}>${p.code} · ${p.title}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
     <div id="lpPlanArea">${plansHTML}</div>
   `;
 
-  // Wire selectors
-  el.querySelector('#lpDiscSel')?.addEventListener('change', e => {
-    _lpActiveDiscId = e.target.value; _lpActiveSubjId = ''; _lpActiveLPId = '';
+  // ── Init multi-filter widgets ─────────────────────────────────
+  _injectLPAsgMFStyles();
+
+  // Discipline filter
+  _initLPAsgMF(
+    el.querySelector('#lpFiltDisc'),
+    'Discipline',
+    discs.map(d => ({ value: d.id, label: d.abbreviation || d.fullName })),
+    _lpPlanFilter.discIds,
+    (vals) => { _lpPlanFilter.discIds = vals; _lpPlanFilter.levelIds = []; _lpPlanFilter.subjIds = []; _lpActiveLPId = ''; renderPlansTab(container); },
+    true  // multi-select
+  );
+
+  // Level filter (filtered by selected disciplines)
+  const filtLevels = hasDiscF
+    ? levels.filter(l => _lpPlanFilter.discIds.includes(l.disciplineId))
+    : levels;
+  _initLPAsgMF(
+    el.querySelector('#lpFiltLevel'),
+    'Level',
+    filtLevels.map(l => ({ value: l.id, label: l.levelName || l.name || l.id })),
+    _lpPlanFilter.levelIds,
+    (vals) => { _lpPlanFilter.levelIds = vals; _lpPlanFilter.subjIds = []; _lpActiveLPId = ''; renderPlansTab(container); },
+    true
+  );
+
+  // Subject filter (filtered by selected disciplines/levels)
+  let filtSubjs = subjects;
+  if (hasLevelF) {
+    filtSubjs = subjects.filter(s => _lpPlanFilter.levelIds.includes(s.levelId));
+  } else if (hasDiscF) {
+    filtSubjs = subjects.filter(s => {
+      const lv = levels.find(l => l.id === s.levelId);
+      return lv && _lpPlanFilter.discIds.includes(lv.disciplineId);
+    });
+  }
+  _initLPAsgMF(
+    el.querySelector('#lpFiltSubj'),
+    'Subject',
+    filtSubjs.map(s => ({ value: s.id, label: s.subjectCode || s.subjectName })),
+    _lpPlanFilter.subjIds,
+    (vals) => { _lpPlanFilter.subjIds = vals; _lpActiveLPId = ''; renderPlansTab(container); },
+    true
+  );
+
+  // Clear all filters button
+  el.querySelector('#lpFiltClearAll')?.addEventListener('click', () => {
+    _lpPlanFilter = { discIds: [], levelIds: [], subjIds: [], search: '' };
+    _lpActiveLPId = '';
     renderPlansTab(container);
   });
-  el.querySelector('#lpSubjSel')?.addEventListener('change', e => {
-    _lpActiveSubjId = e.target.value; _lpActiveLPId = '';
-    renderPlansTab(container);
-  });
-  el.querySelector('#lpPlanSel')?.addEventListener('change', e => {
-    _lpActiveLPId = e.target.value;
-    renderPlansTab(container);
-  });
+
   el.querySelector('#lpNewBtn')?.addEventListener('click', () => {
     _openPlanForm(null, container);
   });
+
+  // Search bar
   el.querySelector('#lpSearch')?.addEventListener('input', e => {
-    const q = e.target.value.toLowerCase();
-    el.querySelectorAll('.lp-card[data-lp-select]').forEach(card => {
-      const text = card.textContent.toLowerCase();
-      card.style.display = !q || text.includes(q) ? '' : 'none';
+    _lpPlanFilter.search = e.target.value;
+    _lpActiveLPId = '';
+    renderPlansTab(container);
+  });
+  // Wire plan checkboxes — toggle selection, re-render to resort
+  el.querySelectorAll('.lp-plan-chk').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const id = chk.dataset.lpId;
+      if (chk.checked) _lpSelectedIds.add(id);
+      else _lpSelectedIds.delete(id);
+      renderPlansTab(container);
     });
   });
+
   el.querySelectorAll('.lp-card[data-lp-select]').forEach(card => {
-    card.addEventListener('click', () => {
+    card.addEventListener('click', (e) => {
+      // Don't open detail if clicking the checkbox itself
+      if (e.target.classList.contains('lp-plan-chk')) return;
       _lpActiveLPId = card.dataset.lpSelect;
       renderPlansTab(container);
     });
@@ -918,12 +973,16 @@ function _injectLPAsgMFStyles() {
 }
 
 // ── LP Assignments multi-filter: init one widget ──────────────
-// single-select: clicking an item selects it exclusively (like Odoo group-by)
-function _initLPAsgMF(wrap, label, items, selectedVals, onChange) {
+// multiSelect=false → single-select (like Odoo group-by)
+// multiSelect=true  → multi-select (checkboxes, used in Plans tab)
+function _initLPAsgMF(wrap, label, items, selectedVals, onChange, multiSelect = false) {
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  let selected = selectedVals[0] || '';   // single-select
+  // normalize: single-select keeps a string, multi keeps an array
+  let selected = multiSelect
+    ? (Array.isArray(selectedVals) ? [...selectedVals] : [])
+    : (selectedVals[0] || '');
 
   // ── Build DOM ──────────────────────────────────────────────
   const btn = document.createElement('div');
@@ -975,11 +1034,14 @@ function _initLPAsgMF(wrap, label, items, selectedVals, onChange) {
     if (!filtered.length) {
       list.innerHTML = `<div class="lp-asg-mf-empty">No ${label.toLowerCase()}s found</div>`;
     } else {
-      list.innerHTML = filtered.map(i => `
-        <div class="lp-asg-mf-item ${selected === i.val ? 'selected' : ''}" data-val="${i.val}">
+      list.innerHTML = filtered.map(i => {
+        const v = i.value ?? i.val ?? '';
+        const isSel = multiSelect ? selected.includes(v) : selected === v;
+        return `<div class="lp-asg-mf-item ${isSel ? 'selected' : ''}" data-val="${v}">
           <span class="mf-check"></span>
           <span>${i.label}</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     }
 
     countSpan.textContent = `${filtered.length} option${filtered.length !== 1 ? 's' : ''}`;
@@ -987,39 +1049,55 @@ function _initLPAsgMF(wrap, label, items, selectedVals, onChange) {
     list.querySelectorAll('.lp-asg-mf-item').forEach(item => {
       item.addEventListener('click', () => {
         const val = item.dataset.val;
-        if (selected === val) {
-          selected = '';              // clicking same → deselect
+        if (multiSelect) {
+          // Toggle in array
+          const idx = selected.indexOf(val);
+          if (idx > -1) selected.splice(idx, 1);
+          else selected.push(val);
+          renderList(searchInp.value);
+          renderBtn();
+          onChange([...selected]);   // don't close — allow multi pick
         } else {
-          selected = val;
+          if (selected === val) selected = '';
+          else selected = val;
+          renderList(searchInp.value);
+          renderBtn();
+          panel.classList.remove('open');
+          onChange(selected);
         }
-        renderList(searchInp.value);
-        renderBtn();
-        // Close panel
-        panel.classList.remove('open');
-        onChange(selected);
       });
     });
   };
 
   // ── Render button ──────────────────────────────────────────
   const renderBtn = () => {
-    if (!selected) {
+    const isEmpty = multiSelect ? selected.length === 0 : !selected;
+    if (isEmpty) {
       btn.className = 'lp-asg-mf-btn';
       btn.innerHTML = `<span>All ${label}s</span><span class="mf-caret">▾</span>`;
     } else {
-      const found = items.find(i => i.val === selected);
-      const lbl   = found ? found.label : selected;
-      // Truncate long labels
-      const short = lbl.length > 22 ? lbl.slice(0, 20) + '…' : lbl;
+      let lbl;
+      if (multiSelect) {
+        if (selected.length === 1) {
+          const found = items.find(i => i.value === selected[0]);
+          lbl = found ? found.label : selected[0];
+          lbl = lbl.length > 20 ? lbl.slice(0,18)+'…' : lbl;
+        } else {
+          lbl = `${selected.length} selected`;
+        }
+      } else {
+        const found = items.find(i => i.val === selected);
+        lbl = found ? found.label : selected;
+        lbl = lbl.length > 22 ? lbl.slice(0,20)+'…' : lbl;
+      }
       btn.className = 'lp-asg-mf-btn active';
-      btn.innerHTML = `<span>${short}</span><span class="mf-clear" data-mf-clear>✕</span><span class="mf-caret">▾</span>`;
-      // Wire the inline ✕ clear button
+      btn.innerHTML = `<span>${lbl}</span><span class="mf-clear" data-mf-clear>✕</span><span class="mf-caret">▾</span>`;
       btn.querySelector('[data-mf-clear]')?.addEventListener('click', e => {
         e.stopPropagation();
-        selected = '';
+        selected = multiSelect ? [] : '';
         renderBtn();
         renderList(searchInp.value);
-        onChange('');
+        onChange(multiSelect ? [] : '');
       });
     }
   };
@@ -1029,10 +1107,10 @@ function _initLPAsgMF(wrap, label, items, selectedVals, onChange) {
 
   // ── Reset button ───────────────────────────────────────────
   resetBtn.addEventListener('click', () => {
-    selected = '';
+    selected = multiSelect ? [] : '';
     renderList(searchInp.value);
     renderBtn();
-    onChange('');
+    onChange(multiSelect ? [] : '');
   });
 
   // ── Toggle panel ───────────────────────────────────────────
