@@ -57,7 +57,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 /* APP */
 #appShell{display:none}
 .app{display:flex;min-height:100vh}
-.sidebar{width:var(--sw);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.sidebar{width:var(--sw);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:300;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
 .sidebar.collapsed{width:var(--scw)}
 .sidebar.collapsed .sb-hide{display:none!important}
 .sidebar.collapsed .nav-item{justify-content:center;padding:0 10px;height:42px}
@@ -527,7 +527,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 <!-- Chart.js loaded before app module so Chart global is available -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
-<!-- Sidebar hover-to-expand + mobile close -->
+<!-- Sidebar: desktop hover/pin + mobile open/close -->
 <script>
 (function() {
   function isMobile() { return window.innerWidth <= 768; }
@@ -539,28 +539,27 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
     let closeTimer = null;
     let isPinned   = false;
 
-    // ── Helper: close on mobile ──────────────────────────────
+    // ── Mobile: close sidebar ────────────────────────────────
     function closeMobileSidebar() {
       sidebar.classList.remove('mobile-open');
-      // remove backdrop if exists
       const bd = document.getElementById('sbBackdrop');
       if (bd) bd.remove();
     }
 
-    // ── Helper: open on mobile ───────────────────────────────
+    // ── Mobile: open sidebar + backdrop ─────────────────────
     function openMobileSidebar() {
       sidebar.classList.add('mobile-open');
-      // create backdrop
       if (!document.getElementById('sbBackdrop')) {
         const bd = document.createElement('div');
         bd.id = 'sbBackdrop';
-        bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;';
+        // z-index:299 — below sidebar(300) but above everything else
+        bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:299;cursor:pointer;';
         bd.addEventListener('click', closeMobileSidebar);
         document.body.appendChild(bd);
       }
     }
 
-    // ── Mobile hamburger (☰) — open ──────────────────────────
+    // ── Hamburger button (☰) ─────────────────────────────────
     document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
       if (sidebar.classList.contains('mobile-open')) {
         closeMobileSidebar();
@@ -569,14 +568,14 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
       }
     });
 
-    // ── Nav items on mobile — close after navigation ─────────
+    // ── Nav items: close sidebar after tap on mobile ─────────
     sidebar.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', () => {
         if (isMobile()) closeMobileSidebar();
       });
     });
 
-    // ── Desktop: CollapseBtn = pin/unpin toggle ───────────────
+    // ── Desktop: CollapseBtn pin/unpin ───────────────────────
     const collapseBtn = document.getElementById('collapseBtn');
     collapseBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -590,29 +589,24 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
       }
     });
 
-    // ── Desktop: Hover expand ─────────────────────────────────
+    // ── Desktop: hover expand/collapse ──────────────────────
     sidebar.addEventListener('mouseenter', () => {
       if (isMobile()) return;
       clearTimeout(closeTimer);
       sidebar.classList.remove('collapsed');
     });
-
     sidebar.addEventListener('mouseleave', () => {
-      if (isMobile()) return;
-      if (isPinned) return;
+      if (isMobile() || isPinned) return;
       clearTimeout(closeTimer);
-      closeTimer = setTimeout(() => {
-        sidebar.classList.add('collapsed');
-      }, 250);
+      closeTimer = setTimeout(() => sidebar.classList.add('collapsed'), 250);
     });
 
-    // ── Resize: clean up mobile state on desktop ──────────────
+    // ── Resize: clean up mobile state ───────────────────────
     window.addEventListener('resize', () => {
       if (!isMobile()) closeMobileSidebar();
     });
   }
 
-  // appShell visible hone ke baad init
   const appShell = document.getElementById('appShell');
   if (appShell) {
     const observer = new MutationObserver((mutations) => {
@@ -627,10 +621,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
     });
     observer.observe(appShell, { attributes: true });
   }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(initSidebar, 500);
-  });
+  document.addEventListener('DOMContentLoaded', () => setTimeout(initSidebar, 500));
 })();
 </script>
 
