@@ -179,6 +179,69 @@ function injectLPStyles() {
       border:1px solid var(--border);border-radius:4px;color:var(--t1);
       font-size:12px;font-family:var(--font);outline:none}
     .lp-row-input:focus{border-color:var(--blue)}
+
+    /* ── Responsive: Tablet (≤768px) ───────────────────────── */
+    @media(max-width:768px){
+      /* Tabs scrollable */
+      .lp-tabs{overflow-x:auto;flex-wrap:nowrap!important;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+      .lp-tabs::-webkit-scrollbar{display:none}
+      .lp-tab-btn{font-size:11.5px!important;padding:7px 11px!important;white-space:nowrap}
+
+      /* Plan card row → wrap to flex column on small screens */
+      .lp-card-head .lp-plan-row-grid{
+        display:flex!important;flex-direction:column!important;gap:6px!important;
+      }
+      .lp-card.lp-card-selected{border-left:3px solid var(--blue)}
+
+      /* Toolbar */
+      .module-toolbar{flex-direction:column!important;align-items:stretch!important}
+      .search-wrap{width:100%!important}
+      .search-input{width:100%!important;min-width:0!important}
+
+      /* Filters row — scroll horizontally */
+      #lpFiltRow{display:flex;overflow-x:auto;gap:6px;padding-bottom:4px;scrollbar-width:none}
+      #lpFiltRow::-webkit-scrollbar{display:none}
+      .lp-asg-mf{flex-shrink:0}
+      .lp-asg-mf-btn{font-size:11px!important;padding:5px 9px!important;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .lp-asg-mf-panel{min-width:180px!important;left:0!important}
+
+      /* Plan card hours badges wrap */
+      .lp-hours-strip{gap:6px!important}
+
+      /* Table on mobile — horizontal scroll */
+      .lp-table-wrap{max-height:60vh!important;-webkit-overflow-scrolling:touch}
+
+      /* Row editor */
+      .lp-row-editor-wrap{max-height:50vh!important}
+
+      /* Assignment list */
+      .lp-assign-row{flex-direction:column!important;align-items:flex-start!important;gap:8px!important;padding:10px 12px!important}
+      .lp-assign-list-wrap{max-height:55vh!important}
+
+      /* Selectors grid → 1 col */
+      .lp-selectors{grid-template-columns:1fr!important}
+
+      /* Plan detail header buttons — wrap */
+      .lp-card-head > div:last-child{flex-wrap:wrap!important;gap:4px!important}
+
+      /* Notification cards */
+      .lp-notif-card-head{flex-direction:column!important;align-items:flex-start!important}
+    }
+
+    /* ── Responsive: Phone (≤480px) ────────────────────────── */
+    @media(max-width:480px){
+      .lp-tab-btn{font-size:10.5px!important;padding:6px 8px!important}
+      .lp-card-head{padding:8px 10px!important}
+      .lp-hours-strip{padding:8px 10px!important;gap:5px!important}
+      .lp-table-wrap{font-size:11.5px!important}
+
+      /* Hide # column on very small */
+      .lp-table-wrap th:first-child,
+      .lp-table-wrap td:first-child{display:none!important}
+
+      /* Compact add buttons */
+      .add-btn{font-size:11px!important;padding:5px 9px!important}
+    }
   `;
   document.head.appendChild(s);
 }
@@ -304,7 +367,7 @@ function renderPlansTab(container) {
       return `
         <div class="lp-card${isSelected ? ' lp-card-selected' : ''}" data-lp-select="${meta.id}">
           <div class="lp-card-head" style="padding:10px 16px">
-            <div style="display:grid;grid-template-columns:32px 60px 1fr 180px 120px 110px 120px;align-items:center;width:100%;gap:4px">
+            <div class="lp-plan-row-grid" style="display:grid;grid-template-columns:32px 60px 1fr 180px 120px 110px 120px;align-items:center;width:100%;gap:4px">
               <input type="checkbox" class="lp-plan-chk" data-lp-id="${meta.id}"
                      ${isSelected ? 'checked' : ''}
                      style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue)"
@@ -339,7 +402,7 @@ function renderPlansTab(container) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input id="lpSearch" class="search-input" placeholder="Search by code, title, subject…" value="${_lpPlanFilter.search}"/>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <div id="lpFiltRow" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <div id="lpFiltDisc" class="lp-asg-mf"></div>
         <div id="lpFiltLevel" class="lp-asg-mf"></div>
         <div id="lpFiltSubj" class="lp-asg-mf"></div>
