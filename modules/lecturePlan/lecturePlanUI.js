@@ -35,7 +35,8 @@ let _lpEditingRows   = [];
 let _lpEditingLPId   = '';
 let _lpAssignState   = {};
 let _lpAssignFilter  = { campusId: '', discId: '', levelId: '', subjId: '', sessionId: '', search: '' };
-let _lpAsgSearchTimer = null;
+let _lpAsgSearchTimer  = null;
+let _lpSearchTimer     = null;
 
 // ── Helpers ───────────────────────────────────────────────────
 function fmtDate(ds) {
@@ -290,6 +291,67 @@ function _batchTeacherNames(batch) {
   const t = AppState.findById('teachers', batch?.teacherId);
   return t?.fullName || batch?.teacherName || '';
 }
+// ── Partial refresh: only re-render plan cards (no focus loss) ───────────────
+function _refreshPlanCards(container) {
+  const el = container.querySelector('#lp-panel-plans');
+  if (!el) return;
+
+  const planArea = el.querySelector('#lpPlanArea');
+  if (!planArea) { renderPlansTab(container); return; }
+
+  const { getLPMeta, getLPRows } = LecturePlanService;
+  const allMeta  = getLPMeta();
+  const subjects = AppState.getAll('subjects')  || [];
+  const levels   = AppState.getAll('levels')    || [];
+
+  const hasDiscF  = _lpPlanFilter.discIds.length  > 0;
+  const hasLevelF = _lpPlanFilter.levelIds.length > 0;
+  const hasSubjF  = _lpPlanFilter.subjIds.length  > 0;
+  const hasSearch = _lpPlanFilter.search.trim().length > 0;
+
+  const plans = allMeta.filter(p => {
+    if (hasDiscF && !_lpPlanFilter.discIds.includes(p.disciplineId)) return false;
+    if (hasLevelF) {
+      const subj = subjects.find(s => s.id === p.subjectId);
+      if (!subj || !_lpPlanFilter.levelIds.includes(subj.levelId)) return false;
+    }
+    if (hasSubjF && !_lpPlanFilter.subjIds.includes(p.subjectId)) return false;
+    if (hasSearch) {
+      const q = _lpPlanFilter.search.toLowerCase();
+      const subj = subjects.find(s => s.id === p.subjectId);
+      if (!(p.code||'').toLowerCase().includes(q) &&
+          !(p.title||'').toLowerCase().includes(q) &&
+          !(subj?.subjectCode||'').toLowerCase().includes(q) &&
+          !(subj?.subjectName||'').toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Update record count
+  const totalRows = plans.reduce((s, m) => s + getLPRows(m.id).length, 0);
+  const rc = el.querySelector('.record-count');
+  if (rc) rc.textContent = `${plans.length}/${allMeta.length} plan${allMeta.length !== 1 ? 's' : ''} · ${totalRows} rows`;
+
+  // Re-render only the cards area
+  // (reuse existing card builder by calling renderPlansTab only if we can't build inline)
+  // Simple: just call renderPlansTab but restore focus after
+  const activeEl   = document.activeElement;
+  const selStart   = activeEl?.selectionStart;
+  const selEnd     = activeEl?.selectionEnd;
+  const activeId   = activeEl?.id;
+
+  renderPlansTab(container);
+
+  // Restore focus + cursor position
+  if (activeId) {
+    const restored = container.querySelector(`#${activeId}`);
+    if (restored) {
+      restored.focus();
+      try { restored.setSelectionRange(selStart, selEnd); } catch(_) {}
+    }
+  }
+}
+
 function renderPlansTab(container) {
   // ── One-time backfill: freeze snapshots on old LP records ────────────────
   LecturePlanService.backfillSnapshots();
@@ -474,11 +536,12 @@ function renderPlansTab(container) {
     _openPlanForm(null, container);
   });
 
-  // Search bar
+  // Search bar — update only plan cards, preserve input focus
   el.querySelector('#lpSearch')?.addEventListener('input', e => {
     _lpPlanFilter.search = e.target.value;
     _lpActiveLPId = '';
-    renderPlansTab(container);
+    clearTimeout(_lpSearchTimer);
+    _lpSearchTimer = setTimeout(() => _refreshPlanCards(container), 180);
   });
   // Wire plan checkboxes — toggle selection, re-render to resort
   el.querySelectorAll('.lp-plan-chk').forEach(chk => {
