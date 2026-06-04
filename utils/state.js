@@ -1,20 +1,10 @@
 // ============================================================
-// utils/state.js — Central State Management (Single Source of Truth)
-// v4: Async boot — loadState() now awaits Storage.loadAll() first
-//
-// CHANGE FROM v3: loadState() is now async.
-// Your app entry point (main.js / app.js / index.html <script>)
-// must await AppState.loadState() before mounting any modules.
-//
-// Example in main.js:
-//   import { AppState } from './utils/state.js';
-//   await AppState.loadState();
-//   // now mount your modules...
+// utils/state.js — Central State Management
+// FIXED: Removed dangerous saveState() calls from loadState()
 // ============================================================
 
 import Storage from './storage.js';
 
-// ── Default shape ─────────────────────────────────────────────
 const DEFAULT_STATE = {
   disciplines:      [],
   campuses:         [],
@@ -39,57 +29,65 @@ const DEFAULT_STATE = {
 };
 
 const STORAGE_KEY = 'appState';
-
-// ── Reactive subscriber registry ──────────────────────────────
 const _subscribers = {};
-
-// ── Internal state object ─────────────────────────────────────
 let _state = DEFAULT_STATE;
+let _loaded = false; // ✅ guard: load complete hua ya nahi
 
-// ── Core API ──────────────────────────────────────────────────
 export const AppState = {
 
-  // ── loadState() — NOW ASYNC ──────────────────────────────────
-  // Fetches database.json via Storage.loadAll(), then merges with
-  // defaults exactly as before. Must be awaited at app boot.
   async loadState() {
-    // 1. Pull everything from database.json into Storage cache
     const fileData = await Storage.loadAll();
-
-    // 2. Extract the appState slice (same key as before)
     const saved = fileData[STORAGE_KEY] || null;
 
     if (saved) {
+      // ✅ Merge with defaults — missing keys fill ho jayein
       _state = { ...DEFAULT_STATE, ...saved };
 
+      // ✅ Migration: naye keys add karo agar purani state mein nahi hain
+      const migrations = {
+        batchSchedules:    [],
+        attendanceRecords: [],
+        students:          [],
+        teachers:          [],
+        lecturePlans:      [],
+        lpRows:            {},
+        lpAssignments:     {},
+        holidays:          [],
+        admissions:        [],
+        challans:          [],
+        feeStructures:     [],
+      };
+      let migrated = false;
+      Object.entries(migrations).forEach(([key, defaultVal]) => {
+        if (_state[key] === undefined || _state[key] === null) {
+          _state[key] = defaultVal;
+          migrated = true;
+        }
+      });
+
+      // ✅ Users missing hain toh sirf users seed karo — POORA data nahi
       if (!_state.users || _state.users.length === 0) {
-        this._seedDefaultData();
+        this._seedUsersOnly();
+        migrated = true;
       }
 
-      // Ensure new keys exist in migrated state
-      if (!_state.batchSchedules)    _state.batchSchedules    = [];
-      if (!_state.attendanceRecords) _state.attendanceRecords = [];
-      if (!_state.students)          _state.students          = [];
-      if (!_state.teachers)          _state.teachers          = [];
-      if (!_state.lecturePlans)      _state.lecturePlans      = [];
-      if (!_state.lpRows)            _state.lpRows            = {};
-      if (!_state.lpAssignments)     _state.lpAssignments     = {};
-      if (!_state.holidays)          _state.holidays          = [];
-      if (!_state.admissions)        _state.admissions        = [];
-      if (!_state.challans)          _state.challans          = [];
-      if (!_state.feeStructures)     _state.feeStructures     = [];
+      // ✅ Sirf tab save karo jab actually kuch migrate hua ho
+      // KABHI bhi full state load pe save mat karo
+      if (migrated) {
+        this.saveState();
+      }
 
-      this.saveState();
     } else {
-      // Fresh install — seed everything
+      // ✅ Fresh install — pehli baar hi seed karo
       _state = structuredClone(DEFAULT_STATE);
       this._seedDefaultData();
+      // saveState() seedDefaultData ke andar call hoti hai — sirf fresh install pe
     }
 
+    _loaded = true;
     return _state;
   },
 
-  // Wipe and re-seed fresh data
   resetState() {
     Storage.clear();
     _state = structuredClone(DEFAULT_STATE);
@@ -97,24 +95,30 @@ export const AppState = {
     return _state;
   },
 
-  // Persist full state to database.json via Storage
   saveState() {
-    Storage.set(STORAGE_KEY, _state);
+    // ✅ Guard: load complete hone se pehle save mat karo
+    if (!_loaded) {
+      console.warn('[AppState] saveState() called before loadState() — skipped!');
+      return;
+    }
+
+    // ✅ currentUser kabhi save mat karo — session alag handle hoti hai
+    const toSave = { ..._state };
+    delete toSave.currentUser;
+
+    Storage.set(STORAGE_KEY, toSave);
   },
 
-  // Read a slice of state
   get(key) {
     return _state[key] ?? null;
   },
 
-  // Replace a full slice and save
   set(key, value) {
     _state[key] = value;
     this.saveState();
     this._notify(key, value);
   },
 
-  // Subscribe to changes on a key
   subscribe(key, fn) {
     if (!_subscribers[key]) _subscribers[key] = [];
     _subscribers[key].push(fn);
@@ -122,8 +126,6 @@ export const AppState = {
       _subscribers[key] = _subscribers[key].filter(f => f !== fn);
     };
   },
-
-  // ── CRUD helpers ────────────────────────────────────────────
 
   add(key, item) {
     const list    = this.get(key) || [];
@@ -148,7 +150,6 @@ export const AppState = {
     return (this.get(key) || []).find(item => item.id === id) ?? null;
   },
 
-  // ── Referential integrity check ──────────────────────────────
   getDependents(key, id) {
     const deps = {
       disciplines: [
@@ -184,13 +185,22 @@ export const AppState = {
     return found;
   },
 
-  // ── Private ──────────────────────────────────────────────────
   _notify(key, value) {
     (_subscribers[key] || []).forEach(fn => {
       try { fn(value); } catch(e) { console.error('[AppState] Subscriber error:', e); }
     });
   },
 
+  // ✅ Sirf users seed karo — baaki data touch mat karo
+  _seedUsersOnly() {
+    _state.users = [
+      { id: 'user_1', username: 'admin',   password: 'admin123',   role: 'admin',   name: 'Usman Malik',    avatar: 'UM', institute: 'FAST National University', campusId: null,     customPermissions: [] },
+      { id: 'user_2', username: 'teacher', password: 'teacher123', role: 'teacher', name: 'Dr. Sara Ahmed', avatar: 'SA', institute: 'FAST National University', campusId: 'camp_1', customPermissions: [] },
+      { id: 'user_3', username: 'viewer',  password: 'viewer123',  role: 'viewer',  name: 'Ali Hassan',     avatar: 'AH', institute: 'FAST National University', campusId: 'camp_2', customPermissions: [] },
+    ];
+  },
+
+  // ✅ Sirf fresh install pe call hota hai
   _seedDefaultData() {
     _state.institutes = [
       { id: 'inst_1', instituteName: 'FAST National University', city: 'Islamabad', estYear: '2000' },
@@ -202,10 +212,10 @@ export const AppState = {
       { id: 'camp_3', campusName: 'North Campus', instituteId: 'inst_2', city: 'Lahore'     },
     ];
     _state.disciplines = [
-      { id: 'disc_1', abbreviation: 'CS',  fullName: 'Computer Science'       },
-      { id: 'disc_2', abbreviation: 'BBA', fullName: 'Business Administration' },
-      { id: 'disc_3', abbreviation: 'EE',  fullName: 'Electrical Engineering'  },
-      { id: 'disc_4', abbreviation: 'MTH', fullName: 'Mathematics'             },
+      { id: 'disc_1', abbreviation: 'CS',  fullName: 'Computer Science'        },
+      { id: 'disc_2', abbreviation: 'BBA', fullName: 'Business Administration'  },
+      { id: 'disc_3', abbreviation: 'EE',  fullName: 'Electrical Engineering'   },
+      { id: 'disc_4', abbreviation: 'MTH', fullName: 'Mathematics'              },
     ];
     _state.levels = [
       { id: 'lvl_1', disciplineId: 'disc_1', levelName: 'Semester 1' },
@@ -216,12 +226,12 @@ export const AppState = {
       { id: 'lvl_6', disciplineId: 'disc_3', levelName: 'Term 1'     },
     ];
     _state.subjects = [
-      { id: 'sub_1', levelId: 'lvl_1', subjectCode: 'CS101',  subjectName: 'Intro to Programming' },
-      { id: 'sub_2', levelId: 'lvl_1', subjectCode: 'CS102',  subjectName: 'Discrete Mathematics' },
-      { id: 'sub_3', levelId: 'lvl_2', subjectCode: 'CS201',  subjectName: 'Data Structures'      },
-      { id: 'sub_4', levelId: 'lvl_2', subjectCode: 'CS202',  subjectName: 'Object Oriented Prog.'},
-      { id: 'sub_5', levelId: 'lvl_4', subjectCode: 'BBA101', subjectName: 'Principles of Mgmt.' },
-      { id: 'sub_6', levelId: 'lvl_6', subjectCode: 'EE101',  subjectName: 'Circuit Analysis'     },
+      { id: 'sub_1', levelId: 'lvl_1', subjectCode: 'CS101',  subjectName: 'Intro to Programming'  },
+      { id: 'sub_2', levelId: 'lvl_1', subjectCode: 'CS102',  subjectName: 'Discrete Mathematics'  },
+      { id: 'sub_3', levelId: 'lvl_2', subjectCode: 'CS201',  subjectName: 'Data Structures'       },
+      { id: 'sub_4', levelId: 'lvl_2', subjectCode: 'CS202',  subjectName: 'Object Oriented Prog.' },
+      { id: 'sub_5', levelId: 'lvl_4', subjectCode: 'BBA101', subjectName: 'Principles of Mgmt.'  },
+      { id: 'sub_6', levelId: 'lvl_6', subjectCode: 'EE101',  subjectName: 'Circuit Analysis'      },
     ];
     _state.roles = [
       { id: 'role_1', roleName: 'Admin',   permissions: ['all'] },
@@ -241,19 +251,20 @@ export const AppState = {
       { id: 'user_3', username: 'viewer',  password: 'viewer123',  role: 'viewer',  name: 'Ali Hassan',     avatar: 'AH', institute: 'FAST National University', campusId: 'camp_2', customPermissions: [] },
     ];
 
-    if (!_state.teachers)          _state.teachers          = [];
-    if (!_state.students)          _state.students          = [];
-    if (!_state.batchSchedules)    _state.batchSchedules    = [];
-    if (!_state.attendanceRecords) _state.attendanceRecords = [];
-    if (!_state.lecturePlans)      _state.lecturePlans      = [];
-    if (!_state.lpRows)            _state.lpRows            = {};
-    if (!_state.lpAssignments)     _state.lpAssignments     = {};
+    _state.teachers          = [];
+    _state.students          = [];
+    _state.batches           = [];
+    _state.batchSchedules    = [];
+    _state.attendanceRecords = [];
+    _state.lecturePlans      = [];
+    _state.lpRows            = {};
+    _state.lpAssignments     = {};
 
+    // ✅ Fresh install pe save — ye theek hai
     this.saveState();
   },
 };
 
-// ── Standalone utility ────────────────────────────────────────
 export function generateID(prefix = 'rec') {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
