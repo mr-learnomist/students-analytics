@@ -1,7 +1,6 @@
-// api/data.js — Vercel Serverless Function
+// api/data.js — Vercel Serverless Function (Safe Version)
 const { MongoClient } = require('mongodb');
 
-// ✅ FIXED: MONGO_URI → MONGODB_URI (Vercel env variable se match)
 const MONGO_URI = process.env.MONGODB_URI;
 const DB_NAME   = 'sms';
 const COL_NAME  = 'appstate';
@@ -10,10 +9,42 @@ let cachedClient = null;
 
 async function connectDB() {
   if (cachedClient) return cachedClient;
+  if (!MONGO_URI) throw new Error('MONGODB_URI environment variable not set');
   const client = new MongoClient(MONGO_URI);
   await client.connect();
   cachedClient = client;
   return client;
+}
+
+// ✅ Protected arrays — empty se overwrite nahi hongi
+const PROTECTED_KEYS = [
+  'students', 'batches', 'teachers', 'admissions',
+  'attendanceRecords', 'lecturePlans', 'feeStructures',
+  'challans', 'batchSchedules', 'disciplines', 'campuses',
+  'institutes', 'levels', 'subjects', 'users', 'holidays',
+  'roles', 'lpRows', 'lpAssignments', 'rooms', 'testRecords'
+];
+
+function mergeProtected(incoming, existing) {
+  const merged = { ...incoming };
+  PROTECTED_KEYS.forEach(key => {
+    const inc = incoming[key];
+    const cur = existing[key];
+
+    const incEmpty =
+      (Array.isArray(inc) && inc.length === 0) ||
+      (inc && typeof inc === 'object' && !Array.isArray(inc) && Object.keys(inc).length === 0);
+
+    const curHasData =
+      (Array.isArray(cur) && cur.length > 0) ||
+      (cur && typeof cur === 'object' && !Array.isArray(cur) && Object.keys(cur).length > 0);
+
+    if (incEmpty && curHasData) {
+      console.warn(`[SMS] Blocked empty overwrite: ${key}`);
+      merged[key] = cur;
+    }
+  });
+  return merged;
 }
 
 module.exports = async function handler(req, res) {
@@ -21,37 +52,75 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
     const client = await connectDB();
-    const db = client.db(DB_NAME);
+    const db     = client.db(DB_NAME);
 
+    // ── GET — data read karo ──────────────────────────────────
     if (req.method === 'GET') {
       const doc  = await db.collection(COL_NAME).findOne({ _id: 'main' });
-      const data = doc ? doc.data : {};
+      let data   = doc ? doc.data : {};
+
+      // ✅ session/currentUser kabhi client ko wapas mat bhejo
+      if (data.appState) delete data.appState.currentUser;
+      if (data.session)  delete data.session;
+
       return res.status(200).json({ success: true, data });
     }
 
+    // ── POST — data save karo ─────────────────────────────────
     if (req.method === 'POST') {
-      const payload = req.body;
+      let payload = req.body;
       if (!payload || typeof payload !== 'object') {
         return res.status(400).json({ success: false, error: 'Invalid payload' });
       }
-      await db.collection(COL_NAME).replaceOne(
+
+      // ✅ session/currentUser save mat karo
+      if (payload.appState) delete payload.appState.currentUser;
+      if (payload.session)  delete payload.session;
+
+      // ✅ existing data fetch karo merge ke liye
+      const existing      = await db.collection(COL_NAME).findOne({ _id: 'main' });
+      const existingState = existing?.data?.appState || {};
+      const newState      = payload.appState || {};
+
+      // ✅ empty arrays se data protect karo
+      payload.appState = mergeProtected(newState, existingState);
+
+      // ✅ backup banao save se pehle
+      if (existing?.data) {
+        await db.collection('appstate_backup').replaceOne(
+          { _id: 'backup_latest' },
+          { _id: 'backup_latest', data: existing.data, savedAt: new Date() },
+          { upsert: true }
+        );
+      }
+
+      // ✅ replaceOne ki jagah updateOne/$set
+      await db.collection(COL_NAME).updateOne(
         { _id: 'main' },
-        { _id: 'main', data: payload, updatedAt: new Date() },
+        { $set: { data: payload, updatedAt: new Date() } },
         { upsert: true }
       );
+
       return res.status(200).json({ success: true });
     }
 
     return res.status(405).json({ success: false, error: 'Method not allowed' });
 
   } catch (e) {
-    console.error('DB Error:', e.message);
+    console.error('[SMS] DB Error:', e.message);
+
+    // ✅ MONGODB_URI missing ho toh clear message
+    if (e.message.includes('MONGODB_URI')) {
+      return res.status(503).json({
+        success: false,
+        error: 'Database not configured — MONGODB_URI missing in Vercel environment variables'
+      });
+    }
+
     return res.status(500).json({ success: false, error: e.message });
   }
 };
