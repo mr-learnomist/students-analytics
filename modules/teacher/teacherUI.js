@@ -1068,4 +1068,25 @@ function _injectTeacherStyles() {
 }
 `;
   document.head.appendChild(s);
+
+  // Extra override — force modal size after any other CSS loads
+  const fix = document.createElement('style');
+  fix.id = 'teacher-modal-fix';
+  fix.textContent = `
+    .modal-overlay { position:fixed!important;inset:0!important;padding:16px!important;
+      display:flex!important;align-items:center!important;justify-content:center!important;
+      overflow:hidden!important;z-index:9999!important;box-sizing:border-box!important; }
+    .modal { height:auto!important;max-height:calc(100vh - 32px)!important;
+      display:flex!important;flex-direction:column!important;overflow:hidden!important;
+      box-sizing:border-box!important;width:100%!important;
+      max-width:min(860px,calc(100vw - 32px))!important; }
+    .modal.modal--lg { max-width:min(1200px,calc(100vw - 32px))!important;width:calc(100vw - 32px)!important; }
+    .modal.modal--sm { max-width:min(480px,calc(100vw - 32px))!important; }
+    .modal-header,.modal-footer,.modal-actions { flex-shrink:0!important; }
+    .modal-body { flex:1 1 0%!important;min-height:0!important;overflow-y:auto!important;
+      overflow-x:hidden!important; }
+  `;
+  // Remove existing and re-add to ensure it's last (highest priority)
+  document.getElementById('teacher-modal-fix')?.remove();
+  document.head.appendChild(fix);
 }
