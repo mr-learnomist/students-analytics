@@ -261,9 +261,10 @@ export function injectUIStyles() {
   position: fixed; inset: 0; z-index: 1000;
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   padding: 16px;
   box-sizing: border-box;
+  overflow-y: auto;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s;
 }
@@ -274,7 +275,7 @@ export function injectUIStyles() {
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-height: calc(100vh - 32px);
+  margin: auto;
   display: flex;
   flex-direction: column;
   overflow: hidden;
