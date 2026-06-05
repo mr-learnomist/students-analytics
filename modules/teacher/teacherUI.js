@@ -317,7 +317,7 @@ function _handleFormSubmit(modalEl, existing, profilePicture, container) {
 // ── Credentials reveal modal (shown once after add) ───────────
 function _showCredentials(teacher, plainPassword) {
   Modal.open({
-    title: '✅ Teacher Add Ho Gaya',
+    title: '✅ Teacher Added',
     size:  'sm',
     body: `
       <div style="display:flex;flex-direction:column;gap:16px">
