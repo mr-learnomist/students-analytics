@@ -54,12 +54,10 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // ✅ POST ke liye secret key check karo
-  if (req.method === 'POST') {
-    const incoming = req.headers['x-api-key'];
-    if (!SECRET_KEY || incoming !== SECRET_KEY) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
+  // ✅ GET aur POST dono ke liye auth check
+  const incoming = req.headers['x-api-key'];
+  if (!SECRET_KEY || incoming !== SECRET_KEY) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
   try {
