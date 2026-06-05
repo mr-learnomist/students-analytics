@@ -262,7 +262,8 @@ export function injectUIStyles() {
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
-  padding: 20px;
+  padding: 16px;
+  box-sizing: border-box;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s;
 }
@@ -273,15 +274,20 @@ export function injectUIStyles() {
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   width: 100%;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
   transform: translateY(12px) scale(0.98);
   transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
-  overflow: hidden;
 }
 .modal-backdrop.modal--open .modal-box { transform: translateY(0) scale(1); }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .modal-title { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--t1); }
 .modal-close {
@@ -290,12 +296,22 @@ export function injectUIStyles() {
   color: var(--t3); transition: background 0.15s, color 0.15s;
 }
 .modal-close:hover { background: var(--surface2); color: var(--t1); }
-.modal-body { padding: 20px 24px; }
+.modal-body {
+  padding: 20px 24px;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.modal-body::-webkit-scrollbar { width: 5px; }
+.modal-body::-webkit-scrollbar-track { background: transparent; }
+.modal-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 10px; }
 .modal-footer {
   display: flex; gap: 8px; justify-content: flex-end;
   padding: 14px 24px;
   border-top: 1px solid var(--border);
   background: var(--surface2);
+  flex-shrink: 0;
 }
 
 /* ── Modal Buttons ── */
