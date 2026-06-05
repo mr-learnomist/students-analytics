@@ -420,7 +420,7 @@ export const UsersModule = {
                 const timeout = setTimeout(() => reject(new Error('timeout')), 4000);
                 const check = async () => {
                   try {
-                    const res  = await fetch('/api/data');
+                    const res  = await fetch('/api/data', {headers:{'x-api-key':'malik@2020'}});
                     const json = await res.json();
                     // ✅ FIX: Handle all possible MongoDB response structures
                     const users = json.data?.appState?.users
