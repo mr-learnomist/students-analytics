@@ -937,7 +937,7 @@ function _injectTeacherStyles() {
 }
 
 .modal.modal--lg {
-  max-width: min(1000px, calc(100vw - 24px)) !important;
+  max-width: min(1200px, calc(100vw - 24px)) !important; width: calc(100vw - 24px) !important;
 }
 .modal.modal--sm {
   max-width: min(480px, calc(100vw - 24px)) !important;
