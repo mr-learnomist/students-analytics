@@ -919,7 +919,7 @@ function _openColChooser(container) {
       </div>
       <div style="padding:16px 20px;display:flex;flex-direction:column;gap:8px">
         ${allCols.map(c => `
-          <label style="display:flex;align-items:center;gap:10px;cursor:${c.locked ? 'default' : 'pointer'};padding:6px 8px;border-radius:8px;transition:background .15s" ${!c.locked ? 'onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''"' : ''}>
+          <label style="display:flex;align-items:center;gap:10px;cursor:${c.locked ? 'default' : 'pointer'};padding:6px 8px;border-radius:8px;transition:background .15s">
             <input type="checkbox" data-col-id="${c.id}"
               ${_visibleCols.has(c.id) ? 'checked' : ''}
               ${c.locked ? 'disabled' : ''}
