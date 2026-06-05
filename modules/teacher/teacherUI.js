@@ -898,7 +898,7 @@ function _injectTeacherStyles() {
   padding: 2px 7px; border-radius: 10px; letter-spacing: .04em;
 }
 
-/* ── Modal viewport fit — zoom-safe, header/footer always static ── */
+/* ── Modal viewport fit ── */
 .modal-overlay {
   position: fixed !important;
   inset: 0 !important;
@@ -906,41 +906,29 @@ function _injectTeacherStyles() {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  padding: 12px !important;
+  padding: 16px !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
 }
 
-/* Modal box: always fits inside viewport, never overflows */
+/* Modal box: height auto, max-height keeps it inside viewport */
 .modal {
-  /* Use svh (small viewport height) — accounts for mobile bars + zoom */
-  height: calc(100svh - 24px) !important;
-  max-height: calc(100svh - 24px) !important;
-  max-width: min(860px, calc(100vw - 24px)) !important;
+  height: auto !important;
+  max-height: calc(100vh - 32px) !important;
+  max-width: min(860px, calc(100vw - 32px)) !important;
   width: 100% !important;
-  /* Flex column so header/footer are fixed, body scrolls */
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
-  /* Fallback for browsers without svh */
-  height: calc(100vh - 24px) !important;
-  max-height: calc(100vh - 24px) !important;
-}
-
-/* svh override — better zoom handling */
-@supports (height: 100svh) {
-  .modal {
-    height: calc(100svh - 24px) !important;
-    max-height: calc(100svh - 24px) !important;
-  }
 }
 
 .modal.modal--lg {
-  max-width: min(1200px, calc(100vw - 24px)) !important; width: calc(100vw - 24px) !important;
+  max-width: min(1200px, calc(100vw - 32px)) !important;
+  width: calc(100vw - 32px) !important;
 }
 .modal.modal--sm {
-  max-width: min(480px, calc(100vw - 24px)) !important;
+  max-width: min(480px, calc(100vw - 32px)) !important;
 }
 
 /* Header and footer: never shrink — always visible */
@@ -948,13 +936,12 @@ function _injectTeacherStyles() {
 .modal-footer,
 .modal-actions {
   flex-shrink: 0 !important;
-  min-height: fit-content !important;
 }
 
-/* Body: takes all remaining space, scrolls internally */
+/* Body: scrolls internally */
 .modal-body {
   flex: 1 1 0% !important;
-  min-height: 0 !important;        /* critical for flex scroll to work */
+  min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain !important;
