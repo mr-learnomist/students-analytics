@@ -374,7 +374,7 @@ export const UsersModule = {
             const selectedCampusIds = [...modalEl.querySelectorAll('.campus-checkbox:checked')]
               .map(cb => cb.dataset.campusId);
             data.campusIds = selectedCampusIds;
-            data.campusId  = selectedCampusIds.length === 1 ? selectedCampusIds[0] : (selectedCampusIds[0] || null);
+            data.campusId = data.role === 'admin' ? null : (selectedCampusIds.length === 1 ? selectedCampusIds[0] : null);
 
             if (data.role !== 'admin') {
               const checkedPerms = [...modalEl.querySelectorAll('.perm-checkbox:checked')]
