@@ -11,7 +11,7 @@ const Storage = (() => {
   const API        = '/api/data';
   // ✅ Ye key Vercel environment variable se match karni chahiye
   // Vercel Dashboard → Settings → Env Variables → API_SECRET_KEY
-  const SECRET_KEY = 'skans2024xK9p';
+  const SECRET_KEY = 'malik@2020';
 
   let _cache    = null;
   let _saving   = false;
