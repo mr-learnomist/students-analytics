@@ -18,6 +18,12 @@ let _searchVal   = '';
 let _discFilter  = '';
 let _campFilter  = '';
 
+// ── Visible columns (table view) ──────────────────────────────
+const _DEFAULT_COLS = ['name','qualification','disciplines','subjects','campuses','contact','status'];
+let _visibleCols = new Set(
+  JSON.parse(localStorage.getItem('sms_teacher_cols') || 'null') || _DEFAULT_COLS
+);
+
 export const TeacherUI = {
 
   mount(container) {
@@ -127,29 +133,29 @@ function _renderTable(body, rows, container) {
     handler: (row) => _deleteTeacher(row, container),
   });
 
+  // Only show visible columns
+  const allCols = [
+    { id: 'name',          label: 'Name',          key: 'fullName',      always: true,
+      render: (val, row) => `<div><div style="font-weight:600;color:var(--t1)">${val}</div><div style="font-size:11.5px;color:var(--t3);margin-top:2px">${row.email}</div></div>` },
+    { id: 'qualification', label: 'Qualification', key: 'qualification', width: '150px',
+      render: (v) => `<span style="color:var(--t2);font-size:12.5px">${v || '—'}</span>` },
+    { id: 'disciplines',   label: 'Disciplines',   key: 'disciplines',   width: '150px',
+      render: (ids) => _disciplinePills(ids) },
+    { id: 'subjects',      label: 'Subjects',      key: 'teachingSubjects', width: '160px',
+      render: (ids) => _subjectPills(ids) },
+    { id: 'campuses',      label: 'Campuses',      key: 'campuses',      width: '130px',
+      render: (ids) => _campusPills(ids) },
+    { id: 'contact',       label: 'Contact',       key: 'contactNumber', width: '120px',
+      render: (v) => `<span style="font-family:var(--font-mono);font-size:12px;color:var(--t2)">${v || '—'}</span>` },
+    { id: 'status',        label: 'Status',        key: 'isActive',      width: '80px',
+      render: (v) => v !== false ? `<span class="badge badge--green">Active</span>` : `<span class="badge badge--red">Inactive</span>` },
+  ];
+
+  const visibleCols = allCols.filter(c => c.always || _visibleCols.has(c.id));
+  const avatarCol   = { key: 'profilePicture', label: '', width: '48px', render: (pic, row) => _avatarHTML(pic, row.fullName, 32) };
+
   Table.render(body.querySelector('#teacher-table'), {
-    columns: [
-      { key: 'profilePicture', label: '', width: '48px',
-        render: (pic, row) => _avatarHTML(pic, row.fullName, 32) },
-      { key: 'fullName', label: 'Name',
-        render: (val, row) => `
-          <div>
-            <div style="font-weight:600;color:var(--t1)">${val}</div>
-            <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${row.email}</div>
-          </div>` },
-      { key: 'qualification', label: 'Qualification', width: '160px',
-        render: (v) => `<span style="color:var(--t2);font-size:12.5px">${v || '—'}</span>` },
-      { key: 'disciplines', label: 'Disciplines', width: '160px',
-        render: (ids) => _disciplinePills(ids) },
-      { key: 'campuses', label: 'Campuses', width: '140px',
-        render: (ids) => _campusPills(ids) },
-      { key: 'contactNumber', label: 'Contact', width: '130px',
-        render: (v) => `<span style="font-family:var(--font-mono);font-size:12px;color:var(--t2)">${v || '—'}</span>` },
-      { key: 'isActive', label: 'Status', width: '80px',
-        render: (v) => v !== false
-          ? `<span class="badge badge--green">Active</span>`
-          : `<span class="badge badge--red">Inactive</span>` },
-    ],
+    columns: [avatarCol, ...visibleCols.map(c => ({ key: c.key, label: c.label, width: c.width, render: c.render }))],
     rows,
     emptyMsg: 'No teachers found. Click "Add Teacher" to add one.',
     actions,
@@ -647,6 +653,29 @@ function _attachToolbar(container) {
   });
 
   _updateViewToggle(el);
+
+  // ── Export button ────────────────────────────────────────
+  const exportBtn  = el.querySelector('#teacherExportBtn');
+  const exportMenu = el.querySelector('#teacherExportMenu');
+  exportBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportMenu.style.display = exportMenu.style.display === 'none' ? 'block' : 'none';
+  });
+  document.addEventListener('click', () => {
+    if (exportMenu) exportMenu.style.display = 'none';
+  });
+  el.querySelectorAll('.teacher-export-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      exportMenu.style.display = 'none';
+      _exportTeachers(btn.dataset.fmt, el);
+    });
+  });
+
+  // ── Column chooser ───────────────────────────────────────
+  el.querySelector('#teacherColBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _openColChooser(el);
+  });
 }
 
 function _updateViewToggle(el) {
@@ -679,6 +708,15 @@ function _campusPills(ids = []) {
     const c = AppState.findById('campuses', id);
     return c ? `<span class="badge badge--cyan" style="font-size:10.5px;margin-right:3px">${c.campusName}</span>` : '';
   }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+}
+
+function _subjectPills(ids = []) {
+  if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
+  const subjects = AppState.get('subjects') || [];
+  const found = (ids || []).map(id => subjects.find(s => s.id === id)).filter(Boolean);
+  return found.slice(0, 3).map(s =>
+    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px">${s.code || s.subjectName}</span>`
+  ).join('') + (found.length > 3 ? `<span class="badge badge--grey" style="font-size:10.5px">+${found.length - 3}</span>` : '');
 }
 
 // ── Page template ─────────────────────────────────────────────
@@ -731,6 +769,38 @@ function _pageTemplate() {
           </button>
         </div>
 
+        <!-- Column chooser (table view only) -->
+        <button id="teacherColBtn" class="view-btn" title="Choose columns" style="width:auto;padding:0 10px;gap:5px;font-size:12px;font-weight:500">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          Columns
+        </button>
+
+        <!-- Export button -->
+        <div style="position:relative;display:inline-block" id="teacherExportWrap">
+          <button id="teacherExportBtn" class="view-btn" title="Export" style="width:auto;padding:0 10px;gap:5px;font-size:12px;font-weight:500">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export
+          </button>
+          <div id="teacherExportMenu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);z-index:200;min-width:150px;overflow:hidden">
+            <button class="teacher-export-opt" data-fmt="csv" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;font-size:13px;font-weight:500;color:var(--t1);background:none;text-align:left;border:none;cursor:pointer;font-family:inherit">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Export as CSV
+            </button>
+            <button class="teacher-export-opt" data-fmt="pdf" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;font-size:13px;font-weight:500;color:var(--t1);background:none;text-align:left;border:none;cursor:pointer;font-family:inherit">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Export as PDF
+            </button>
+          </div>
+        </div>
+
         <button id="teacherAddBtn" class="add-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -743,6 +813,143 @@ function _pageTemplate() {
       <div id="teacher-body"></div>
     </div>
   `;
+}
+
+// ── Export ────────────────────────────────────────────────────
+function _exportTeachers(fmt, container) {
+  const all = AppState.get('teachers') || [];
+  let rows = all.filter(t => {
+    const q = _searchVal;
+    const matchSearch = !q || (t.fullName||'').toLowerCase().includes(q) || (t.email||'').toLowerCase().includes(q);
+    const matchDisc = !_discFilter || (t.disciplines||[]).includes(_discFilter);
+    const matchCamp = !_campFilter || (t.campuses||[]).includes(_campFilter);
+    return matchSearch && matchDisc && matchCamp;
+  });
+
+  const subjects  = AppState.get('subjects')    || [];
+  const discs     = AppState.get('disciplines') || [];
+  const campuses  = AppState.get('campuses')    || [];
+
+  const colDefs = [
+    { id: 'name',          label: 'Full Name',     get: r => r.fullName || '' },
+    { id: 'qualification', label: 'Qualification', get: r => r.qualification || '' },
+    { id: 'disciplines',   label: 'Disciplines',   get: r => (r.disciplines||[]).map(id => discs.find(d=>d.id===id)?.abbreviation||id).join(', ') },
+    { id: 'subjects',      label: 'Subjects',      get: r => (r.teachingSubjects||[]).map(id => subjects.find(s=>s.id===id)?.code || id).join(', ') },
+    { id: 'campuses',      label: 'Campuses',      get: r => (r.campuses||[]).map(id => campuses.find(c=>c.id===id)?.campusName||id).join(', ') },
+    { id: 'contact',       label: 'Contact',       get: r => r.contactNumber || '' },
+    { id: 'status',        label: 'Status',        get: r => r.isActive === false ? 'Inactive' : 'Active' },
+  ];
+
+  // Only export visible columns
+  const activeCols = colDefs.filter(c => _visibleCols.has(c.id));
+
+  if (fmt === 'csv') {
+    const header = ['#', ...activeCols.map(c => c.label)].join(',');
+    const body = rows.map((r, i) =>
+      [i + 1, ...activeCols.map(c => `"${(c.get(r)||'').replace(/"/g,'""')}"`)]
+      .join(',')
+    ).join('\n');
+    const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `teachers_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    Toast.success('CSV exported!');
+  } else if (fmt === 'pdf') {
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Teachers Export</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; }
+        h2 { font-size: 16px; margin-bottom: 4px; }
+        .meta { font-size: 11px; color: #666; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-size: 11px;
+             text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid #e5e7eb; }
+        td { padding: 7px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+        tr:hover td { background: #fafafa; }
+        .badge-active   { color: #03543f; background: #def7ec; padding: 2px 7px; border-radius: 20px; font-size: 10px; }
+        .badge-inactive { color: #9b1c1c; background: #fde8e8; padding: 2px 7px; border-radius: 20px; font-size: 10px; }
+      </style></head><body>
+      <h2>Teachers List</h2>
+      <div class="meta">Exported: ${new Date().toLocaleString()} &nbsp;|&nbsp; Total: ${rows.length} teachers</div>
+      <table>
+        <thead><tr><th>#</th>${activeCols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${rows.map((r, i) => `<tr><td>${i+1}</td>${activeCols.map(c => {
+            const val = c.get(r) || '—';
+            if (c.id === 'status') return `<td><span class="${val === 'Active' ? 'badge-active' : 'badge-inactive'}">${val}</span></td>`;
+            return `<td>${val}</td>`;
+          }).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+      </body></html>
+    `);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 400);
+    Toast.success('PDF ready to print!');
+  }
+}
+
+// ── Column chooser modal ───────────────────────────────────────
+function _openColChooser(container) {
+  const allCols = [
+    { id: 'name',          label: 'Name',          locked: true },
+    { id: 'qualification', label: 'Qualification' },
+    { id: 'disciplines',   label: 'Disciplines' },
+    { id: 'subjects',      label: 'Subjects' },
+    { id: 'campuses',      label: 'Campuses' },
+    { id: 'contact',       label: 'Contact' },
+    { id: 'status',        label: 'Status' },
+  ];
+
+  // Remove existing
+  document.getElementById('teacher-col-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'teacher-col-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.15);overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid #e5e7eb">
+        <div style="font-size:15px;font-weight:700;color:#111928">Choose Columns</div>
+        <button id="col-modal-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:#9ca3af;padding:0 4px">✕</button>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:8px">
+        ${allCols.map(c => `
+          <label style="display:flex;align-items:center;gap:10px;cursor:${c.locked ? 'default' : 'pointer'};padding:6px 8px;border-radius:8px;transition:background .15s" ${!c.locked ? 'onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''"' : ''}>
+            <input type="checkbox" data-col-id="${c.id}"
+              ${_visibleCols.has(c.id) ? 'checked' : ''}
+              ${c.locked ? 'disabled' : ''}
+              style="width:16px;height:16px;accent-color:#1a56db;flex-shrink:0">
+            <span style="font-size:13.5px;font-weight:500;color:${c.locked ? '#9ca3af' : '#374151'}">${c.label}</span>
+            ${c.locked ? '<span style="margin-left:auto;font-size:11px;color:#9ca3af">Always on</span>' : ''}
+          </label>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 20px;border-top:1px solid #e5e7eb;background:#f9fafb">
+        <button id="col-modal-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>
+        <button id="col-modal-apply" style="padding:8px 16px;border-radius:8px;border:none;background:#1a56db;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Apply</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#col-modal-close').onclick  = () => overlay.remove();
+  overlay.querySelector('#col-modal-cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#col-modal-apply').onclick = () => {
+    const checked = [...overlay.querySelectorAll('input[data-col-id]:checked')].map(i => i.dataset.colId);
+    _visibleCols = new Set(checked.length ? checked : _DEFAULT_COLS);
+    localStorage.setItem('sms_teacher_cols', JSON.stringify([..._visibleCols]));
+    overlay.remove();
+    // Re-render table if in table mode
+    if (_viewMode === 'table') _render(container);
+  };
 }
 
 // ── CSS injection ─────────────────────────────────────────────
