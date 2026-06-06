@@ -718,16 +718,28 @@ function _subjectPills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
   const subjects = AppState.get('subjects') || [];
   const found = (ids || []).map(id => subjects.find(s => s.id === id)).filter(Boolean);
-  // Show CODE only — hover tooltip shows full subject name
-  const MAX = 2;
+  // Show CODE only (subjectCode field preferred, then code, then abbreviate name)
+  // Hover tooltip shows full subject name
+  const MAX = 3;
   const visible  = found.slice(0, MAX);
   const overflow = found.length - MAX;
-  const allNames = found.map(s => (s.code||'') + ' — ' + s.subjectName).join('\n');
+  const allCodes = found.map(s => _subjectCode(s) + ' — ' + s.subjectName).join('\n');
   return visible.map(s =>
-    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${s.code || s.subjectName}</span>`
+    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
   ).join('') + (overflow > 0
-    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default" title="${allNames}">+${overflow}</span>`
+    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default" title="${allCodes}">+${overflow}</span>`
     : '');
+}
+
+// ── Helper: get subject code (subjectCode → code → abbreviate name) ──
+function _subjectCode(s) {
+  if (!s) return '?';
+  if (s.subjectCode && s.subjectCode.trim()) return s.subjectCode.trim();
+  if (s.code        && s.code.trim())        return s.code.trim();
+  // Auto-abbreviate: take first letters of each word, max 5 chars
+  const words = (s.subjectName || '').split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+  return words.map(w => w[0]).join('').toUpperCase().slice(0, 5);
 }
 
 // ── Page template ─────────────────────────────────────────────
@@ -850,7 +862,7 @@ function _exportTeachers(fmt, container) {
     { id: 'name',          label: 'Full Name',     get: r => r.fullName || '' },
     { id: 'qualification', label: 'Qualification', get: r => r.qualification || '' },
     { id: 'disciplines',   label: 'Disciplines',   get: r => (r.disciplines||[]).map(id => discs.find(d=>d.id===id)?.abbreviation||id).join(', ') },
-    { id: 'subjects',      label: 'Subjects',      get: r => (r.teachingSubjects||[]).map(id => { const s = subjects.find(x=>x.id===id); return s ? (s.code || s.subjectName) : id; }).join(', ') },
+    { id: 'subjects',      label: 'Subjects',      get: r => (r.teachingSubjects||[]).map(id => { const s = subjects.find(x=>x.id===id); return s ? _subjectCode(s) : id; }).join(', ') },
     { id: 'campuses',      label: 'Campuses',      get: r => (r.campuses||[]).map(id => { const c = campuses.find(x=>x.id===id); return c ? _shortCampusName(c.campusName) : id; }).join(', ') },
     { id: 'contact',       label: 'Contact',       get: r => r.contactNumber || '' },
     { id: 'status',        label: 'Status',        get: r => r.isActive === false ? 'Inactive' : 'Active' },
