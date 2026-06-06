@@ -667,7 +667,7 @@ function _attachToolbar(container) {
   el.querySelectorAll('.teacher-export-opt').forEach(btn => {
     btn.addEventListener('click', () => {
       exportMenu.style.display = 'none';
-      _openExportColumnModal(btn.dataset.fmt, el);
+      _exportTeachers(btn.dataset.fmt, el);
     });
   });
 
@@ -704,9 +704,13 @@ function _disciplinePills(ids = []) {
 
 function _campusPills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
+  // Show short name: strip " Campus" suffix (e.g. "PR Campus" → "PR", "F8 Campus" → "F8")
+  function _shortCampus(name = '') {
+    return name.replace(/\s*campus\s*/gi, '').trim() || name;
+  }
   return ids.slice(0, 2).map(id => {
     const c = AppState.findById('campuses', id);
-    return c ? `<span class="badge badge--cyan" style="font-size:10.5px;margin-right:3px">${c.campusName}</span>` : '';
+    return c ? `<span class="badge badge--cyan" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
   }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
@@ -714,17 +718,15 @@ function _subjectPills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
   const subjects = AppState.get('subjects') || [];
   const found = (ids || []).map(id => subjects.find(s => s.id === id)).filter(Boolean);
-  // Code only in pill — hover tooltip shows full name; max 2 visible to save column space
+  // Show CODE only — hover tooltip shows full subject name
   const MAX = 2;
   const visible  = found.slice(0, MAX);
   const overflow = found.length - MAX;
-  const allNames = found.map(s => (s.code ? s.code + ' — ' : '') + s.subjectName).join('\n');
+  const allNames = found.map(s => (s.code||'') + ' — ' + s.subjectName).join('\n');
   return visible.map(s =>
-    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default"
-      title="${s.subjectName}">${s.code || s.subjectName}</span>`
+    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${s.code || s.subjectName}</span>`
   ).join('') + (overflow > 0
-    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default"
-        title="${allNames}">+${overflow}</span>`
+    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default" title="${allNames}">+${overflow}</span>`
     : '');
 }
 
@@ -824,71 +826,8 @@ function _pageTemplate() {
   `;
 }
 
-// ── Export column-selection modal ─────────────────────────────
-function _openExportColumnModal(fmt, container) {
-  // All exportable columns
-  const EXPORT_COLS = [
-    { id: 'name',          label: 'Full Name',     locked: true  },
-    { id: 'qualification', label: 'Qualification', locked: false },
-    { id: 'disciplines',   label: 'Disciplines',   locked: false },
-    { id: 'subjects',      label: 'Subjects',      locked: false },
-    { id: 'campuses',      label: 'Campuses',      locked: false },
-    { id: 'contact',       label: 'Contact',       locked: false },
-    { id: 'status',        label: 'Status',        locked: false },
-    { id: 'email',         label: 'Email',         locked: false },
-  ];
-
-  // Default: all on
-  const checked = new Set(EXPORT_COLS.map(c => c.id));
-
-  Modal.open({
-    title: `Export as ${fmt.toUpperCase()} — Select Columns`,
-    size: 'sm',
-    body: `
-      <div style="display:flex;flex-direction:column;gap:6px;padding:4px 0">
-        <p style="font-size:12.5px;color:var(--t3);margin-bottom:8px">
-          Choose which columns to include in the export:
-        </p>
-        ${EXPORT_COLS.map(c => `
-          <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;
-            border-radius:8px;cursor:${c.locked ? 'default' : 'pointer'};
-            background:var(--surface2);border:1px solid var(--border);
-            font-size:13px;color:var(--t1);user-select:none">
-            <input type="checkbox" value="${c.id}"
-              class="export-col-cb"
-              ${c.locked ? 'checked disabled' : 'checked'}
-              style="accent-color:var(--blue);width:15px;height:15px;cursor:${c.locked ? 'default' : 'pointer'}"/>
-            ${c.label}
-            ${c.locked ? '<span style="margin-left:auto;font-size:11px;color:var(--t3)">always</span>' : ''}
-          </label>
-        `).join('')}
-      </div>
-    `,
-    actions: [
-      { label: 'Cancel', variant: 'ghost', close: true },
-      {
-        label: `Export ${fmt.toUpperCase()}`,
-        variant: 'primary',
-        close: false,
-        handler: (modalEl) => {
-          const selectedCols = new Set(
-            [...modalEl.querySelectorAll('.export-col-cb:checked')].map(cb => cb.value)
-          );
-          if (!selectedCols.size) {
-            Toast.warning('Please select at least one column.');
-            return;
-          }
-          Modal.closeAll();
-          _exportTeachers(fmt, container, selectedCols);
-        },
-      },
-    ],
-  });
-}
-
 // ── Export ────────────────────────────────────────────────────
-// selectedCols: Set of column ids chosen in the export modal (optional — falls back to _visibleCols)
-function _exportTeachers(fmt, container, selectedCols) {
+function _exportTeachers(fmt, container) {
   const all = AppState.get('teachers') || [];
   let rows = all.filter(t => {
     const q = _searchVal;
@@ -902,20 +841,23 @@ function _exportTeachers(fmt, container, selectedCols) {
   const discs     = AppState.get('disciplines') || [];
   const campuses  = AppState.get('campuses')    || [];
 
+  // Short campus name helper — strips " Campus" suffix
+  function _shortCampusName(name = '') {
+    return name.replace(/\s*campus\s*/gi, '').trim() || name;
+  }
+
   const colDefs = [
     { id: 'name',          label: 'Full Name',     get: r => r.fullName || '' },
     { id: 'qualification', label: 'Qualification', get: r => r.qualification || '' },
     { id: 'disciplines',   label: 'Disciplines',   get: r => (r.disciplines||[]).map(id => discs.find(d=>d.id===id)?.abbreviation||id).join(', ') },
-    { id: 'subjects',      label: 'Subjects',      get: r => (r.teachingSubjects||[]).map(id => { const s = subjects.find(s=>s.id===id); return s ? (s.code || s.subjectName) : id; }).join(', ') },
-    { id: 'campuses',      label: 'Campuses',      get: r => (r.campuses||[]).map(id => campuses.find(c=>c.id===id)?.campusName||id).join(', ') },
+    { id: 'subjects',      label: 'Subjects',      get: r => (r.teachingSubjects||[]).map(id => { const s = subjects.find(x=>x.id===id); return s ? (s.code || s.subjectName) : id; }).join(', ') },
+    { id: 'campuses',      label: 'Campuses',      get: r => (r.campuses||[]).map(id => { const c = campuses.find(x=>x.id===id); return c ? _shortCampusName(c.campusName) : id; }).join(', ') },
     { id: 'contact',       label: 'Contact',       get: r => r.contactNumber || '' },
     { id: 'status',        label: 'Status',        get: r => r.isActive === false ? 'Inactive' : 'Active' },
-    { id: 'email',         label: 'Email',         get: r => r.email || '' },
   ];
 
-  // Use modal-selected columns if provided, else fall back to visible table columns
-  const colSet = selectedCols || _visibleCols;
-  const activeCols = colDefs.filter(c => colSet.has(c.id));
+  // Only export visible columns
+  const activeCols = colDefs.filter(c => _visibleCols.has(c.id));
 
   if (fmt === 'csv') {
     const header = ['#', ...activeCols.map(c => c.label)].join(',');
