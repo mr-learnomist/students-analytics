@@ -807,14 +807,11 @@ function _refreshSubjectDropdown(container, query = '') {
 
   // Wire checkboxes
   listEl.querySelectorAll('.teacher-subj-opt').forEach(label => {
-    label.addEventListener('click', (e) => {
-      // let checkbox do its thing
-      const cb  = label.querySelector('input');
+    label.querySelector('input')?.addEventListener('change', (e) => {
       const sid = label.dataset.subjId;
       if (!sid) return;
-      // toggle (click fires before checked changes for label clicks)
-      if (cb.checked) _subjFilter.add(sid);
-      else            _subjFilter.delete(sid);
+      if (e.target.checked) _subjFilter.add(sid);
+      else                  _subjFilter.delete(sid);
       _refreshSubjectLabel(container);
       _render(container);
     });
