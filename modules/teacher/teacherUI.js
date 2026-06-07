@@ -748,27 +748,58 @@ function _refreshSubjectDropdown(container, query = '') {
     : allDisciplines;
 
   // Build subject → disc map
-  // subjects have a disciplineId or disciplineIds field
-  // Try both common shapes
+  // subjects may use any of several field shapes — handle all of them
   function getDiscIds(s) {
-    if (s.disciplineId)  return [s.disciplineId];
-    if (Array.isArray(s.disciplineIds)) return s.disciplineIds;
-    if (Array.isArray(s.disciplines))   return s.disciplines;
-    return [];
+    const ids = [];
+    if (s.disciplineId)                   ids.push(s.disciplineId);
+    if (Array.isArray(s.disciplineIds))   ids.push(...s.disciplineIds);
+    if (Array.isArray(s.disciplines))     ids.push(...s.disciplines);
+    if (typeof s.discipline === 'string') ids.push(s.discipline);
+    return [...new Set(ids)];
   }
+
+  // Pre-bucket subjects per disc; collect unmatched for fallback group
+  const matchedSubjectIds = new Set();
+  const discBuckets = filteredDiscs.map(disc => {
+    const subs = allSubjects.filter(s => getDiscIds(s).includes(disc.id));
+    subs.forEach(s => matchedSubjectIds.add(s.id));
+    return { disc, subs };
+  });
+
+  // Subjects that belong to no discipline (or disc field missing/unknown shape)
+  // show them in an "Other" bucket so they are never invisible
+  const ungrouped = _discFilter
+    ? []
+    : allSubjects.filter(s => !matchedSubjectIds.has(s.id));
 
   let html = '';
   let totalShown = 0;
 
-  for (const disc of filteredDiscs) {
-    const discSubjects = allSubjects.filter(s => getDiscIds(s).includes(disc.id));
-    if (!discSubjects.length) continue;
+  function _renderSubjectRow(s) {
+    const code    = _subjectCode(s);
+    const checked = _subjFilter.has(s.id) ? 'checked' : '';
+    totalShown++;
+    return `
+      <label class="teacher-subj-opt" data-subj-id="${s.id}" style="
+        display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;
+        transition:background .1s;user-select:none;font-size:12.5px;color:var(--t2)">
+        <input type="checkbox" ${checked} style="
+          width:14px;height:14px;accent-color:var(--blue);flex-shrink:0;cursor:pointer"/>
+        <span class="ts-drop-code" style="font-family:var(--font-mono);font-size:11px;
+          color:var(--blue);background:var(--blue-dim);padding:1px 5px;border-radius:4px;
+          flex-shrink:0">${code}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t2)">${s.subjectName || ''}</span>
+      </label>`;
+  }
+
+  for (const { disc, subs } of discBuckets) {
+    if (!subs.length) continue;
 
     const filtered = query
-      ? discSubjects.filter(s =>
+      ? subs.filter(s =>
           _subjectCode(s).toLowerCase().includes(query) ||
           (s.subjectName || '').toLowerCase().includes(query))
-      : discSubjects;
+      : subs;
 
     if (!filtered.length) continue;
 
@@ -779,21 +810,24 @@ function _refreshSubjectDropdown(container, query = '') {
                 position:sticky;top:0;background:var(--surface)">${disc.abbreviation || disc.fullName}</div>`;
     }
 
-    for (const s of filtered) {
-      const code    = _subjectCode(s);
-      const checked = _subjFilter.has(s.id) ? 'checked' : '';
-      html += `
-        <label class="teacher-subj-opt" data-subj-id="${s.id}" style="
-          display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;
-          transition:background .1s;user-select:none;font-size:12.5px;color:var(--t2)">
-          <input type="checkbox" ${checked} style="
-            width:14px;height:14px;accent-color:var(--blue);flex-shrink:0;cursor:pointer"/>
-          <span class="ts-drop-code" style="font-family:var(--font-mono);font-size:11px;
-            color:var(--blue);background:var(--blue-dim);padding:1px 5px;border-radius:4px;
-            flex-shrink:0">${code}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t2)">${s.subjectName || ''}</span>
-        </label>`;
-      totalShown++;
+    filtered.forEach(s => { html += _renderSubjectRow(s); });
+  }
+
+  // Render ungrouped subjects (discipline link missing / unknown shape)
+  if (ungrouped.length) {
+    const filteredUngrouped = query
+      ? ungrouped.filter(s =>
+          _subjectCode(s).toLowerCase().includes(query) ||
+          (s.subjectName || '').toLowerCase().includes(query))
+      : ungrouped;
+
+    if (filteredUngrouped.length) {
+      if (discBuckets.some(b => b.subs.length)) {
+        html += `<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;
+                  color:var(--t3);text-transform:uppercase;letter-spacing:.06em;
+                  position:sticky;top:0;background:var(--surface)">Other</div>`;
+      }
+      filteredUngrouped.forEach(s => { html += _renderSubjectRow(s); });
     }
   }
 
