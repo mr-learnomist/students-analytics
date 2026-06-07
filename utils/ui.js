@@ -19,7 +19,7 @@ export const Modal = {
   open({ title = '', body = '', actions = [], size = 'md', onOpen = null, scrollable = true, bodyStyle = '' } = {}) {
     const id = `modal_${Date.now()}`;
 
-    const sizeMap = { sm: '400px', md: '540px', lg: '720px' };
+    const sizeMap = { sm: '400px', md: '540px', lg: '720px', xl: '960px' };
     const width = sizeMap[size] || sizeMap.md;
 
     const actionHTML = actions.map((a, i) => `
