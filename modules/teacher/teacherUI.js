@@ -698,8 +698,8 @@ function _disciplinePills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
   return ids.slice(0, 2).map(id => {
     const d = AppState.findById('disciplines', id);
-    return d ? `<span class="badge badge--blue" style="font-size:10.5px;margin-right:3px">${d.abbreviation}</span>` : '';
-  }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+    return d ? `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px">${d.abbreviation}</span>` : '';
+  }).join('') + (ids.length > 2 ? `<span class="badge badge--plain" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
 function _campusPills(ids = []) {
@@ -710,8 +710,8 @@ function _campusPills(ids = []) {
   }
   return ids.slice(0, 2).map(id => {
     const c = AppState.findById('campuses', id);
-    return c ? `<span class="badge badge--cyan" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
-  }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+    return c ? `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
+  }).join('') + (ids.length > 2 ? `<span class="badge badge--plain" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
 function _subjectPills(ids = []) {
@@ -725,9 +725,9 @@ function _subjectPills(ids = []) {
   const overflow = found.length - MAX;
   const allCodes = found.map(s => _subjectCode(s) + ' — ' + s.subjectName).join('\n');
   return visible.map(s =>
-    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
+    `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
   ).join('') + (overflow > 0
-    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default" title="${allCodes}">+${overflow}</span>`
+    ? `<span class="badge badge--plain" style="font-size:10.5px;cursor:default" title="${allCodes}">+${overflow}</span>`
     : '');
 }
 
@@ -1124,6 +1124,28 @@ function _injectTeacherStyles() {
 }
 .view-btn:hover { color: var(--t1); }
 .view-btn--active { background: var(--surface4); color: var(--t1); }
+
+/* ── Plain badge (no colored background) ── */
+.badge--plain {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 10px;
+  background: var(--surface3); border: 1px solid var(--border2);
+  color: var(--t2); font-size: 10.5px; font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── Sticky / frozen column headers ── */
+.data-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+  background: var(--surface2) !important;
+  box-shadow: 0 1px 0 var(--border2) !important;
+}
+.data-table-wrap, #teacher-table {
+  overflow-y: auto;
+  max-height: calc(100vh - 260px);
+}
 
 /* ── Inactive badge overlay ── */
 .inactive-overlay {
