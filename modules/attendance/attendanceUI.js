@@ -1840,3 +1840,4 @@ function _buildDailyRow(stu, idx, existing, canMark) {
     </td>
   </tr>`;
 }
+}
