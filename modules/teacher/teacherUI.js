@@ -1331,7 +1331,7 @@ function _injectTeacherStyles() {
   padding: 2px 7px; border-radius: 10px; letter-spacing: .04em;
 }
 
-/* ── Modal viewport fit ── */
+/* ── Modal viewport fix (teacher-specific overrides) ── */
 .modal-overlay {
   position: fixed !important;
   inset: 0 !important;
@@ -1344,7 +1344,6 @@ function _injectTeacherStyles() {
   overflow: hidden !important;
 }
 
-/* Modal box: height auto, max-height keeps it inside viewport */
 .modal {
   height: auto !important;
   max-height: calc(100vh - 32px) !important;
@@ -1359,32 +1358,26 @@ function _injectTeacherStyles() {
 .modal.modal--lg {
   max-width: min(1200px, calc(100vw - 32px)) !important;
   width: calc(100vw - 32px) !important;
-  max-height: calc(100vh - 32px) !important;
 }
 .modal.modal--sm {
   max-width: min(480px, calc(100vw - 32px)) !important;
 }
 
-/* Header and footer: never shrink — always visible */
 .modal-header,
 .modal-footer,
 .modal-actions {
   flex-shrink: 0 !important;
 }
 
-/* Body: scrolls internally */
 .modal-body {
   flex: 1 1 0% !important;
   min-height: 0 !important;
+  height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain !important;
-  -webkit-overflow-scrolling: touch !important;
-  max-height: none !important;
-  height: 0 !important;
 }
 
-/* Thin scrollbar inside modal body */
 .modal-body::-webkit-scrollbar       { width: 5px; }
 .modal-body::-webkit-scrollbar-track { background: transparent; }
 .modal-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 10px; }
@@ -1509,23 +1502,25 @@ function _injectTeacherStyles() {
   const fix = document.createElement('style');
   fix.id = 'teacher-modal-fix';
   fix.textContent = `
-    .modal-overlay { position:fixed!important;inset:0!important;padding:16px!important;
-      display:flex!important;align-items:center!important;justify-content:center!important;
-      overflow:hidden!important;z-index:9999!important;box-sizing:border-box!important; }
-    .modal { height:auto!important;max-height:calc(100vh - 32px)!important;
-      display:flex!important;flex-direction:column!important;overflow:hidden!important;
-      box-sizing:border-box!important;width:100%!important;
-      max-width:min(860px,calc(100vw - 32px))!important; }
-    .modal.modal--lg { max-width:min(1200px,calc(100vw - 32px))!important;width:calc(100vw - 32px)!important; }
-    .modal.modal--sm { max-width:min(480px,calc(100vw - 32px))!important; }
-    .modal-header { flex-shrink:0!important; position:sticky!important; top:0!important; z-index:5!important; background:var(--surface,#fff)!important; }
-    .modal-footer,.modal-actions { flex-shrink:0!important; position:sticky!important; bottom:0!important; z-index:5!important; background:var(--surface,#fff)!important; }
-    .modal-body { flex:1 1 0%!important;min-height:0!important;overflow-y:auto!important;
-      overflow-x:hidden!important;padding:0!important; }
-    .modal-body::-webkit-scrollbar { width:5px; }
-    .modal-body::-webkit-scrollbar-track { background:transparent; }
-    .modal-body::-webkit-scrollbar-thumb { background:rgba(128,128,128,.3);border-radius:10px; }
-    #teacherModalInner { padding:20px!important; }
+    .modal-backdrop {
+      position: fixed !important; inset: 0 !important;
+      display: flex !important; align-items: center !important; justify-content: center !important;
+      padding: 16px !important; box-sizing: border-box !important;
+      overflow: hidden !important; z-index: 1000 !important;
+    }
+    .modal-box {
+      max-height: calc(100vh - 32px) !important;
+      display: flex !important; flex-direction: column !important;
+      overflow: hidden !important; box-sizing: border-box !important;
+      margin: 0 !important;
+    }
+    .modal-header { flex-shrink: 0 !important; }
+    .modal-footer { flex-shrink: 0 !important; }
+    .modal-body {
+      flex: 1 1 0% !important; min-height: 0 !important; height: 0 !important;
+      overflow-y: auto !important; overflow-x: hidden !important;
+      overscroll-behavior: contain !important;
+    }
   `;
   // Remove existing and re-add to ensure it's last (highest priority)
   document.getElementById('teacher-modal-fix')?.remove();
