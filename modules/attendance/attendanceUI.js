@@ -60,6 +60,8 @@ function _injectStyles() {
 /* ══ SHELL ══════════════════════════════════════════════════ */
 .att2-shell { display:flex; flex-direction:column; height:100%; min-height:calc(100vh - 140px); }
 
+@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
 /* ── Tabs ──────────────────────────────────────────────────── */
 .att2-tabs {
   display:flex; gap:0; border-bottom:2px solid var(--border);
@@ -1573,27 +1575,55 @@ function _loadDailySheet(batch) {
   mainEl.innerHTML = batchInfoBar + `
 
     <!-- Stats + action bar -->
-    <div style="padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
-                display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--surface)">
+    <div id="dailyStatsBar" style="padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+                display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface)">
       ${markedTotal > 0 ? `
-        <span style="font-size:11px;font-weight:700;color:var(--green)">${pCount} P</span>
-        <span style="color:var(--border2)">|</span>
-        <span style="font-size:11px;font-weight:700;color:var(--red)">${aCount} A</span>
-        <span style="color:var(--border2)">|</span>
-        <span style="font-size:11px;font-weight:700;color:#d97706">${lCount} L</span>
-        <div style="flex:1;min-width:60px;max-width:160px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-            <span style="font-size:10px;color:var(--t3)">${markedTotal}/${students.length} marked</span>
-            <span style="font-size:11px;font-weight:800;color:${pctColor}">${pct}%</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent);
+                       padding:3px 10px;border-radius:20px">${pCount} P</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--red);background:color-mix(in srgb,var(--red) 12%,transparent);
+                       padding:3px 10px;border-radius:20px">${aCount} A</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--t2);background:var(--surface2);
+                       padding:3px 10px;border-radius:20px">${lCount} Leave</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:80px;max-width:200px">
+          <div style="flex:1;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${pctColor};border-radius:3px;transition:width .3s"></div>
           </div>
-          <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:${pctColor};border-radius:2px"></div>
-          </div>
-        </div>` : `<span style="font-size:12px;color:var(--t3)">${students.length} students · Not marked yet</span>`}
+          <span style="font-size:12px;font-weight:800;color:${pctColor};min-width:36px">${pct}%</span>
+        </div>
+        <span style="font-size:11px;color:var(--t3)">${markedTotal}/${students.length} marked</span>
+      ` : `<span style="font-size:12px;color:var(--t3)">${students.length} students · Not marked yet</span>`}
+
       ${canMark ? `
-        <div style="margin-left:auto;display:flex;gap:6px">
-          <button id="dailyAllP" class="att2-btn att2-btn-success" style="font-size:12px;padding:5px 12px">✓ All Present</button>
-          <button id="dailyAllA" class="att2-btn" style="font-size:12px;padding:5px 12px;border-color:var(--red);color:var(--red)">✗ All Absent</button>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button id="dailyAllP" style="display:inline-flex;align-items:center;gap:5px;
+                  height:32px;padding:0 14px;border-radius:7px;font-size:12px;font-weight:700;
+                  background:color-mix(in srgb,var(--green) 12%,transparent);
+                  color:var(--green);border:1.5px solid color-mix(in srgb,var(--green) 30%,transparent);
+                  cursor:pointer;font-family:inherit;transition:opacity .15s">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            All Present
+          </button>
+          <button id="dailyAllA" style="display:inline-flex;align-items:center;gap:5px;
+                  height:32px;padding:0 14px;border-radius:7px;font-size:12px;font-weight:700;
+                  background:color-mix(in srgb,var(--red) 12%,transparent);
+                  color:var(--red);border:1.5px solid color-mix(in srgb,var(--red) 30%,transparent);
+                  cursor:pointer;font-family:inherit;transition:opacity .15s">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            All Absent
+          </button>
+          <button id="dailySaveBtn" style="display:inline-flex;align-items:center;gap:5px;
+                  height:32px;padding:0 16px;border-radius:7px;font-size:12px;font-weight:700;
+                  background:var(--blue);color:#fff;border:none;
+                  cursor:pointer;font-family:inherit;transition:opacity .15s;opacity:0.5;pointer-events:none"
+                  disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
+          </button>
         </div>` : ''}
     </div>
 
@@ -1624,17 +1654,112 @@ function _loadDailySheet(batch) {
 
   if (!canMark || !students.length) return;
 
+  // Track unsaved changes
+  let _hasUnsaved = false;
+
+  const _enableSave = () => {
+    const btn = mainEl.querySelector('#dailySaveBtn');
+    if (!btn) return;
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    _hasUnsaved = true;
+  };
+
+  const _markSaved = () => {
+    const btn = mainEl.querySelector('#dailySaveBtn');
+    if (!btn) return;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Saved`;
+    btn.style.background = 'var(--green)';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btn.style.pointerEvents = 'none';
+    _hasUnsaved = false;
+    setTimeout(() => {
+      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save`;
+      btn.style.background = 'var(--blue)';
+    }, 2000);
+  };
+
+  // ── Live stats update helper ─────────────────────────────────
+  const _updateStats = () => {
+    const cur = AttendanceService.getRecordsForDate(batch.id, _dailyDate);
+    let p=0, a=0, l=0;
+    students.forEach(s => {
+      const r = cur[s.id];
+      if      (r?.status==='P') p++;
+      else if (r?.status==='A') a++;
+      else if (r?.status==='L') l++;
+    });
+    const mt  = p+a+l;
+    const pct = mt > 0 ? Math.round((p/mt)*100) : null;
+    const pc  = pct===null?'var(--t3)':pct>=75?'var(--green)':'var(--red)';
+    const bar = mainEl.querySelector('#dailyStatsBar');
+    if (!bar) return;
+    const statsInner = bar.querySelector('#dailyStatsInner');
+    if (statsInner) {
+      statsInner.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent);
+                       padding:3px 10px;border-radius:20px">${p} P</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--red);background:color-mix(in srgb,var(--red) 12%,transparent);
+                       padding:3px 10px;border-radius:20px">${a} A</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--t2);background:var(--surface2);
+                       padding:3px 10px;border-radius:20px">${l} Leave</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:80px;max-width:200px">
+          <div style="flex:1;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct||0}%;background:${pc};border-radius:3px;transition:width .3s"></div>
+          </div>
+          <span style="font-size:12px;font-weight:800;color:${pc};min-width:36px">${pct ?? '—'}%</span>
+        </div>
+        <span style="font-size:11px;color:var(--t3)">${mt}/${students.length} marked</span>`;
+    }
+  };
+
+  // Wrap stats content in an inner div for live update
+  const statsBar = mainEl.querySelector('#dailyStatsBar');
+  if (statsBar) {
+    const firstChild = statsBar.querySelector('div,span');
+    if (firstChild) {
+      const wrap = document.createElement('div');
+      wrap.id = 'dailyStatsInner';
+      wrap.style.cssText = 'display:flex;align-items:center;gap:12px;flex:1;flex-wrap:wrap';
+      // Move all non-button children into wrap
+      [...statsBar.children].forEach(ch => {
+        if (!ch.style?.marginLeft) wrap.appendChild(ch);
+      });
+      statsBar.insertBefore(wrap, statsBar.firstChild);
+    }
+  }
+
   // ── Wire All Present / All Absent ───────────────────────────
   const _saveAll = (status) => {
     students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, _dailyDate, status, markedBy));
-    Toast.success(`All marked ${status === 'P' ? 'Present' : 'Absent'}.`);
-    _loadDailySheet(batch);
+    _updateStats();
+    _enableSave();
     _renderDailyBatchList();
   };
   mainEl.querySelector('#dailyAllP')?.addEventListener('click', () => _saveAll('P'));
   mainEl.querySelector('#dailyAllA')?.addEventListener('click', () => _saveAll('A'));
 
-  // ── Wire P/A/L buttons — instant save, row re-render ───────
+  // ── Save button ─────────────────────────────────────────────
+  mainEl.querySelector('#dailySaveBtn')?.addEventListener('click', async () => {
+    const btn = mainEl.querySelector('#dailySaveBtn');
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Saving...`;
+    btn.disabled = true;
+    // AppState already has the data — just trigger save
+    AppState.saveState();
+    await new Promise(r => setTimeout(r, 400));
+    _markSaved();
+    _renderDailyBatchList();
+    Toast.success('Attendance saved.');
+  });
+
+  // ── Wire P/A/L buttons ──────────────────────────────────────
   mainEl.querySelector('#dailyTbody')?.addEventListener('click', e => {
     const btn = e.target.closest('button[data-s]');
     if (!btn) return;
@@ -1645,8 +1770,8 @@ function _loadDailySheet(batch) {
     const stu    = students.find(s => s.id === sid);
     if (!stu) return;
 
-    // Save to AppState immediately
     AttendanceService.markAttendance(batch.id, sid, _dailyDate, status, markedBy);
+    _enableSave();
 
     // First student → apply to all unmarked
     if (students.length && students[0].id === sid) {
@@ -1657,66 +1782,31 @@ function _loadDailySheet(batch) {
           r.batchId === batch.id && r.studentId === s.id && r.date === _dailyDate);
         if (!already) AttendanceService.markAttendance(batch.id, s.id, _dailyDate, status, markedBy);
       });
-      // Full re-render when first student sets default
       _loadDailySheet(batch);
       _renderDailyBatchList();
       return;
     }
 
-    // Otherwise just update this row in-place (no full re-render — keeps scroll position)
+    // Update this row in-place
     const newExisting = AttendanceService.getRecordsForDate(batch.id, _dailyDate);
     const tr = mainEl.querySelector(`tr[data-sid="${sid}"]`);
-    if (tr) {
-      tr.outerHTML = _buildDailyRow(stu, students.indexOf(stu), newExisting, canMark);
-      // Re-wire the new row's buttons (event delegation handles it via #dailyTbody)
-    }
+    if (tr) tr.outerHTML = _buildDailyRow(stu, students.indexOf(stu), newExisting, canMark);
 
-    // Update stats bar live
-    const allExisting = AttendanceService.getRecordsForDate(batch.id, _dailyDate);
-    let p2=0, a2=0, l2=0;
-    students.forEach(s => {
-      const r = allExisting[s.id];
-      if (r?.status==='P') p2++;
-      else if (r?.status==='A') a2++;
-      else if (r?.status==='L') l2++;
-    });
-    const mt2 = p2+a2+l2;
-    const pct2 = mt2 > 0 ? Math.round((p2/mt2)*100) : null;
-    const pc2  = pct2===null?'var(--t3)':pct2>=75?'var(--green)':'var(--red)';
-
-    const statsBar = mainEl.querySelector('#dailyStatsBar');
-    if (statsBar) {
-      statsBar.innerHTML = `
-        <span style="font-size:11px;font-weight:700;color:var(--green)">${p2} P</span>
-        <span style="color:var(--border2)">|</span>
-        <span style="font-size:11px;font-weight:700;color:var(--red)">${a2} A</span>
-        <span style="color:var(--border2)">|</span>
-        <span style="font-size:11px;font-weight:700;color:#d97706">${l2} L</span>
-        <div style="flex:1;min-width:60px;max-width:160px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-            <span style="font-size:10px;color:var(--t3)">${mt2}/${students.length} marked</span>
-            <span style="font-size:11px;font-weight:800;color:${pc2}">${pct2 ?? '—'}%</span>
-          </div>
-          <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
-            <div style="height:100%;width:${pct2||0}%;background:${pc2};border-radius:2px"></div>
-          </div>
-        </div>`;
-    }
-
+    // Live stats update
+    _updateStats();
     _renderDailyBatchList();
   });
-}
 
 // ── Build a single table row for daily attendance ─────────────
 function _buildDailyRow(stu, idx, existing, canMark) {
   const rec    = existing[stu.id];
   const status = rec?.status || '';
   const sid    = stu.registrationNo || stu.admissionNo || stu.cnic || '—';
-  const rowBg  = status === 'P' ? 'background:color-mix(in srgb,var(--green) 6%,transparent)'
-               : status === 'A' ? 'background:color-mix(in srgb,var(--red)   6%,transparent)'
-               : status === 'L' ? 'background:color-mix(in srgb,#f59e0b 6%,transparent)'
+  const rowBg  = status === 'P' ? 'background:color-mix(in srgb,var(--green) 5%,transparent)'
+               : status === 'A' ? 'background:color-mix(in srgb,var(--red) 5%,transparent)'
+               : status === 'L' ? 'background:color-mix(in srgb,var(--t2) 4%,transparent)'
                : '';
-  return `<tr data-sid="${stu.id}" style="${rowBg};transition:background .12s">
+  return `<tr data-sid="${stu.id}" style="${rowBg};transition:background .15s">
     <td style="padding:9px 12px;border-bottom:1px solid var(--border);
                color:var(--t4);font-family:var(--font-mono);font-size:11px">${idx+1}</td>
     <td style="padding:9px 12px;border-bottom:1px solid var(--border);
@@ -1726,25 +1816,26 @@ function _buildDailyRow(stu, idx, existing, canMark) {
     <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
       ${canMark
         ? `<div class="daily-status-grp" data-sid="${stu.id}"
-                style="display:inline-flex;gap:4px;align-items:center">
+                style="display:inline-flex;gap:5px;align-items:center">
              ${['P','A','L'].map(s => {
                const active = status === s;
-               const colors = {
-                 P: { border:'var(--green)', bg:'var(--green)', bgDim:'var(--green-dim)', text:'var(--green)' },
-                 A: { border:'var(--red)',   bg:'var(--red)',   bgDim:'var(--red-dim)',   text:'var(--red)'   },
-                 L: { border:'#d97706',      bg:'#f59e0b',      bgDim:'#fef3c7',          text:'#92400e'      },
+               const cfg = {
+                 P: { color:'var(--green)', label:'P', title:'Present' },
+                 A: { color:'var(--red)',   label:'A', title:'Absent'  },
+                 L: { color:'var(--t2)',    label:'L', title:'Leave'   },
                }[s];
-               return `<button data-s="${s}"
-                 style="width:34px;height:34px;border-radius:7px;
-                        font-size:12.5px;font-weight:800;cursor:pointer;
-                        border:2px solid ${colors.border};
-                        background:${active ? colors.bg : colors.bgDim};
-                        color:${active ? '#fff' : colors.text};
-                        transition:all .1s;font-family:inherit">${s}</button>`;
+               return `<button data-s="${s}" title="${cfg.title}" style="
+                 width:32px;height:32px;border-radius:6px;
+                 font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;
+                 transition:all .12s;
+                 border: ${active ? `2px solid ${cfg.color}` : '1.5px solid var(--border2)'};
+                 background: ${active ? `color-mix(in srgb,${cfg.color} 15%,transparent)` : 'var(--surface2)'};
+                 color: ${active ? cfg.color : 'var(--t3)'};
+               ">${cfg.label}</button>`;
              }).join('')}
            </div>`
         : `<span style="font-family:var(--font-mono);font-weight:800;font-size:13px;
-                       color:${status==='P'?'var(--green)':status==='A'?'var(--red)':status==='L'?'#d97706':'var(--t4)'}">${status || '—'}</span>`
+                       color:${status==='P'?'var(--green)':status==='A'?'var(--red)':status==='L'?'var(--t2)':'var(--t4)'}">${status || '—'}</span>`
       }
     </td>
   </tr>`;
