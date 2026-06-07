@@ -528,22 +528,62 @@ export const TeacherListReport = {
     const panel   = c.querySelector(`#${id}Panel`);
     if (!trigger || !panel) return;
 
-    // Open/close toggle
-    trigger.addEventListener('click', () => {
-      const isOpen = panel.style.display !== 'none';
-      // Close all other panels first
-      c.querySelectorAll('.tlr-dd-panel').forEach(p => p.style.display = 'none');
+    // Move panel to body so it's never clipped by overflow:hidden parents
+    panel.style.position = 'fixed';
+    panel.style.zIndex   = '99999';
+    document.body.appendChild(panel);
+
+    const reposition = () => {
+      const r = trigger.getBoundingClientRect();
+      panel.style.top   = `${r.bottom + 4}px`;
+      panel.style.left  = `${r.left}px`;
+      panel.style.width = `${r.width}px`;
+      panel.style.minWidth = '220px';
+    };
+
+    const openPanel = () => {
+      reposition();
+      panel.style.display = 'block';
+      trigger.classList.add('open');
+    };
+
+    const closePanel = () => {
+      panel.style.display = 'none';
+      trigger.classList.remove('open');
+    };
+
+    const closeAllPanels = () => {
+      document.querySelectorAll('.tlr-dd-panel[data-portal]').forEach(p => {
+        p.style.display = 'none';
+      });
       c.querySelectorAll('.tlr-dd-trigger').forEach(t => t.classList.remove('open'));
-      if (!isOpen) {
-        panel.style.display = 'block';
-        trigger.classList.add('open');
+    };
+
+    panel.dataset.portal = id;
+
+    // Open/close toggle
+    trigger.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = panel.style.display !== 'none';
+      closeAllPanels();
+      if (!isOpen) openPanel();
+    });
+
+    // Close on outside click
+    document.addEventListener('click', e => {
+      if (!trigger.contains(e.target) && !panel.contains(e.target)) {
+        closePanel();
       }
     });
 
+    // Reposition on scroll/resize
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+
     // Search
-    c.querySelector(`#${id}Search`)?.addEventListener('input', e => {
+    panel.querySelector(`#${id}Search`)?.addEventListener('input', e => {
       const q = e.target.value.toLowerCase();
-      c.querySelectorAll(`#${id}List .tlr-dd-item`).forEach(item => {
+      panel.querySelectorAll(`#${id}List .tlr-dd-item`).forEach(item => {
         item.style.display = item.querySelector('span').textContent.toLowerCase().includes(q) ? '' : 'none';
       });
     });
@@ -558,7 +598,7 @@ export const TeacherListReport = {
     });
 
     // Select All
-    c.querySelector(`#${id}SelAll`)?.addEventListener('click', e => {
+    panel.querySelector(`#${id}SelAll`)?.addEventListener('click', e => {
       e.stopPropagation();
       panel.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
       const all = [...panel.querySelectorAll('input[type=checkbox]')].map(i => i.value);
@@ -568,7 +608,7 @@ export const TeacherListReport = {
     });
 
     // Clear
-    c.querySelector(`#${id}Clear`)?.addEventListener('click', e => {
+    panel.querySelector(`#${id}Clear`)?.addEventListener('click', e => {
       e.stopPropagation();
       panel.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
       setter([]);
@@ -578,6 +618,8 @@ export const TeacherListReport = {
   },
 
   _rerenderFilterBody(c) {
+    // Remove any portaled panels from body before rerender
+    document.querySelectorAll('.tlr-dd-panel[data-portal]').forEach(p => p.remove());
     const body = c.querySelector('#tlrFilterBody');
     if (!body) return;
     body.innerHTML = this._filterBodyHTML();
