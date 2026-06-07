@@ -698,8 +698,8 @@ function _disciplinePills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
   return ids.slice(0, 2).map(id => {
     const d = AppState.findById('disciplines', id);
-    return d ? `<span class="badge badge--blue" style="font-size:10.5px;margin-right:3px">${d.abbreviation}</span>` : '';
-  }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+    return d ? `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px">${d.abbreviation}</span>` : '';
+  }).join('') + (ids.length > 2 ? `<span class="badge badge--plain" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
 function _campusPills(ids = []) {
@@ -710,25 +710,17 @@ function _campusPills(ids = []) {
   }
   return ids.slice(0, 2).map(id => {
     const c = AppState.findById('campuses', id);
-    return c ? `<span class="badge badge--cyan" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
-  }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+    return c ? `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
+  }).join('') + (ids.length > 2 ? `<span class="badge badge--plain" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
 function _subjectPills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
   const subjects = AppState.get('subjects') || [];
   const found = (ids || []).map(id => subjects.find(s => s.id === id)).filter(Boolean);
-  // Show CODE only (subjectCode field preferred, then code, then abbreviate name)
-  // Hover tooltip shows full subject name
-  const MAX = 3;
-  const visible  = found.slice(0, MAX);
-  const overflow = found.length - MAX;
-  const allCodes = found.map(s => _subjectCode(s) + ' — ' + s.subjectName).join('\n');
-  return visible.map(s =>
-    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
-  ).join('') + (overflow > 0
-    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default" title="${allCodes}">+${overflow}</span>`
-    : '');
+  return found.map(s =>
+    `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
+  ).join('');
 }
 
 // ── Helper: get subject code (subjectCode → code → abbreviate name) ──
@@ -869,12 +861,29 @@ function _exportTeachers(fmt, container) {
     { id: 'status',        label: 'Status',         get: r => r.isActive === false ? 'Inactive' : 'Active' },
   ];
 
+  // ── Build filter info for PDF ────────────────────────────────
+  const filterParts = [];
+  if (_discFilter) {
+    const d = discs.find(x => x.id === _discFilter);
+    if (d) filterParts.push(`<span class="filter-chip"><span class="fk">Discipline:</span> ${d.abbreviation} — ${d.fullName}</span>`);
+  }
+  if (_campFilter) {
+    const c = camps.find(x => x.id === _campFilter);
+    if (c) filterParts.push(`<span class="filter-chip"><span class="fk">Campus:</span> ${c.campusName}</span>`);
+  }
+  if (_searchVal) {
+    filterParts.push(`<span class="filter-chip"><span class="fk">Search:</span> ${_searchVal}</span>`);
+  }
+  const filterHTML = filterParts.length
+    ? `<span class="filters-label">&#9660; Filters</span> ${filterParts.join('')}`
+    : `<span class="filter-chip filter-none">No filters applied — showing all teachers</span>`;
+
   // ── Show column chooser modal before export ──────────────────
-  _openExportColChooser(ALL_EXPORT_COLS, fmt, rows);
+  _openExportColChooser(ALL_EXPORT_COLS, fmt, rows, filterHTML);
 }
 
 // ── Export column chooser modal ───────────────────────────────
-function _openExportColChooser(ALL_EXPORT_COLS, fmt, rows) {
+function _openExportColChooser(ALL_EXPORT_COLS, fmt, rows, filterHTML) {
   // Default: all checked
   document.getElementById('teacher-export-col-modal')?.remove();
 
@@ -936,7 +945,7 @@ function _openExportColChooser(ALL_EXPORT_COLS, fmt, rows) {
     const activeCols = ALL_EXPORT_COLS.filter(c => chosen.includes(c.id));
     close();
     if (fmt === 'csv') _doExportCSV(activeCols, rows);
-    else               _doExportPDF(activeCols, rows);
+    else               _doExportPDF(activeCols, rows, filterHTML);
   });
 }
 
@@ -956,7 +965,7 @@ function _doExportCSV(activeCols, rows) {
 }
 
 // ── PDF export — ass.js-style professional formatting ─────────
-function _doExportPDF(activeCols, rows) {
+function _doExportPDF(activeCols, rows, filterHTML) {
   const now     = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -999,9 +1008,15 @@ function _doExportPDF(activeCols, rows) {
   .stat-box{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:5px 12px;text-align:center}
   .stat-box .num{font-size:16px;font-weight:700;color:#2563eb;font-family:monospace}
   .stat-box .lbl{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px}
-  .cols-row{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;
-            font-size:10px;color:#475569;margin-bottom:10px}
-  .cols-row strong{color:#1e293b}
+  .cols-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+            background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;
+            padding:7px 12px;margin-bottom:10px}
+  .filters-label{font-size:9px;font-weight:700;color:#1e40af;text-transform:uppercase;
+                 letter-spacing:0.6px;white-space:nowrap;margin-right:2px}
+  .filter-chip{background:#dbeafe;color:#1d4ed8;font-size:9.5px;font-weight:500;
+               padding:2px 9px;border-radius:10px;white-space:nowrap}
+  .filter-chip .fk{font-weight:700}
+  .filter-none{background:#f1f5f9;color:#64748b}
   table{width:100%;border-collapse:collapse;font-size:9.5px}
   thead tr{background:#1e40af}
   thead th{color:#fff;font-weight:600;padding:6px 6px;text-align:left;font-size:8.5px;
@@ -1050,7 +1065,7 @@ function _doExportPDF(activeCols, rows) {
   </div>
 
   <div class="cols-row">
-    &#128196; <strong>Columns:</strong> ${activeCols.map(c => c.label).join(' &nbsp;·&nbsp; ')}
+    ${filterHTML}
   </div>
 
   <table>
@@ -1285,6 +1300,28 @@ function _injectTeacherStyles() {
 }
 .view-btn:hover { color: var(--t1); }
 .view-btn--active { background: var(--surface4); color: var(--t1); }
+
+/* ── Plain badge (no colored background) ── */
+.badge--plain {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 10px;
+  background: var(--surface3); border: 1px solid var(--border2);
+  color: var(--t2); font-size: 10.5px; font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── Sticky / frozen column headers ── */
+.data-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+  background: var(--surface2) !important;
+  box-shadow: 0 1px 0 var(--border2) !important;
+}
+.data-table-wrap, #teacher-table {
+  overflow-y: auto;
+  max-height: calc(100vh - 260px);
+}
 
 /* ── Inactive badge overlay ── */
 .inactive-overlay {
