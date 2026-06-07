@@ -175,6 +175,57 @@ function _injectStyles() {
   font-family:inherit; transition:all .15s; white-space:nowrap;
 }
 .tlr-export-btn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+
+/* ── Multi-select dropdown ── */
+.tlr-dd-wrap { position:relative; }
+.tlr-dd-trigger {
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
+  height:34px; padding:0 10px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:8px; color:var(--t1); font-size:12.5px;
+  cursor:pointer; transition:border-color .12s; user-select:none;
+}
+.tlr-dd-trigger:hover  { border-color:var(--blue); }
+.tlr-dd-trigger.open   { border-color:var(--blue); }
+.tlr-dd-trigger.tlr-dd-disabled { opacity:.45; pointer-events:none; }
+.tlr-dd-panel {
+  position:absolute; top:calc(100% + 4px); left:0; right:0;
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:10px; z-index:999;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+  min-width:200px; overflow:hidden;
+}
+.tlr-dd-search-wrap { padding:8px 8px 4px; }
+.tlr-dd-search {
+  width:100%; height:30px; padding:0 10px;
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:6px; font-size:12px; color:var(--t1);
+  outline:none; font-family:inherit;
+}
+.tlr-dd-search:focus { border-color:var(--blue); }
+.tlr-dd-list { max-height:180px; overflow-y:auto; padding:4px 0; }
+.tlr-dd-item {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 12px; cursor:pointer; font-size:12.5px;
+  color:var(--t1); transition:background .1s;
+}
+.tlr-dd-item:hover { background:var(--surface2); }
+.tlr-dd-item input[type=checkbox] {
+  width:14px; height:14px;
+  accent-color:var(--blue); cursor:pointer; flex-shrink:0;
+}
+.tlr-dd-footer {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 12px; border-top:1px solid var(--border);
+  background:var(--surface2);
+}
+.tlr-dd-selall, .tlr-dd-clear {
+  font-size:11.5px; font-weight:600;
+  background:none; border:none; cursor:pointer; padding:0;
+}
+.tlr-dd-selall { color:var(--blue); }
+.tlr-dd-clear  { color:var(--red,#ef4444); }
+.tlr-dd-empty  { padding:12px; text-align:center; font-size:12px; color:var(--t3); }
   `;
   document.head.appendChild(st);
 }
@@ -225,11 +276,11 @@ export const TeacherListReport = {
   _container:   null,
   _filterOpen:  false,
 
-  // Filter state
-  _selCampus:     '',
-  _selDiscipline: '',
-  _selSubject:    '',
-  _selStatus:     '',
+  // Filter state — multi-select arrays
+  _selCampuses:     [],
+  _selDisciplines:  [],
+  _selSubjects:     [],
+  _selStatus:       '',
 
   // Applied filter
   _appliedFilter: null,
@@ -237,13 +288,13 @@ export const TeacherListReport = {
   mount(container) {
     if (!container) return;
     _injectStyles();
-    this._container     = container;
-    this._filterOpen    = false;
-    this._selCampus     = '';
-    this._selDiscipline = '';
-    this._selSubject    = '';
-    this._selStatus     = '';
-    this._appliedFilter = null;
+    this._container      = container;
+    this._filterOpen     = false;
+    this._selCampuses    = [];
+    this._selDisciplines = [];
+    this._selSubjects    = [];
+    this._selStatus      = '';
+    this._appliedFilter  = null;
     this._render();
   },
 
@@ -285,24 +336,21 @@ export const TeacherListReport = {
 
   _activeFilterCount() {
     if (!this._appliedFilter) return 0;
-    return ['campus','discipline','subject','status']
-      .filter(k => this._appliedFilter[k]).length;
+    let n = 0;
+    if (this._appliedFilter.campuses?.length)    n++;
+    if (this._appliedFilter.disciplines?.length) n++;
+    if (this._appliedFilter.subjects?.length)    n++;
+    if (this._appliedFilter.status)              n++;
+    return n;
   },
 
   // ── Filter body ───────────────────────────────────────────────
   _filterBodyHTML() {
     const campuses    = AppState.get('campuses')    || [];
     const disciplines = AppState.get('disciplines') || [];
-    const subjects    = _getSubjectsForDisc(this._selDiscipline);
-
-    const sel = (id, label, opts, val, disabled = false) => `
-      <div class="tlr-filter-col">
-        <div class="tlr-filter-col-label">${label}</div>
-        <select class="tlr-filter-sel" id="${id}" ${disabled ? 'disabled' : ''}>
-          <option value="">All ${label}s</option>
-          ${opts.map(o => `<option value="${o.value}" ${val === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
-        </select>
-      </div>`;
+    const subjects    = this._selDisciplines.length
+      ? (AppState.get('subjects') || []).filter(s => this._selDisciplines.includes(_getDiscIdForSubject(s)))
+      : (AppState.get('subjects') || []);
 
     const campusOpts = campuses.map(c => ({
       value: c.id,
@@ -325,10 +373,16 @@ export const TeacherListReport = {
 
     return `
       <div class="tlr-filter-row">
-        ${sel('tlrSelCampus',     'Campus',     campusOpts, this._selCampus)}
-        ${sel('tlrSelDiscipline', 'Discipline', discOpts,   this._selDiscipline)}
-        ${sel('tlrSelSubject',    'Subject',    subjOpts,   this._selSubject, !this._selDiscipline)}
-        ${sel('tlrSelStatus',     'Status',     statusOpts, this._selStatus)}
+        ${this._multiDropHTML('tlrDdCampus',    'Campus',     campusOpts,  this._selCampuses)}
+        ${this._multiDropHTML('tlrDdDiscipline','Discipline', discOpts,    this._selDisciplines)}
+        ${this._multiDropHTML('tlrDdSubject',   'Subject',    subjOpts,    this._selSubjects, !disciplines.length)}
+        <div class="tlr-filter-col">
+          <div class="tlr-filter-col-label">Status</div>
+          <select class="tlr-filter-sel" id="tlrSelStatus">
+            <option value="">All Statuses</option>
+            ${statusOpts.map(o => `<option value="${o.value}" ${this._selStatus === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="tlr-filter-actions">
         <button class="tlr-filter-apply" id="tlrApplyBtn">Apply Filter</button>
@@ -336,6 +390,37 @@ export const TeacherListReport = {
         ${chips ? `<div class="tlr-chip-row">${chips}</div>` : ''}
       </div>
     `;
+  },
+
+  // ── Multi-select dropdown builder ─────────────────────────────
+  _multiDropHTML(id, label, opts, selected = [], disabled = false) {
+    const selCount = selected.length;
+    const placeholder = selCount ? `${selCount} selected` : `All ${label}s`;
+    return `
+      <div class="tlr-filter-col tlr-dd-wrap" id="${id}Wrap">
+        <div class="tlr-filter-col-label">${label}</div>
+        <div class="tlr-dd-trigger ${disabled ? 'tlr-dd-disabled' : ''}" id="${id}Trigger" tabindex="0">
+          <span class="tlr-dd-label">${placeholder}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="tlr-dd-panel" id="${id}Panel" style="display:none">
+          ${opts.length === 0
+            ? `<div class="tlr-dd-empty">No options</div>`
+            : `<div class="tlr-dd-search-wrap"><input class="tlr-dd-search" placeholder="Search..." id="${id}Search"/></div>
+               <div class="tlr-dd-list" id="${id}List">
+                 ${opts.map(o => `
+                   <label class="tlr-dd-item">
+                     <input type="checkbox" value="${o.value}" ${selected.includes(o.value) ? 'checked' : ''}>
+                     <span>${o.label}</span>
+                   </label>`).join('')}
+               </div>
+               <div class="tlr-dd-footer">
+                 <button class="tlr-dd-selall" id="${id}SelAll">Select All</button>
+                 <button class="tlr-dd-clear"  id="${id}Clear">Clear</button>
+               </div>`
+          }
+        </div>
+      </div>`;
   },
 
   _appliedChipsHTML() {
@@ -349,18 +434,18 @@ export const TeacherListReport = {
       <span class="tlr-chip" style="background:color-mix(in srgb,${color} 15%,transparent);
             color:${color};border-color:${color}">${label}</span>`;
 
-    if (f.campus) {
-      const c = campuses.find(x => x.id === f.campus);
-      chips.push(make(_shortCampus(c?.campusName || f.campus), 'var(--blue)'));
-    }
-    if (f.discipline) {
-      const d = disciplines.find(x => x.id === f.discipline);
-      chips.push(make(d?.abbreviation || d?.fullName || f.discipline, 'var(--violet,#8b5cf6)'));
-    }
-    if (f.subject) {
-      const s = subjects.find(x => x.id === f.subject);
-      chips.push(make(s ? _subjectCode(s) : f.subject, 'var(--cyan)'));
-    }
+    (f.campuses || []).forEach(id => {
+      const c = campuses.find(x => x.id === id);
+      chips.push(make(_shortCampus(c?.campusName || id), 'var(--blue)'));
+    });
+    (f.disciplines || []).forEach(id => {
+      const d = disciplines.find(x => x.id === id);
+      chips.push(make(d?.abbreviation || d?.fullName || id, 'var(--violet,#8b5cf6)'));
+    });
+    (f.subjects || []).forEach(id => {
+      const s = subjects.find(x => x.id === id);
+      chips.push(make(s ? _subjectCode(s) : id, 'var(--cyan)'));
+    });
     if (f.status) {
       chips.push(make(f.status === 'active' ? 'Active' : 'Inactive',
         f.status === 'active' ? 'var(--green)' : 'var(--red)'));
@@ -370,7 +455,6 @@ export const TeacherListReport = {
 
   // ── Attach filter events ──────────────────────────────────────
   _attachFilterEvents(c) {
-    // Toggle
     c.querySelector('#tlrFilterToggle')?.addEventListener('click', () => {
       this._filterOpen = !this._filterOpen;
       c.querySelector('#tlrFilterBody')?.classList.toggle('open', this._filterOpen);
@@ -378,49 +462,118 @@ export const TeacherListReport = {
       this._rerenderFilterToggle(c);
     });
 
-    this._bindCascadeSelects(c);
+    this._bindMultiDrops(c);
 
-    // Apply
-    c.querySelector('#tlrApplyBtn')?.addEventListener('click', () => {
-      this._appliedFilter = {
-        campus:     this._selCampus,
-        discipline: this._selDiscipline,
-        subject:    this._selSubject,
-        status:     this._selStatus,
-      };
-      this._filterOpen = false;
-      c.querySelector('#tlrFilterBody')?.classList.remove('open');
-      c.querySelector('.tlr-filter-arrow')?.classList.remove('open');
-      this._rerenderFilterToggle(c);
-      this._rerenderFilterBody(c);
-      this._renderTable(c);
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', e => {
+      if (!c.contains(e.target)) {
+        c.querySelectorAll('.tlr-dd-panel').forEach(p => p.style.display = 'none');
+        c.querySelectorAll('.tlr-dd-trigger').forEach(t => t.classList.remove('open'));
+      }
     });
 
-    // Clear
+    c.querySelector('#tlrApplyBtn')?.addEventListener('click', () => {
+      this._applyFilter(c);
+    });
     c.querySelector('#tlrClearBtn')?.addEventListener('click', () => {
-      this._selCampus = this._selDiscipline = this._selSubject = this._selStatus = '';
-      this._appliedFilter = null;
-      this._rerenderFilterBody(c);
-      this._rerenderFilterToggle(c);
-      this._renderTable(c);
+      this._clearFilter(c);
     });
   },
 
-  _bindCascadeSelects(c) {
-    c.querySelector('#tlrSelCampus')?.addEventListener('change', e => {
-      this._selCampus = e.target.value;
+  _applyFilter(c) {
+    this._appliedFilter = {
+      campuses:    [...this._selCampuses],
+      disciplines: [...this._selDisciplines],
+      subjects:    [...this._selSubjects],
+      status:      this._selStatus,
+    };
+    this._filterOpen = false;
+    c.querySelector('#tlrFilterBody')?.classList.remove('open');
+    c.querySelector('.tlr-filter-arrow')?.classList.remove('open');
+    this._rerenderFilterToggle(c);
+    this._rerenderFilterBody(c);
+    this._renderTable(c);
+  },
+
+  _clearFilter(c) {
+    this._selCampuses    = [];
+    this._selDisciplines = [];
+    this._selSubjects    = [];
+    this._selStatus      = '';
+    this._appliedFilter  = null;
+    this._rerenderFilterBody(c);
+    this._rerenderFilterToggle(c);
+    this._renderTable(c);
+  },
+
+  // ── Multi-select dropdown bindings ────────────────────────────
+  _bindMultiDrops(c) {
+    this._bindOneDrop(c, 'tlrDdCampus',     () => this._selCampuses,    v => { this._selCampuses = v; });
+    this._bindOneDrop(c, 'tlrDdDiscipline', () => this._selDisciplines, v => {
+      this._selDisciplines = v;
+      this._selSubjects = [];
       this._rerenderFilterBody(c);
     });
-    c.querySelector('#tlrSelDiscipline')?.addEventListener('change', e => {
-      this._selDiscipline = e.target.value;
-      this._selSubject    = '';
-      this._rerenderFilterBody(c);
-    });
-    c.querySelector('#tlrSelSubject')?.addEventListener('change', e => {
-      this._selSubject = e.target.value;
-    });
+    this._bindOneDrop(c, 'tlrDdSubject', () => this._selSubjects,  v => { this._selSubjects = v; });
+
     c.querySelector('#tlrSelStatus')?.addEventListener('change', e => {
       this._selStatus = e.target.value;
+    });
+    c.querySelector('#tlrApplyBtn')?.addEventListener('click', () => this._applyFilter(c));
+    c.querySelector('#tlrClearBtn')?.addEventListener('click', () => this._clearFilter(c));
+  },
+
+  _bindOneDrop(c, id, getter, setter) {
+    const trigger = c.querySelector(`#${id}Trigger`);
+    const panel   = c.querySelector(`#${id}Panel`);
+    if (!trigger || !panel) return;
+
+    // Open/close toggle
+    trigger.addEventListener('click', () => {
+      const isOpen = panel.style.display !== 'none';
+      // Close all other panels first
+      c.querySelectorAll('.tlr-dd-panel').forEach(p => p.style.display = 'none');
+      c.querySelectorAll('.tlr-dd-trigger').forEach(t => t.classList.remove('open'));
+      if (!isOpen) {
+        panel.style.display = 'block';
+        trigger.classList.add('open');
+      }
+    });
+
+    // Search
+    c.querySelector(`#${id}Search`)?.addEventListener('input', e => {
+      const q = e.target.value.toLowerCase();
+      c.querySelectorAll(`#${id}List .tlr-dd-item`).forEach(item => {
+        item.style.display = item.querySelector('span').textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+
+    // Checkbox change → update state + label
+    panel.addEventListener('change', e => {
+      if (e.target.type !== 'checkbox') return;
+      const checked = [...panel.querySelectorAll('input[type=checkbox]:checked')].map(i => i.value);
+      setter(checked);
+      const lbl = trigger.querySelector('.tlr-dd-label');
+      if (lbl) lbl.textContent = checked.length ? `${checked.length} selected` : `All`;
+    });
+
+    // Select All
+    c.querySelector(`#${id}SelAll`)?.addEventListener('click', e => {
+      e.stopPropagation();
+      panel.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+      const all = [...panel.querySelectorAll('input[type=checkbox]')].map(i => i.value);
+      setter(all);
+      const lbl = trigger.querySelector('.tlr-dd-label');
+      if (lbl) lbl.textContent = `${all.length} selected`;
+    });
+
+    // Clear
+    c.querySelector(`#${id}Clear`)?.addEventListener('click', e => {
+      e.stopPropagation();
+      panel.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+      setter([]);
+      const lbl = trigger.querySelector('.tlr-dd-label');
+      if (lbl) lbl.textContent = 'All';
     });
   },
 
@@ -428,28 +581,7 @@ export const TeacherListReport = {
     const body = c.querySelector('#tlrFilterBody');
     if (!body) return;
     body.innerHTML = this._filterBodyHTML();
-    this._bindCascadeSelects(c);
-    c.querySelector('#tlrApplyBtn')?.addEventListener('click', () => {
-      this._appliedFilter = {
-        campus:     this._selCampus,
-        discipline: this._selDiscipline,
-        subject:    this._selSubject,
-        status:     this._selStatus,
-      };
-      this._filterOpen = false;
-      c.querySelector('#tlrFilterBody')?.classList.remove('open');
-      c.querySelector('.tlr-filter-arrow')?.classList.remove('open');
-      this._rerenderFilterToggle(c);
-      this._rerenderFilterBody(c);
-      this._renderTable(c);
-    });
-    c.querySelector('#tlrClearBtn')?.addEventListener('click', () => {
-      this._selCampus = this._selDiscipline = this._selSubject = this._selStatus = '';
-      this._appliedFilter = null;
-      this._rerenderFilterBody(c);
-      this._rerenderFilterToggle(c);
-      this._renderTable(c);
-    });
+    this._bindMultiDrops(c);
   },
 
   _rerenderFilterToggle(c) {
@@ -493,11 +625,11 @@ export const TeacherListReport = {
 
     // Apply filters
     const rows = all.filter(t => {
-      if (f.campus && !(t.campuses || []).includes(f.campus))             return false;
-      if (f.discipline && !(t.disciplines || []).includes(f.discipline))  return false;
-      if (f.subject && !(t.teachingSubjects || []).some(sid => sid === f.subject)) return false;
-      if (f.status === 'active'   && t.isActive === false)                return false;
-      if (f.status === 'inactive' && t.isActive !== false)                return false;
+      if (f.campuses?.length    && !f.campuses.some(id    => (t.campuses         || []).includes(id)))    return false;
+      if (f.disciplines?.length && !f.disciplines.some(id => (t.disciplines      || []).includes(id)))    return false;
+      if (f.subjects?.length    && !f.subjects.some(id    => (t.teachingSubjects || []).includes(id)))    return false;
+      if (f.status === 'active'   && t.isActive === false) return false;
+      if (f.status === 'inactive' && t.isActive !== false) return false;
       return true;
     });
 
@@ -638,10 +770,10 @@ export const TeacherListReport = {
 
     // Build filter HTML for PDF
     const filterParts = [];
-    if (filter.campus)     { const c = campuses.find(x=>x.id===filter.campus);    if(c) filterParts.push(`<span class="filter-chip"><span class="fk">Campus:</span> ${_shortCampus(c.campusName)}</span>`); }
-    if (filter.discipline) { const d = disciplines.find(x=>x.id===filter.discipline); if(d) filterParts.push(`<span class="filter-chip"><span class="fk">Discipline:</span> ${d.abbreviation||d.fullName}</span>`); }
-    if (filter.subject)    { const s = subjects.find(x=>x.id===filter.subject);   if(s) filterParts.push(`<span class="filter-chip"><span class="fk">Subject:</span> ${_subjectCode(s)}</span>`); }
-    if (filter.status)     filterParts.push(`<span class="filter-chip"><span class="fk">Status:</span> ${filter.status === 'active' ? 'Active' : 'Inactive'}</span>`);
+    (filter.campuses||[]).forEach(id => { const c = campuses.find(x=>x.id===id); if(c) filterParts.push(`<span class="filter-chip"><span class="fk">Campus:</span> ${_shortCampus(c.campusName)}</span>`); });
+    (filter.disciplines||[]).forEach(id => { const d = disciplines.find(x=>x.id===id); if(d) filterParts.push(`<span class="filter-chip"><span class="fk">Discipline:</span> ${d.abbreviation||d.fullName}</span>`); });
+    (filter.subjects||[]).forEach(id => { const s = subjects.find(x=>x.id===id); if(s) filterParts.push(`<span class="filter-chip"><span class="fk">Subject:</span> ${_subjectCode(s)}</span>`); });
+    if (filter.status) filterParts.push(`<span class="filter-chip"><span class="fk">Status:</span> ${filter.status === 'active' ? 'Active' : 'Inactive'}</span>`);
     const filterHTML = filterParts.length
       ? `<span class="filters-label">&#9660; Filters</span> ${filterParts.join('')}`
       : `<span class="filter-chip filter-none">No filters applied — showing all teachers</span>`;
