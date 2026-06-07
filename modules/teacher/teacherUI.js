@@ -1359,6 +1359,7 @@ function _injectTeacherStyles() {
 .modal.modal--lg {
   max-width: min(1200px, calc(100vw - 32px)) !important;
   width: calc(100vw - 32px) !important;
+  max-height: calc(100vh - 32px) !important;
 }
 .modal.modal--sm {
   max-width: min(480px, calc(100vw - 32px)) !important;
@@ -1379,6 +1380,8 @@ function _injectTeacherStyles() {
   overflow-x: hidden !important;
   overscroll-behavior: contain !important;
   -webkit-overflow-scrolling: touch !important;
+  max-height: none !important;
+  height: 0 !important;
 }
 
 /* Thin scrollbar inside modal body */
@@ -1515,9 +1518,14 @@ function _injectTeacherStyles() {
       max-width:min(860px,calc(100vw - 32px))!important; }
     .modal.modal--lg { max-width:min(1200px,calc(100vw - 32px))!important;width:calc(100vw - 32px)!important; }
     .modal.modal--sm { max-width:min(480px,calc(100vw - 32px))!important; }
-    .modal-header,.modal-footer,.modal-actions { flex-shrink:0!important; }
+    .modal-header { flex-shrink:0!important; position:sticky!important; top:0!important; z-index:5!important; background:var(--surface,#fff)!important; }
+    .modal-footer,.modal-actions { flex-shrink:0!important; position:sticky!important; bottom:0!important; z-index:5!important; background:var(--surface,#fff)!important; }
     .modal-body { flex:1 1 0%!important;min-height:0!important;overflow-y:auto!important;
-      overflow-x:hidden!important; }
+      overflow-x:hidden!important;padding:0!important; }
+    .modal-body::-webkit-scrollbar { width:5px; }
+    .modal-body::-webkit-scrollbar-track { background:transparent; }
+    .modal-body::-webkit-scrollbar-thumb { background:rgba(128,128,128,.3);border-radius:10px; }
+    #teacherModalInner { padding:20px!important; }
   `;
   // Remove existing and re-add to ensure it's last (highest priority)
   document.getElementById('teacher-modal-fix')?.remove();
