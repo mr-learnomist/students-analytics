@@ -2226,6 +2226,10 @@ function _loadWeeklySheet(batch) {
       ` : `<span style="font-size:12px;color:var(--t3)">No attendance records in this range.</span>`}
       </div>
       <div style="display:flex;gap:6px">
+        <button id="weeklySaveBtn" class="att2-btn att2-btn-primary" style="opacity:0.5;pointer-events:none" disabled>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save
+        </button>
         <button id="weeklyExportBtn" class="att2-btn">⬇ Export CSV</button>
       </div>
     </div>
@@ -2254,6 +2258,43 @@ function _loadWeeklySheet(batch) {
     _exportWeeklyCSV(batch, students, classDates, records);
   });
 
+  // Wire save button
+  const _enableWeeklySave = () => {
+    const btn = mainEl.querySelector('#weeklySaveBtn');
+    if (!btn) return;
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+  };
+
+  const _markWeeklySaved = () => {
+    const btn = mainEl.querySelector('#weeklySaveBtn');
+    if (!btn) return;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Saved`;
+    btn.style.background = 'var(--green)';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btn.style.pointerEvents = 'none';
+    setTimeout(() => {
+      btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save`;
+      btn.style.background = 'var(--blue)';
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.pointerEvents = 'none';
+    }, 2000);
+  };
+
+  mainEl.querySelector('#weeklySaveBtn')?.addEventListener('click', async () => {
+    const btn = mainEl.querySelector('#weeklySaveBtn');
+    if (!btn) return;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Saving...`;
+    btn.disabled = true;
+    AppState.saveState();
+    await new Promise(r => setTimeout(r, 400));
+    _markWeeklySaved();
+    Toast.success('Attendance saved.');
+  });
+
   // ── Wire cells: click toggle + keyboard + first-student auto-fill ──
   if (isAdmin || isTeacher) {
     const markedBy = AppState.get('currentUser')?.id;
@@ -2280,6 +2321,9 @@ function _loadWeeklySheet(batch) {
           recs.filter(r => !(r.batchId === batch.id && r.studentId === sid && r.date === date)));
       }
       AppState.saveState();
+
+      // Enable save button
+      _enableWeeklySave();
 
       // Visual update
       const bgMap = { P:'var(--green-dim)', A:'var(--red-dim)', L:'#fef3c7', '':'var(--surface2)' };
