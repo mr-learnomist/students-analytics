@@ -77,13 +77,41 @@ function _injectStyles() {
 .att2-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
 
 /* ── Batch-wise layout ─────────────────────────────────────── */
-.att2-bw { display:grid; grid-template-columns:280px 1fr; flex:1; min-height:0; overflow:hidden; }
+.att2-bw { display:flex; flex:1; min-height:0; overflow:hidden; position:relative; }
 
 /* ── Sidebar ──────────────────────────────────────────────── */
-.att2-sidebar {
-  border-right:1px solid var(--border);
-  display:flex; flex-direction:column; overflow:hidden;
+/* Trigger strip — always visible, thin bar on the left */
+.att2-sidebar-trigger {
+  position:relative; z-index:20; flex-shrink:0;
+  width:28px; height:100%;
+  background:var(--surface2); border-right:1px solid var(--border2);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:6px; cursor:pointer;
+  transition:background .15s, width .25s;
 }
+.att2-sidebar-trigger:hover { background:var(--surface3); }
+.att2-sidebar-trigger svg { color:var(--t3); flex-shrink:0; }
+.att2-sidebar-trigger-label {
+  writing-mode:vertical-rl; transform:rotate(180deg);
+  font-size:9px; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--t4); white-space:nowrap;
+}
+
+/* Sidebar panel — slides in/out */
+.att2-sidebar {
+  position:absolute; top:0; left:28px; z-index:15;
+  width:280px; height:100%;
+  background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+  transform:translateX(-308px);
+  transition:transform .25s cubic-bezier(.4,0,.2,1), box-shadow .25s;
+  box-shadow:none;
+}
+.att2-sidebar.visible {
+  transform:translateX(0);
+  box-shadow:4px 0 24px rgba(0,0,0,.3);
+}
+
 .att2-filters {
   flex-shrink:0; padding:10px; display:flex; flex-direction:column;
   gap:6px; border-bottom:1px solid var(--border);
@@ -295,8 +323,7 @@ function _injectStyles() {
 .att-pct-bar { height:100%; border-radius:4px; transition:width .4s; }
 
 @media(max-width:768px){
-  .att2-bw { grid-template-columns:1fr; }
-  .att2-sidebar { max-height:260px; border-right:none; border-bottom:1px solid var(--border); }
+  .att2-sidebar { width:260px; }
 }
 `;
   document.head.appendChild(s);
@@ -376,8 +403,17 @@ function _renderBatchWise() {
 
   body.innerHTML = `
     <div class="att2-bw" style="flex:1;min-height:0;overflow:hidden">
-      <!-- Sidebar -->
-      <aside class="att2-sidebar">
+
+      <!-- Sidebar trigger strip (always visible) -->
+      <div class="att2-sidebar-trigger" id="att2SidebarTrigger" title="Filters & Batches">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <span class="att2-sidebar-trigger-label">Batches</span>
+      </div>
+
+      <!-- Sidebar panel (hover to show) -->
+      <aside class="att2-sidebar" id="att2Sidebar">
         <div class="att2-filters">
           <select class="att2-filter-sel" id="att2FiltCamp">
             <option value="">All Campuses</option>${campOpts}
@@ -405,7 +441,7 @@ function _renderBatchWise() {
             <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
           </svg>
           <h3>Select a Batch</h3>
-          <p>Use the filters and batch list on the left to load an attendance sheet.</p>
+          <p>Hover the left panel to open filters and batch list.</p>
         </div>
       </div>
     </div>`;
@@ -515,6 +551,36 @@ function _attachBWEvents() {
   _root.querySelector('#att2FiltDisc')?.addEventListener('change',  e => { _filterDisc    = e.target.value; _renderBatchList(); });
   _root.querySelector('#att2FiltSess')?.addEventListener('change',  e => { _filterSession = e.target.value; _renderBatchList(); });
   _root.querySelector('#att2BatchSearch')?.addEventListener('input', e => { _batchSearch   = e.target.value.trim(); _renderBatchList(); });
+
+  // ── Sidebar hover auto-show/hide ──────────────────────────
+  const trigger = _root.querySelector('#att2SidebarTrigger');
+  const sidebar = _root.querySelector('#att2Sidebar');
+  if (!trigger || !sidebar) return;
+
+  let hideTimer = null;
+
+  const showSidebar = () => {
+    clearTimeout(hideTimer);
+    sidebar.classList.add('visible');
+  };
+
+  const hideSidebar = () => {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => sidebar.classList.remove('visible'), 200);
+  };
+
+  // Hover on trigger strip → show
+  trigger.addEventListener('mouseenter', showSidebar);
+  trigger.addEventListener('mouseleave', hideSidebar);
+
+  // Stay open while hovering inside sidebar
+  sidebar.addEventListener('mouseenter', showSidebar);
+  sidebar.addEventListener('mouseleave', hideSidebar);
+
+  // Click on trigger also toggles sidebar (for mobile tap)
+  trigger.addEventListener('click', () => {
+    sidebar.classList.toggle('visible');
+  });
 }
 
 // ── Load batch sheet ──────────────────────────────────────────
