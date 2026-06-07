@@ -117,10 +117,9 @@ function injectLPStyles() {
     .lp-view-box .modal-footer { flex-shrink: 0; }
     .lp-view-box .modal-body {
       flex: 1 1 0% !important;
-      height: 0 !important;
+      min-height: 120px !important;
       overflow-y: auto !important;
       overflow-x: hidden !important;
-      min-height: 0 !important;
     }
     .lp-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px}
     .lp-tab-btn{padding:8px 18px;background:none;border:none;cursor:pointer;font-size:13px;
