@@ -305,8 +305,7 @@ export function injectUIStyles() {
 .modal-body {
   padding: 20px 24px;
   flex: 1 1 0%;
-  min-height: 0;
-  height: 0;
+  min-height: 120px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
