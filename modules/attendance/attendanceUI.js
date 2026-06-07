@@ -78,39 +78,49 @@ function _injectStyles() {
 .att2-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
 
 /* ── Batch-wise layout ─────────────────────────────────────── */
-.att2-bw { display:flex; flex:1; min-height:0; overflow:hidden; position:relative; }
+.att2-bw { display:flex; flex:1; min-height:0; overflow:hidden; }
 
-/* ── Sidebar ──────────────────────────────────────────────── */
-/* Trigger strip — always visible, thin bar on the left */
-.att2-sidebar-trigger {
-  position:relative; z-index:20; flex-shrink:0;
-  width:28px; height:100%;
-  background:var(--surface2); border-right:1px solid var(--border2);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:6px; cursor:pointer;
-  transition:background .15s, width .25s;
+/* ── Sidebar wrapper — collapses/expands in-flow ─────────── */
+.att2-sb-wrap {
+  display:flex; flex-direction:row; flex-shrink:0;
+  width:32px; min-width:32px;
+  transition:width .25s cubic-bezier(.4,0,.2,1), min-width .25s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+  border-right:1px solid var(--border);
+  background:var(--surface);
+  position:relative; z-index:10;
 }
-.att2-sidebar-trigger:hover { background:var(--surface3); }
-.att2-sidebar-trigger svg { color:var(--t3); flex-shrink:0; }
-.att2-sidebar-trigger-label {
+.att2-sb-wrap:hover, .att2-sb-wrap.open {
+  width:280px; min-width:280px;
+}
+
+/* Collapsed strip — always visible */
+.att2-sb-strip {
+  flex-shrink:0; width:32px; min-width:32px;
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:flex-start; padding-top:14px;
+  gap:8px; cursor:pointer; background:var(--surface2);
+  border-right:1px solid var(--border2);
+}
+.att2-sb-strip svg { color:var(--t3); }
+.att2-sb-strip-label {
   writing-mode:vertical-rl; transform:rotate(180deg);
   font-size:9px; font-weight:700; letter-spacing:.1em;
   text-transform:uppercase; color:var(--t4); white-space:nowrap;
+  margin-top:4px;
 }
 
-/* Sidebar panel — slides in/out */
+/* Sidebar content — hidden when collapsed, visible when expanded */
 .att2-sidebar {
-  position:absolute; top:0; left:28px; z-index:15;
-  width:280px; height:100%;
-  background:var(--surface); border-right:1px solid var(--border);
-  display:flex; flex-direction:column; overflow:hidden;
-  transform:translateX(-308px);
-  transition:transform .25s cubic-bezier(.4,0,.2,1), box-shadow .25s;
-  box-shadow:none;
+  flex:1; display:flex; flex-direction:column; overflow:hidden;
+  min-width:248px; opacity:0;
+  transition:opacity .15s ease;
+  pointer-events:none;
 }
-.att2-sidebar.visible {
-  transform:translateX(0);
-  box-shadow:4px 0 24px rgba(0,0,0,.3);
+.att2-sb-wrap:hover .att2-sidebar,
+.att2-sb-wrap.open .att2-sidebar {
+  opacity:1; pointer-events:auto;
+  transition:opacity .2s ease .1s;
 }
 
 .att2-filters {
@@ -405,35 +415,39 @@ function _renderBatchWise() {
   body.innerHTML = `
     <div class="att2-bw" style="flex:1;height:100%;min-height:0;overflow:hidden">
 
-      <!-- Sidebar trigger strip (always visible) -->
-      <div class="att2-sidebar-trigger" id="att2SidebarTrigger" title="Filters & Batches">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-        <span class="att2-sidebar-trigger-label">Batches</span>
-      </div>
+      <!-- Sidebar: collapsed strip + expandable content -->
+      <div class="att2-sb-wrap" id="att2SidebarWrap">
 
-      <!-- Sidebar panel (hover to show) -->
-      <aside class="att2-sidebar" id="att2Sidebar">
-        <div class="att2-filters">
-          <select class="att2-filter-sel" id="att2FiltCamp">
-            <option value="">All Campuses</option>${campOpts}
-          </select>
-          <select class="att2-filter-sel" id="att2FiltDisc">
-            <option value="">All Disciplines</option>${discOpts}
-          </select>
-          <select class="att2-filter-sel" id="att2FiltSess">
-            <option value="">All Sessions</option>${sessOpts}
-          </select>
-        </div>
-        <div class="att2-sb-search">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <!-- Always-visible strip -->
+        <div class="att2-sb-strip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
-          <input id="att2BatchSearch" placeholder="Search batches…" value="${_batchSearch}"/>
+          <span class="att2-sb-strip-label">Batches</span>
         </div>
-        <div class="att2-batch-list" id="att2BatchList"></div>
-      </aside>
+
+        <!-- Expandable sidebar content -->
+        <aside class="att2-sidebar" id="att2Sidebar">
+          <div class="att2-filters">
+            <select class="att2-filter-sel" id="att2FiltCamp">
+              <option value="">All Campuses</option>${campOpts}
+            </select>
+            <select class="att2-filter-sel" id="att2FiltDisc">
+              <option value="">All Disciplines</option>${discOpts}
+            </select>
+            <select class="att2-filter-sel" id="att2FiltSess">
+              <option value="">All Sessions</option>${sessOpts}
+            </select>
+          </div>
+          <div class="att2-sb-search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input id="att2BatchSearch" placeholder="Search batches…" value="${_batchSearch}"/>
+          </div>
+          <div class="att2-batch-list" id="att2BatchList"></div>
+        </aside>
+      </div>
 
       <!-- Main -->
       <div class="att2-main" id="att2Main">
@@ -442,7 +456,7 @@ function _renderBatchWise() {
             <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
           </svg>
           <h3>Select a Batch</h3>
-          <p>Hover the left panel to open filters and batch list.</p>
+          <p>Hover the left panel to browse filters and batches.</p>
         </div>
       </div>
     </div>`;
@@ -552,36 +566,6 @@ function _attachBWEvents() {
   _root.querySelector('#att2FiltDisc')?.addEventListener('change',  e => { _filterDisc    = e.target.value; _renderBatchList(); });
   _root.querySelector('#att2FiltSess')?.addEventListener('change',  e => { _filterSession = e.target.value; _renderBatchList(); });
   _root.querySelector('#att2BatchSearch')?.addEventListener('input', e => { _batchSearch   = e.target.value.trim(); _renderBatchList(); });
-
-  // ── Sidebar hover auto-show/hide ──────────────────────────
-  const trigger = _root.querySelector('#att2SidebarTrigger');
-  const sidebar = _root.querySelector('#att2Sidebar');
-  if (!trigger || !sidebar) return;
-
-  let hideTimer = null;
-
-  const showSidebar = () => {
-    clearTimeout(hideTimer);
-    sidebar.classList.add('visible');
-  };
-
-  const hideSidebar = () => {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => sidebar.classList.remove('visible'), 200);
-  };
-
-  // Hover on trigger strip → show
-  trigger.addEventListener('mouseenter', showSidebar);
-  trigger.addEventListener('mouseleave', hideSidebar);
-
-  // Stay open while hovering inside sidebar
-  sidebar.addEventListener('mouseenter', showSidebar);
-  sidebar.addEventListener('mouseleave', hideSidebar);
-
-  // Click on trigger also toggles sidebar (for mobile tap)
-  trigger.addEventListener('click', () => {
-    sidebar.classList.toggle('visible');
-  });
 }
 
 // ── Load batch sheet ──────────────────────────────────────────
@@ -1357,73 +1341,70 @@ function _renderDailyAttendance() {
     `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div style="display:flex;flex:1;height:100%;min-height:0;overflow:hidden;position:relative">
+    <div style="display:flex;flex:1;height:100%;min-height:0;overflow:hidden">
 
-      <!-- ── Sidebar trigger strip ── -->
-      <div id="dailySidebarTrigger" style="
-        position:relative;z-index:20;flex-shrink:0;
-        width:28px;height:100%;
-        background:var(--surface2);border-right:1px solid var(--border2);
-        display:flex;flex-direction:column;align-items:center;justify-content:center;
-        gap:6px;cursor:pointer;transition:background .15s">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--t3)">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-        <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;
-                     letter-spacing:.1em;text-transform:uppercase;color:var(--t4);white-space:nowrap">Batches</span>
+      <!-- Sidebar: strip + expandable -->
+      <div style="display:flex;flex-direction:row;flex-shrink:0;width:32px;min-width:32px;
+                  transition:width .25s cubic-bezier(.4,0,.2,1),min-width .25s;
+                  overflow:hidden;border-right:1px solid var(--border);background:var(--surface);position:relative;z-index:10"
+           class="att2-sb-wrap" id="dailySidebarWrap">
+
+        <!-- Strip -->
+        <div style="flex-shrink:0;width:32px;min-width:32px;display:flex;flex-direction:column;
+                    align-items:center;justify-content:flex-start;padding-top:14px;gap:8px;
+                    cursor:pointer;background:var(--surface2);border-right:1px solid var(--border2)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--t3)">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+          <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;
+                       letter-spacing:.1em;text-transform:uppercase;color:var(--t4);white-space:nowrap;margin-top:4px">Batches</span>
+        </div>
+
+        <!-- Expandable content -->
+        <aside id="dailySidebar" style="flex:1;display:flex;flex-direction:column;overflow:hidden;
+                                        min-width:228px;opacity:0;pointer-events:none;
+                                        transition:opacity .2s ease .1s">
+
+          <!-- Filters -->
+          <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
+            <select class="att2-filter-sel" id="dailyFiltCamp">
+              <option value="">All Campuses</option>${campOpts}
+            </select>
+            <select class="att2-filter-sel" id="dailyFiltDisc">
+              <option value="">All Disciplines</option>${discOpts}
+            </select>
+            <select class="att2-filter-sel" id="dailyFiltSess">
+              <option value="">All Sessions</option>${sessOpts}
+            </select>
+          </div>
+
+          <!-- Date picker -->
+          <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:8px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+            </svg>
+            <input type="date" id="dailyDatePick" value="${_dailyDate}"
+              style="flex:1;background:var(--surface2);border:1px solid var(--border2);
+                     border-radius:var(--r-sm);color:var(--t1);font-size:12px;
+                     padding:5px 8px;outline:none;cursor:pointer;font-family:inherit"/>
+            <button id="dailyTodayBtn"
+              style="font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:var(--r-sm);
+                     border:1px solid var(--blue);background:var(--blue-dim);color:var(--blue);
+                     cursor:pointer;white-space:nowrap;font-family:inherit">Today</button>
+          </div>
+
+          <!-- Batch list label -->
+          <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.06em;color:var(--t3);flex-shrink:0">
+            Active Batches &nbsp;<span id="dailyBatchCount" style="font-weight:400"></span>
+          </div>
+
+          <!-- Batch list -->
+          <div id="dailyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
+        </aside>
       </div>
 
-      <!-- ── Sidebar panel (slides in on hover) ── -->
-      <aside id="dailySidebar" style="
-        position:absolute;top:0;left:28px;z-index:15;
-        width:260px;height:100%;min-height:0;
-        background:var(--surface);border-right:1px solid var(--border);
-        display:flex;flex-direction:column;overflow:hidden;
-        transform:translateX(-288px);
-        transition:transform .25s cubic-bezier(.4,0,.2,1),box-shadow .25s;
-        box-shadow:none">
-
-        <!-- Filters -->
-        <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
-          <select class="att2-filter-sel" id="dailyFiltCamp">
-            <option value="">All Campuses</option>${campOpts}
-          </select>
-          <select class="att2-filter-sel" id="dailyFiltDisc">
-            <option value="">All Disciplines</option>${discOpts}
-          </select>
-          <select class="att2-filter-sel" id="dailyFiltSess">
-            <option value="">All Sessions</option>${sessOpts}
-          </select>
-        </div>
-
-        <!-- Date picker -->
-        <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:8px">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
-          </svg>
-          <input type="date" id="dailyDatePick" value="${_dailyDate}"
-            style="flex:1;background:var(--surface2);border:1px solid var(--border2);
-                   border-radius:var(--r-sm);color:var(--t1);font-size:12px;
-                   padding:5px 8px;outline:none;cursor:pointer;font-family:inherit"/>
-          <button id="dailyTodayBtn"
-            style="font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:var(--r-sm);
-                   border:1px solid var(--blue);background:var(--blue-dim);color:var(--blue);
-                   cursor:pointer;white-space:nowrap;font-family:inherit">
-            Today
-          </button>
-        </div>
-
-        <!-- Batch list label -->
-        <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
-                    letter-spacing:.06em;color:var(--t3);flex-shrink:0">
-          Active Batches &nbsp;<span id="dailyBatchCount" style="font-weight:400"></span>
-        </div>
-
-        <!-- Batch list — flex:1 + overflow-y:auto to scroll -->
-        <div id="dailyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
-      </aside>
-
-      <!-- ── Main ── -->
+      <!-- Main -->
       <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1431,7 +1412,7 @@ function _renderDailyAttendance() {
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
           <h3>Select a Batch</h3>
-          <p>Hover the left panel to open filters and batch list.</p>
+          <p>Hover the left panel to browse filters and batches.</p>
         </div>
       </div>
     </div>`;
@@ -1563,36 +1544,20 @@ function _attachDailyEvents() {
     if (_dailySelBatch) _loadDailySheet(_dailySelBatch);
   });
 
-  // ── Sidebar hover auto-show/hide ──────────────────────────
-  const trigger = _root.querySelector('#dailySidebarTrigger');
+  // ── Sidebar hover: CSS width handled by .att2-sb-wrap:hover,
+  //    but opacity on #dailySidebar needs JS because it's a child
+  const wrap    = _root.querySelector('#dailySidebarWrap');
   const sidebar = _root.querySelector('#dailySidebar');
-  if (!trigger || !sidebar) return;
-
-  let _hideTimer = null;
-
-  const _show = () => {
-    clearTimeout(_hideTimer);
-    sidebar.style.transform = 'translateX(0)';
-    sidebar.style.boxShadow = '4px 0 24px rgba(0,0,0,.3)';
-  };
-  const _hide = () => {
-    clearTimeout(_hideTimer);
-    _hideTimer = setTimeout(() => {
-      sidebar.style.transform = 'translateX(-288px)';
-      sidebar.style.boxShadow = 'none';
-    }, 200);
-  };
-
-  trigger.addEventListener('mouseenter', _show);
-  trigger.addEventListener('mouseleave', _hide);
-  sidebar.addEventListener('mouseenter', _show);
-  sidebar.addEventListener('mouseleave', _hide);
-
-  // Click toggle for mobile
-  trigger.addEventListener('click', () => {
-    const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.style.transform === 'translateX(0)';
-    if (isOpen) _hide(); else _show();
-  });
+  if (wrap && sidebar) {
+    wrap.addEventListener('mouseenter', () => {
+      sidebar.style.opacity = '1';
+      sidebar.style.pointerEvents = 'auto';
+    });
+    wrap.addEventListener('mouseleave', () => {
+      sidebar.style.opacity = '0';
+      sidebar.style.pointerEvents = 'none';
+    });
+  }
 }
 
 function _loadDailySheet(batch) {
@@ -2118,35 +2083,19 @@ function _attachWeeklyEvents() {
     if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
   });
 
-  // ── Sidebar hover auto-show/hide ──────────────────────────
-  const trigger = _root.querySelector('#weeklySidebarTrigger');
-  const sidebar = _root.querySelector('#weeklySidebar');
-  if (!trigger || !sidebar) return;
-
-  let _wHideTimer = null;
-
-  const _wShow = () => {
-    clearTimeout(_wHideTimer);
-    sidebar.style.transform = 'translateX(0)';
-    sidebar.style.boxShadow = '4px 0 24px rgba(0,0,0,.3)';
-  };
-  const _wHide = () => {
-    clearTimeout(_wHideTimer);
-    _wHideTimer = setTimeout(() => {
-      sidebar.style.transform = 'translateX(-288px)';
-      sidebar.style.boxShadow = 'none';
-    }, 200);
-  };
-
-  trigger.addEventListener('mouseenter', _wShow);
-  trigger.addEventListener('mouseleave', _wHide);
-  sidebar.addEventListener('mouseenter', _wShow);
-  sidebar.addEventListener('mouseleave', _wHide);
-
-  trigger.addEventListener('click', () => {
-    const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.style.transform === 'translateX(0)';
-    if (isOpen) _wHide(); else _wShow();
-  });
+  // ── Sidebar hover: CSS width + JS opacity ────────────────
+  const wWrap    = _root.querySelector('#weeklySidebarWrap');
+  const wSidebar = _root.querySelector('#weeklySidebar');
+  if (wWrap && wSidebar) {
+    wWrap.addEventListener('mouseenter', () => {
+      wSidebar.style.opacity = '1';
+      wSidebar.style.pointerEvents = 'auto';
+    });
+    wWrap.addEventListener('mouseleave', () => {
+      wSidebar.style.opacity = '0';
+      wSidebar.style.pointerEvents = 'none';
+    });
+  }
 }
 
 function _renderWeeklyAttendance() {
@@ -2168,87 +2117,86 @@ function _renderWeeklyAttendance() {
     `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div style="display:flex;flex:1;height:100%;min-height:0;overflow:hidden;position:relative">
+    <div style="display:flex;flex:1;height:100%;min-height:0;overflow:hidden">
 
-      <!-- ── Sidebar trigger strip ── -->
-      <div id="weeklySidebarTrigger" style="
-        position:relative;z-index:20;flex-shrink:0;
-        width:28px;height:100%;
-        background:var(--surface2);border-right:1px solid var(--border2);
-        display:flex;flex-direction:column;align-items:center;justify-content:center;
-        gap:6px;cursor:pointer;transition:background .15s">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--t3)">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-        <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;
-                     letter-spacing:.1em;text-transform:uppercase;color:var(--t4);white-space:nowrap">Batches</span>
+      <!-- Sidebar: strip + expandable -->
+      <div style="display:flex;flex-direction:row;flex-shrink:0;width:32px;min-width:32px;
+                  transition:width .25s cubic-bezier(.4,0,.2,1),min-width .25s;
+                  overflow:hidden;border-right:1px solid var(--border);background:var(--surface);position:relative;z-index:10"
+           class="att2-sb-wrap" id="weeklySidebarWrap">
+
+        <!-- Strip -->
+        <div style="flex-shrink:0;width:32px;min-width:32px;display:flex;flex-direction:column;
+                    align-items:center;justify-content:flex-start;padding-top:14px;gap:8px;
+                    cursor:pointer;background:var(--surface2);border-right:1px solid var(--border2)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--t3)">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+          <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;
+                       letter-spacing:.1em;text-transform:uppercase;color:var(--t4);white-space:nowrap;margin-top:4px">Batches</span>
+        </div>
+
+        <!-- Expandable content -->
+        <aside id="weeklySidebar" style="flex:1;display:flex;flex-direction:column;overflow:hidden;
+                                         min-width:228px;opacity:0;pointer-events:none;
+                                         transition:opacity .2s ease .1s">
+
+          <!-- Filters -->
+          <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
+            <select class="att2-filter-sel" id="weeklyFiltCamp">
+              <option value="">All Campuses</option>${campOpts}
+            </select>
+            <select class="att2-filter-sel" id="weeklyFiltDisc">
+              <option value="">All Disciplines</option>${discOpts}
+            </select>
+            <select class="att2-filter-sel" id="weeklyFiltSess">
+              <option value="">All Sessions</option>${sessOpts}
+            </select>
+          </div>
+
+          <!-- Date range -->
+          <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-bottom:6px">Date Range</div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:10.5px;color:var(--t3);min-width:24px">From</span>
+                <input type="date" id="weeklyFromPick" value="${_weeklyFrom}"
+                  style="flex:1;background:var(--surface2);border:1px solid var(--border2);
+                         border-radius:var(--r-sm);color:var(--t1);font-size:11.5px;
+                         padding:4px 7px;outline:none;cursor:pointer;font-family:inherit"/>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:10.5px;color:var(--t3);min-width:24px">To</span>
+                <input type="date" id="weeklyToPick" value="${_weeklyTo}"
+                  style="flex:1;background:var(--surface2);border:1px solid var(--border2);
+                         border-radius:var(--r-sm);color:var(--t1);font-size:11.5px;
+                         padding:4px 7px;outline:none;cursor:pointer;font-family:inherit"/>
+              </div>
+            </div>
+            <div style="display:flex;gap:5px;margin-top:7px">
+              <button id="weeklyThisWeekBtn"
+                style="flex:1;font-size:10.5px;font-weight:700;padding:4px 0;border-radius:var(--r-sm);
+                       border:1px solid var(--blue);background:var(--blue-dim);color:var(--blue);
+                       cursor:pointer;font-family:inherit">This Week</button>
+              <button id="weeklyThisMonthBtn"
+                style="flex:1;font-size:10.5px;font-weight:700;padding:4px 0;border-radius:var(--r-sm);
+                       border:1px solid var(--border2);background:var(--surface2);color:var(--t2);
+                       cursor:pointer;font-family:inherit">This Month</button>
+            </div>
+          </div>
+
+          <!-- Batch list label -->
+          <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.06em;color:var(--t3);flex-shrink:0">
+            Batches &nbsp;<span id="weeklyBatchCount" style="font-weight:400"></span>
+          </div>
+
+          <!-- Batch list -->
+          <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
+        </aside>
       </div>
 
-      <!-- ── Sidebar panel (slides in on hover) ── -->
-      <aside id="weeklySidebar" style="
-        position:absolute;top:0;left:28px;z-index:15;
-        width:260px;height:100%;min-height:0;
-        background:var(--surface);border-right:1px solid var(--border);
-        display:flex;flex-direction:column;overflow:hidden;
-        transform:translateX(-288px);
-        transition:transform .25s cubic-bezier(.4,0,.2,1),box-shadow .25s;
-        box-shadow:none">
-
-        <!-- Filters -->
-        <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
-          <select class="att2-filter-sel" id="weeklyFiltCamp">
-            <option value="">All Campuses</option>${campOpts}
-          </select>
-          <select class="att2-filter-sel" id="weeklyFiltDisc">
-            <option value="">All Disciplines</option>${discOpts}
-          </select>
-          <select class="att2-filter-sel" id="weeklyFiltSess">
-            <option value="">All Sessions</option>${sessOpts}
-          </select>
-        </div>
-
-        <!-- Date range picker -->
-        <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-bottom:6px">Date Range</div>
-          <div style="display:flex;flex-direction:column;gap:5px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:10.5px;color:var(--t3);min-width:24px">From</span>
-              <input type="date" id="weeklyFromPick" value="${_weeklyFrom}"
-                style="flex:1;background:var(--surface2);border:1px solid var(--border2);
-                       border-radius:var(--r-sm);color:var(--t1);font-size:11.5px;
-                       padding:4px 7px;outline:none;cursor:pointer;font-family:inherit"/>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:10.5px;color:var(--t3);min-width:24px">To</span>
-              <input type="date" id="weeklyToPick" value="${_weeklyTo}"
-                style="flex:1;background:var(--surface2);border:1px solid var(--border2);
-                       border-radius:var(--r-sm);color:var(--t1);font-size:11.5px;
-                       padding:4px 7px;outline:none;cursor:pointer;font-family:inherit"/>
-            </div>
-          </div>
-          <div style="display:flex;gap:5px;margin-top:7px">
-            <button id="weeklyThisWeekBtn"
-              style="flex:1;font-size:10.5px;font-weight:700;padding:4px 0;border-radius:var(--r-sm);
-                     border:1px solid var(--blue);background:var(--blue-dim);color:var(--blue);
-                     cursor:pointer;font-family:inherit">This Week</button>
-            <button id="weeklyThisMonthBtn"
-              style="flex:1;font-size:10.5px;font-weight:700;padding:4px 0;border-radius:var(--r-sm);
-                     border:1px solid var(--border2);background:var(--surface2);color:var(--t2);
-                     cursor:pointer;font-family:inherit">This Month</button>
-          </div>
-        </div>
-
-        <!-- Batch list label -->
-        <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
-                    letter-spacing:.06em;color:var(--t3);flex-shrink:0">
-          Batches &nbsp;<span id="weeklyBatchCount" style="font-weight:400"></span>
-        </div>
-
-        <!-- Batch list -->
-        <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
-      </aside>
-
-      <!-- ── Main ── -->
+      <!-- Main -->
       <div id="weeklyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2256,7 +2204,7 @@ function _renderWeeklyAttendance() {
             <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
           </svg>
           <h3>Select a Batch</h3>
-          <p>Hover the left panel to open filters and batch list.</p>
+          <p>Hover the left panel to browse filters and batches.</p>
         </div>
       </div>
     </div>`;
