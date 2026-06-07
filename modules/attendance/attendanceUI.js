@@ -58,7 +58,7 @@ function _injectStyles() {
   s.id = 'att2-styles';
   s.textContent = `
 /* ══ SHELL ══════════════════════════════════════════════════ */
-.att2-shell { display:flex; flex-direction:column; height:100%; min-height:0; margin-top:0; }
+.att2-shell { display:flex; flex-direction:column; height:100%; min-height:0; margin-top:0; overflow:hidden; }
 
 @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 
@@ -364,7 +364,7 @@ function _buildShell() {
           Weekly Report
         </button>
       </div>
-      <div id="att2Body" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
+      <div id="att2Body" style="flex:1;height:100%;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
     </div>`;
 }
 
@@ -403,7 +403,7 @@ function _renderBatchWise() {
     `<option value="${s}" ${_filterSession === s ? 'selected' : ''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div class="att2-bw" style="flex:1;min-height:0;overflow:hidden">
+    <div class="att2-bw" style="flex:1;height:100%;min-height:0;overflow:hidden">
 
       <!-- Sidebar trigger strip (always visible) -->
       <div class="att2-sidebar-trigger" id="att2SidebarTrigger" title="Filters & Batches">
@@ -1357,7 +1357,7 @@ function _renderDailyAttendance() {
     `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div style="display:flex;flex:1;min-height:0;overflow:hidden;position:relative">
+    <div style="display:flex;flex:1;height:100%;min-height:0;overflow:hidden;position:relative">
 
       <!-- ── Sidebar trigger strip ── -->
       <div id="dailySidebarTrigger" style="
@@ -1376,7 +1376,7 @@ function _renderDailyAttendance() {
       <!-- ── Sidebar panel (slides in on hover) ── -->
       <aside id="dailySidebar" style="
         position:absolute;top:0;left:28px;z-index:15;
-        width:260px;height:100%;
+        width:260px;height:100%;min-height:0;
         background:var(--surface);border-right:1px solid var(--border);
         display:flex;flex-direction:column;overflow:hidden;
         transform:translateX(-288px);
@@ -1419,12 +1419,12 @@ function _renderDailyAttendance() {
           Active Batches &nbsp;<span id="dailyBatchCount" style="font-weight:400"></span>
         </div>
 
-        <!-- Batch list -->
-        <div id="dailyBatchList" style="flex:1;overflow-y:auto"></div>
+        <!-- Batch list — flex:1 + overflow-y:auto to scroll -->
+        <div id="dailyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
       </aside>
 
       <!-- ── Main ── -->
-      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1">
+      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.2" style="color:var(--t4)">
@@ -2168,7 +2168,7 @@ function _renderWeeklyAttendance() {
     `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div style="display:flex;flex:1;min-height:0;overflow:hidden;position:relative">
+    <div style="display:flex;flex:1;height:100%;min-height:0;overflow:hidden;position:relative">
 
       <!-- ── Sidebar trigger strip ── -->
       <div id="weeklySidebarTrigger" style="
@@ -2187,7 +2187,7 @@ function _renderWeeklyAttendance() {
       <!-- ── Sidebar panel (slides in on hover) ── -->
       <aside id="weeklySidebar" style="
         position:absolute;top:0;left:28px;z-index:15;
-        width:260px;height:100%;
+        width:260px;height:100%;min-height:0;
         background:var(--surface);border-right:1px solid var(--border);
         display:flex;flex-direction:column;overflow:hidden;
         transform:translateX(-288px);
@@ -2245,11 +2245,11 @@ function _renderWeeklyAttendance() {
         </div>
 
         <!-- Batch list -->
-        <div id="weeklyBatchList" style="flex:1;overflow-y:auto"></div>
+        <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
       </aside>
 
       <!-- ── Main ── -->
-      <div id="weeklyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1">
+      <div id="weeklyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.2" style="color:var(--t4)">
