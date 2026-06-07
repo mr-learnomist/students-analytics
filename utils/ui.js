@@ -261,10 +261,10 @@ export function injectUIStyles() {
   position: fixed; inset: 0; z-index: 1000;
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(4px);
-  display: flex; align-items: flex-start; justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   padding: 16px;
   box-sizing: border-box;
-  overflow-y: auto;
+  overflow: hidden;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s;
 }
@@ -275,7 +275,7 @@ export function injectUIStyles() {
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  margin: auto;
+  max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -301,8 +301,10 @@ export function injectUIStyles() {
   padding: 20px 24px;
   flex: 1 1 0%;
   min-height: 0;
+  height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 .modal-body::-webkit-scrollbar { width: 5px; }
 .modal-body::-webkit-scrollbar-track { background: transparent; }
