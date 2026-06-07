@@ -135,9 +135,9 @@ function _renderTable(body, rows, container) {
 
   // Only show visible columns
   const allCols = [
-    { id: 'name',          label: 'Name',          key: 'fullName',      always: true,
+    { id: 'name',          label: 'Name',          key: 'fullName',      always: true, width: '210px',
       render: (val, row) => `<div><div style="font-weight:600;color:var(--t1)">${val}</div><div style="font-size:11.5px;color:var(--t3);margin-top:2px">${row.email}</div></div>` },
-    { id: 'qualification', label: 'Qualification', key: 'qualification', width: '150px',
+    { id: 'qualification', label: 'Qualification', key: 'qualification', width: '140px',
       render: (v) => `<span style="color:var(--t2);font-size:12.5px">${v || '—'}</span>` },
     { id: 'disciplines',   label: 'Disciplines',   key: 'disciplines',   width: '150px',
       render: (ids) => _disciplinePills(ids) },
@@ -698,8 +698,8 @@ function _disciplinePills(ids = []) {
   if (!ids?.length) return '<span style="color:var(--t4)">—</span>';
   return ids.slice(0, 2).map(id => {
     const d = AppState.findById('disciplines', id);
-    return d ? `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px">${d.abbreviation}</span>` : '';
-  }).join('') + (ids.length > 2 ? `<span class="badge badge--plain" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+    return d ? `<span class="badge badge--blue" style="font-size:10.5px;margin-right:3px">${d.abbreviation}</span>` : '';
+  }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
 function _campusPills(ids = []) {
@@ -710,8 +710,8 @@ function _campusPills(ids = []) {
   }
   return ids.slice(0, 2).map(id => {
     const c = AppState.findById('campuses', id);
-    return c ? `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
-  }).join('') + (ids.length > 2 ? `<span class="badge badge--plain" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
+    return c ? `<span class="badge badge--cyan" style="font-size:10.5px;margin-right:3px" title="${c.campusName}">${_shortCampus(c.campusName)}</span>` : '';
+  }).join('') + (ids.length > 2 ? `<span class="badge badge--grey" style="font-size:10.5px">+${ids.length - 2}</span>` : '');
 }
 
 function _subjectPills(ids = []) {
@@ -725,9 +725,9 @@ function _subjectPills(ids = []) {
   const overflow = found.length - MAX;
   const allCodes = found.map(s => _subjectCode(s) + ' — ' + s.subjectName).join('\n');
   return visible.map(s =>
-    `<span class="badge badge--plain" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
+    `<span class="badge badge--violet" style="font-size:10.5px;margin-right:3px;cursor:default" title="${s.subjectName}">${_subjectCode(s)}</span>`
   ).join('') + (overflow > 0
-    ? `<span class="badge badge--plain" style="font-size:10.5px;cursor:default" title="${allCodes}">+${overflow}</span>`
+    ? `<span class="badge badge--grey" style="font-size:10.5px;cursor:default" title="${allCodes}">+${overflow}</span>`
     : '');
 }
 
@@ -838,10 +838,11 @@ function _pageTemplate() {
   `;
 }
 
-// ── Export ────────────────────────────────────────────────────
+// ── Export — with column chooser modal ───────────────────────
 function _exportTeachers(fmt, container) {
+  // Build the full filtered row set first
   const all = AppState.get('teachers') || [];
-  let rows = all.filter(t => {
+  const rows = all.filter(t => {
     const q = _searchVal;
     const matchSearch = !q || (t.fullName||'').toLowerCase().includes(q) || (t.email||'').toLowerCase().includes(q);
     const matchDisc = !_discFilter || (t.disciplines||[]).includes(_discFilter);
@@ -849,75 +850,235 @@ function _exportTeachers(fmt, container) {
     return matchSearch && matchDisc && matchCamp;
   });
 
-  const subjects  = AppState.get('subjects')    || [];
-  const discs     = AppState.get('disciplines') || [];
-  const campuses  = AppState.get('campuses')    || [];
+  const subjects = AppState.get('subjects')    || [];
+  const discs    = AppState.get('disciplines') || [];
+  const camps    = AppState.get('campuses')    || [];
 
-  // Short campus name helper — strips " Campus" suffix
   function _shortCampusName(name = '') {
     return name.replace(/\s*campus\s*/gi, '').trim() || name;
   }
 
-  const colDefs = [
-    { id: 'name',          label: 'Full Name',     get: r => r.fullName || '' },
-    { id: 'qualification', label: 'Qualification', get: r => r.qualification || '' },
-    { id: 'disciplines',   label: 'Disciplines',   get: r => (r.disciplines||[]).map(id => discs.find(d=>d.id===id)?.abbreviation||id).join(', ') },
-    { id: 'subjects',      label: 'Subjects',      get: r => (r.teachingSubjects||[]).map(id => { const s = subjects.find(x=>x.id===id); return s ? _subjectCode(s) : id; }).join(', ') },
-    { id: 'campuses',      label: 'Campuses',      get: r => (r.campuses||[]).map(id => { const c = campuses.find(x=>x.id===id); return c ? _shortCampusName(c.campusName) : id; }).join(', ') },
-    { id: 'contact',       label: 'Contact',       get: r => r.contactNumber || '' },
-    { id: 'status',        label: 'Status',        get: r => r.isActive === false ? 'Inactive' : 'Active' },
+  const ALL_EXPORT_COLS = [
+    { id: 'name',          label: 'Full Name',      get: r => r.fullName || '' },
+    { id: 'email',         label: 'Email',          get: r => r.email || '' },
+    { id: 'qualification', label: 'Qualification',  get: r => r.qualification || '' },
+    { id: 'disciplines',   label: 'Disciplines',    get: r => (r.disciplines||[]).map(id => discs.find(d=>d.id===id)?.abbreviation||id).join(', ') },
+    { id: 'subjects',      label: 'Subjects',       get: r => (r.teachingSubjects||[]).map(id => { const s = subjects.find(x=>x.id===id); return s ? _subjectCode(s) : id; }).join(', ') },
+    { id: 'campuses',      label: 'Campuses',       get: r => (r.campuses||[]).map(id => { const c = camps.find(x=>x.id===id); return c ? _shortCampusName(c.campusName) : id; }).join(', ') },
+    { id: 'contact',       label: 'Contact',        get: r => r.contactNumber || '' },
+    { id: 'status',        label: 'Status',         get: r => r.isActive === false ? 'Inactive' : 'Active' },
   ];
 
-  // Only export visible columns
-  const activeCols = colDefs.filter(c => _visibleCols.has(c.id));
+  // ── Show column chooser modal before export ──────────────────
+  _openExportColChooser(ALL_EXPORT_COLS, fmt, rows);
+}
 
-  if (fmt === 'csv') {
-    const header = ['#', ...activeCols.map(c => c.label)].join(',');
-    const body = rows.map((r, i) =>
-      [i + 1, ...activeCols.map(c => `"${(c.get(r)||'').replace(/"/g,'""')}"`)]
-      .join(',')
-    ).join('\n');
-    const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `teachers_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    Toast.success('CSV exported!');
-  } else if (fmt === 'pdf') {
-    const win = window.open('', '_blank');
-    win.document.write(`
-      <!DOCTYPE html><html><head><meta charset="UTF-8">
-      <title>Teachers Export</title>
-      <style>
-        body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; }
-        h2 { font-size: 16px; margin-bottom: 4px; }
-        .meta { font-size: 11px; color: #666; margin-bottom: 16px; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-size: 11px;
-             text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid #e5e7eb; }
-        td { padding: 7px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
-        tr:hover td { background: #fafafa; }
-        .badge-active   { color: #03543f; background: #def7ec; padding: 2px 7px; border-radius: 20px; font-size: 10px; }
-        .badge-inactive { color: #9b1c1c; background: #fde8e8; padding: 2px 7px; border-radius: 20px; font-size: 10px; }
-      </style></head><body>
-      <h2>Teachers List</h2>
-      <div class="meta">Exported: ${new Date().toLocaleString()} &nbsp;|&nbsp; Total: ${rows.length} teachers</div>
-      <table>
-        <thead><tr><th>#</th>${activeCols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${rows.map((r, i) => `<tr><td>${i+1}</td>${activeCols.map(c => {
-            const val = c.get(r) || '—';
-            if (c.id === 'status') return `<td><span class="${val === 'Active' ? 'badge-active' : 'badge-inactive'}">${val}</span></td>`;
-            return `<td>${val}</td>`;
-          }).join('')}</tr>`).join('')}
-        </tbody>
-      </table>
-      </body></html>
-    `);
-    win.document.close();
-    setTimeout(() => { win.print(); }, 400);
-    Toast.success('PDF ready to print!');
+// ── Export column chooser modal ───────────────────────────────
+function _openExportColChooser(ALL_EXPORT_COLS, fmt, rows) {
+  // Default: all checked
+  document.getElementById('teacher-export-col-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'teacher-export-col-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+
+  overlay.innerHTML = `
+    <div style="background:var(--surface,#fff);border-radius:16px;width:100%;max-width:400px;
+                box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden;border:1px solid var(--border,#e5e7eb)">
+      <div style="display:flex;align-items:center;justify-content:space-between;
+                  padding:16px 20px 12px;border-bottom:1px solid var(--border,#e5e7eb)">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1,#111)">Choose Export Columns</div>
+          <div style="font-size:11.5px;color:var(--t3,#888);margin-top:2px">Select which columns to include in the ${fmt.toUpperCase()}</div>
+        </div>
+        <button id="expColClose" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--t3,#888);padding:0 4px;line-height:1">✕</button>
+      </div>
+      <div style="padding:14px 20px;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto">
+        ${ALL_EXPORT_COLS.map(c => `
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;
+                        padding:7px 10px;border-radius:8px;transition:background .12s;
+                        background:var(--surface2,#f9f9f9);border:1px solid var(--border,#e5e7eb)">
+            <input type="checkbox" data-exp-col="${c.id}" checked
+              style="width:15px;height:15px;accent-color:#2563eb;flex-shrink:0;cursor:pointer">
+            <span style="font-size:13px;font-weight:500;color:var(--t1,#111)">${c.label}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;
+                  padding:12px 20px;border-top:1px solid var(--border,#e5e7eb);background:var(--surface2,#f9f9f9)">
+        <button id="expColSelectAll" style="font-size:12px;font-weight:600;color:#2563eb;background:none;border:none;cursor:pointer;padding:0">Select All</button>
+        <div style="display:flex;gap:8px">
+          <button id="expColCancel" style="padding:8px 16px;border-radius:8px;border:1px solid var(--border,#e5e7eb);
+                  background:var(--surface,#fff);font-size:13px;font-weight:600;cursor:pointer;
+                  color:var(--t2,#444);font-family:inherit">Cancel</button>
+          <button id="expColExport" style="padding:8px 20px;border-radius:8px;border:none;
+                  background:#2563eb;color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+                  font-family:inherit">Export ${fmt.toUpperCase()}</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('#expColClose').onclick  = close;
+  overlay.querySelector('#expColCancel').onclick = close;
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  overlay.querySelector('#expColSelectAll').addEventListener('click', () => {
+    overlay.querySelectorAll('[data-exp-col]').forEach(cb => cb.checked = true);
+  });
+
+  overlay.querySelector('#expColExport').addEventListener('click', () => {
+    const chosen = [...overlay.querySelectorAll('[data-exp-col]:checked')].map(i => i.dataset.expCol);
+    if (!chosen.length) { alert('Please select at least one column.'); return; }
+    const activeCols = ALL_EXPORT_COLS.filter(c => chosen.includes(c.id));
+    close();
+    if (fmt === 'csv') _doExportCSV(activeCols, rows);
+    else               _doExportPDF(activeCols, rows);
+  });
+}
+
+// ── CSV export ────────────────────────────────────────────────
+function _doExportCSV(activeCols, rows) {
+  const header = ['#', ...activeCols.map(c => c.label)].join(',');
+  const body = rows.map((r, i) =>
+    [i + 1, ...activeCols.map(c => `"${(c.get(r)||'').replace(/"/g,'""')}"`)]
+    .join(',')
+  ).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `teachers_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  Toast.success('CSV exported!');
+}
+
+// ── PDF export — ass.js-style professional formatting ─────────
+function _doExportPDF(activeCols, rows) {
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  const activeCount   = rows.filter(r => r.isActive !== false).length;
+  const inactiveCount = rows.length - activeCount;
+
+  const thCells = ['#', ...activeCols.map(c => c.label)]
+    .map(h => `<th>${h}</th>`).join('');
+
+  const tdRows = rows.map((r, i) => {
+    const cells = [
+      `<td>${i + 1}</td>`,
+      ...activeCols.map(c => {
+        const val = c.get(r) || '—';
+        if (c.id === 'status') {
+          const cls = val === 'Active' ? 'badge-active' : 'badge-inactive';
+          return `<td><span class="${cls}">${val}</span></td>`;
+        }
+        return `<td>${val}</td>`;
+      }),
+    ].join('');
+    return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">${cells}</tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Teachers Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:#fff;padding:18px 20px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #2563eb;padding-bottom:10px;margin-bottom:12px}
+  .header-left .title{font-size:18px;font-weight:700;color:#1e40af;letter-spacing:-0.3px}
+  .header-left .subtitle{font-size:10.5px;color:#64748b;margin-top:2px}
+  .header-right{text-align:right;font-size:10px;color:#64748b;line-height:1.6}
+  .header-right .date{font-weight:600;color:#1e293b;font-size:10.5px}
+  .meta-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+  .stat-box{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:5px 12px;text-align:center}
+  .stat-box .num{font-size:16px;font-weight:700;color:#2563eb;font-family:monospace}
+  .stat-box .lbl{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px}
+  .cols-row{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;
+            font-size:10px;color:#475569;margin-bottom:10px}
+  .cols-row strong{color:#1e293b}
+  table{width:100%;border-collapse:collapse;font-size:9.5px}
+  thead tr{background:#1e40af}
+  thead th{color:#fff;font-weight:600;padding:6px 6px;text-align:left;font-size:8.5px;
+           text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap}
+  tbody tr.even{background:#fff}
+  tbody tr.odd{background:#f8faff}
+  tbody td{padding:5px 6px;border-bottom:1px solid #e2e8f0;color:#334155;vertical-align:top}
+  tbody td:first-child{font-weight:600;color:#1e293b;text-align:center;width:28px}
+  .badge-active{color:#03543f;background:#def7ec;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600}
+  .badge-inactive{color:#9b1c1c;background:#fde8e8;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600}
+  .footer{margin-top:12px;padding-top:8px;border-top:1px solid #e2e8f0;
+          display:flex;justify-content:space-between;font-size:9px;color:#94a3b8}
+  .powered{margin-top:8px;text-align:center;font-size:9px;color:#94a3b8}
+  @media print{
+    body{padding:10px 12px}
+    @page{size:A4 landscape;margin:8mm}
+    .no-print{display:none}
   }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="title">Teachers Report</div>
+      <div class="subtitle">Staff Directory &nbsp;|&nbsp; EduTrack — Learnomist</div>
+    </div>
+    <div class="header-right">
+      <div class="date">${dateStr}</div>
+      <div>${timeStr}</div>
+    </div>
+  </div>
+
+  <div class="meta-row">
+    <div class="stat-box">
+      <div class="num">${rows.length}</div>
+      <div class="lbl">Total</div>
+    </div>
+    <div class="stat-box">
+      <div class="num">${activeCount}</div>
+      <div class="lbl">Active</div>
+    </div>
+    <div class="stat-box">
+      <div class="num">${inactiveCount}</div>
+      <div class="lbl">Inactive</div>
+    </div>
+  </div>
+
+  <div class="cols-row">
+    &#128196; <strong>Columns:</strong> ${activeCols.map(c => c.label).join(' &nbsp;·&nbsp; ')}
+  </div>
+
+  <table>
+    <thead><tr>${thCells}</tr></thead>
+    <tbody>${tdRows}</tbody>
+  </table>
+
+  <div class="footer">
+    <span>Teachers Report &nbsp;|&nbsp; Exported ${dateStr} at ${timeStr}</span>
+    <span>Total: ${rows.length} teacher${rows.length !== 1 ? 's' : ''}</span>
+  </div>
+  <div class="powered">Powered by <strong style="color:#2563eb">Learnomist</strong></div>
+
+  <div class="no-print" style="margin-top:16px;text-align:center">
+    <button onclick="window.print()"
+      style="padding:8px 26px;background:#2563eb;color:#fff;border:none;border-radius:8px;
+             font-size:13px;font-weight:600;cursor:pointer">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 600);
+  Toast.success('PDF ready to print!');
 }
 
 // ── Column chooser modal ───────────────────────────────────────
@@ -1124,28 +1285,6 @@ function _injectTeacherStyles() {
 }
 .view-btn:hover { color: var(--t1); }
 .view-btn--active { background: var(--surface4); color: var(--t1); }
-
-/* ── Plain badge (no colored background) ── */
-.badge--plain {
-  display: inline-flex; align-items: center;
-  padding: 2px 7px; border-radius: 10px;
-  background: var(--surface3); border: 1px solid var(--border2);
-  color: var(--t2); font-size: 10.5px; font-weight: 500;
-  white-space: nowrap;
-}
-
-/* ── Sticky / frozen column headers ── */
-.data-table thead th {
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 10 !important;
-  background: var(--surface2) !important;
-  box-shadow: 0 1px 0 var(--border2) !important;
-}
-.data-table-wrap, #teacher-table {
-  overflow-y: auto;
-  max-height: calc(100vh - 260px);
-}
 
 /* ── Inactive badge overlay ── */
 .inactive-overlay {
