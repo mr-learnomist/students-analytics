@@ -4,10 +4,26 @@
 // Each card mounts one report from reports/teachers/
 // ============================================================
 
+import { TeacherListReport } from '../reports/teachers/teacherListReport.js';
+
 // Teacher report card registry
 // Naya report add karna ho to yahan push karo — bas
 const TEACHER_REPORTS = [
-  // Reports yahan add hote jayenge, example:
+  {
+    id:       'teacherList',
+    title:    'Teachers List',
+    subtitle: 'Staff directory with filters & export',
+    icon:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                 <circle cx="9" cy="7" r="4"/>
+                 <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                 <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+               </svg>`,
+    color:    'var(--blue)',
+    colorDim: 'var(--blue-dim)',
+    module:   TeacherListReport,
+  },
+  // Naya report add karna ho to yahan push karo — bas
   // {
   //   id:       'teacherPerformance',
   //   title:    'Teacher Performance',
