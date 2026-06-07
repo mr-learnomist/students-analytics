@@ -2218,6 +2218,7 @@ function _loadWeeklySheet(batch) {
     <!-- Stats bar -->
     <div style="padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
                 display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface)">
+      <div id="weeklyStatsBarInner" style="display:flex;align-items:center;gap:12px;flex:1;flex-wrap:wrap">
       ${totalMarked > 0 ? `
         <div style="display:flex;align-items:center;gap:10px">
           <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
@@ -2238,7 +2239,8 @@ function _loadWeeklySheet(batch) {
         </div>
         <span style="font-size:11px;color:var(--t3)">${totalMarked} total marks</span>
       ` : `<span style="font-size:12px;color:var(--t3)">No attendance records in this range.</span>`}
-      <div style="margin-left:auto;display:flex;gap:6px">
+      </div>
+      <div style="display:flex;gap:6px">
         <button id="weeklyExportBtn" class="att2-btn">⬇ Export CSV</button>
       </div>
     </div>
@@ -2267,22 +2269,117 @@ function _loadWeeklySheet(batch) {
     _exportWeeklyCSV(batch, students, classDates, records);
   });
 
-  // Wire attendance cells (read-only view for weekly — clicking opens daily tab for that date)
-  mainEl.querySelectorAll('.weekly-date-cell[data-date]').forEach(cell => {
-    cell.addEventListener('click', () => {
-      if (!isAdmin && !isTeacher) return;
+  // ── Wire cells: inline P→A→L→(clear) toggle ─────────────────
+  if (isAdmin || isTeacher) {
+    const markedBy = AppState.get('currentUser')?.id;
+    const today    = toISODate(new Date());
+
+    // Cycle order
+    const cycle = { '': 'P', 'P': 'A', 'A': 'L', 'L': '' };
+
+    mainEl.querySelector('.att2-sheet-wrap')?.addEventListener('click', e => {
+      const cell = e.target.closest('.weekly-date-cell');
+      if (!cell) return;
       const date = cell.dataset.date;
-      if (!date) return;
-      // Switch to daily tab for this date+batch
-      _dailyDate     = date;
-      _dailySelBatch = batch;
-      _activeTab     = 'daily';
-      _root.querySelectorAll('.att2-tab').forEach(b => {
-        b.classList.toggle('active', b.dataset.tab === 'daily');
-      });
-      _renderDailyAttendance();
+      const sid  = cell.dataset.sid;
+      if (!date || !sid || date > today) return;
+
+      // Get current status and cycle it
+      const cur    = cell.dataset.v || '';
+      const next   = cycle[cur] ?? 'P';
+
+      // Save to AppState
+      if (next) {
+        AttendanceService.markAttendance(batch.id, sid, date, next, markedBy);
+      } else {
+        // Clear: remove the record
+        const records = AppState.get('attendanceRecords') || [];
+        AppState.set('attendanceRecords',
+          records.filter(r => !(r.batchId === batch.id && r.studentId === sid && r.date === date)));
+      }
+      AppState.saveState();
+
+      // Update cell visually
+      const bgMap = { P:'var(--green-dim)', A:'var(--red-dim)', L:'#fef3c7', '':'var(--surface2)' };
+      const txMap = { P:'var(--green)',     A:'var(--red)',      L:'#92400e',  '':'var(--t4)'      };
+      const brMap = { P:'var(--green)',     A:'var(--red)',      L:'#d97706',  '':'var(--border2)' };
+      cell.dataset.v               = next;
+      cell.textContent             = next;
+      cell.style.background        = bgMap[next];
+      cell.style.color             = txMap[next];
+      cell.style.borderColor       = brMap[next];
+
+      // Update per-row summary cells (P / A / L / %)
+      const tr = cell.closest('tr');
+      if (tr) {
+        const allCells = [...tr.querySelectorAll('.weekly-date-cell')];
+        let p = 0, a = 0, l = 0;
+        allCells.forEach(c => {
+          const v = c.dataset.v || '';
+          if (v === 'P') p++;
+          else if (v === 'A') a++;
+          else if (v === 'L') l++;
+        });
+        const total    = p + a + l;
+        const pct      = total > 0 ? Math.round((p / total) * 100) : null;
+        const pctColor = pct === null ? 'var(--t4)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
+        const summCells = tr.querySelectorAll('td[data-summary]');
+        summCells.forEach(td => {
+          const type = td.dataset.summary;
+          if      (type === 'P')   { td.textContent = p; td.style.color = 'var(--green)'; }
+          else if (type === 'A')   { td.textContent = a; td.style.color = 'var(--red)';   }
+          else if (type === 'L')   { td.textContent = l; td.style.color = '#d97706';      }
+          else if (type === 'pct') {
+            td.innerHTML = `<div class="att2-pct" style="color:${pctColor}">${pct !== null ? pct+'%' : '—'}</div>
+              <div class="att2-pct-bar"><div class="att2-pct-bar-fill" style="width:${pct||0}%;background:${pctColor}"></div></div>`;
+          }
+        });
+      }
+
+      // Update overall stats bar
+      _updateWeeklyStatsBar(mainEl, batch, students, classDates);
+    });
+  }
+}
+
+// ── Live stats bar update for weekly ─────────────────────────
+function _updateWeeklyStatsBar(mainEl, batch, students, classDates) {
+  const today = toISODate(new Date());
+  let totalP = 0, totalA = 0, totalL = 0, totalMarked = 0;
+  classDates.filter(d => d <= today).forEach(d => {
+    const dayRecs = AttendanceService.getRecordsForDate(batch.id, d);
+    students.forEach(s => {
+      const st = dayRecs[s.id]?.status;
+      if (st === 'P') { totalP++; totalMarked++; }
+      else if (st === 'A') { totalA++; totalMarked++; }
+      else if (st === 'L') { totalL++; totalMarked++; }
     });
   });
+  const pct      = totalMarked > 0 ? Math.round((totalP / totalMarked) * 100) : null;
+  const pctColor = pct === null ? 'var(--t3)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
+
+  const bar = mainEl.querySelector('#weeklyStatsBarInner');
+  if (!bar) return;
+  bar.innerHTML = totalMarked > 0 ? `
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                   color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent);
+                   padding:3px 10px;border-radius:20px">${totalP} P</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                   color:var(--red);background:color-mix(in srgb,var(--red) 12%,transparent);
+                   padding:3px 10px;border-radius:20px">${totalA} A</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                   color:var(--t2);background:var(--surface2);
+                   padding:3px 10px;border-radius:20px">${totalL} Leave</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:80px;max-width:200px">
+      <div style="flex:1;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${pct||0}%;background:${pctColor};border-radius:3px;transition:width .3s"></div>
+      </div>
+      <span style="font-size:12px;font-weight:800;color:${pctColor};min-width:36px">${pct ?? '—'}%</span>
+    </div>
+    <span style="font-size:11px;color:var(--t3)">${totalMarked} total marks</span>
+  ` : `<span style="font-size:12px;color:var(--t3)">No attendance records in this range.</span>`;
 }
 
 // ── Build weekly horizontal sheet ─────────────────────────────
@@ -2372,12 +2469,12 @@ function _buildWeeklySheet(batch, students, classDates, records) {
                       status === 'A' ? 'var(--red)'        :
                       status === 'L' ? '#d97706'            : 'var(--border2)';
 
-      const titleAttr = canEdit && !isFut ? `title="Click to mark attendance for ${d}"` : '';
+      const titleAttr = canEdit && !isFut ? `title="Click to toggle: P → A → L → clear"` : '';
       const cursorSt  = canEdit && !isFut ? 'cursor:pointer;' : '';
       const opacity   = isFut ? 'opacity:.35;' : '';
 
       return `<td style="text-align:center;vertical-align:middle;padding:5px 3px">
-        <span class="weekly-date-cell" data-date="${d}" data-sid="${stu.id}" style="
+        <span class="weekly-date-cell" data-date="${d}" data-sid="${stu.id}" data-v="${status}" style="
           display:inline-flex;align-items:center;justify-content:center;
           width:34px;height:28px;border-radius:6px;font-size:12px;font-weight:800;
           border:1.5px solid ${brColor};background:${bgColor};color:${txColor};
@@ -2395,10 +2492,10 @@ function _buildWeeklySheet(batch, students, classDates, records) {
       <td class="col-frozen col-frozen-1" style="font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${stu.studentName || '—'}</td>
       <td class="col-frozen col-frozen-2" style="font-family:var(--font-mono);font-size:11px;color:var(--t3)">${shortId}</td>
       ${cells}
-      <td style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--green)">${pCount}</td>
-      <td style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--red)">${aCount}</td>
-      <td style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:#d97706">${lCount}</td>
-      <td style="text-align:center;padding:5px 8px">
+      <td data-summary="P" style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--green)">${pCount}</td>
+      <td data-summary="A" style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--red)">${aCount}</td>
+      <td data-summary="L" style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:#d97706">${lCount}</td>
+      <td data-summary="pct" style="text-align:center;padding:5px 8px">
         <div class="att2-pct" style="color:${pctColor}">${pct !== null ? pct + '%' : '—'}</div>
         <div class="att2-pct-bar"><div class="att2-pct-bar-fill" style="width:${pct||0}%;background:${pctColor}"></div></div>
       </td>
@@ -2416,7 +2513,7 @@ function _buildWeeklySheet(batch, students, classDates, records) {
       </table>
     </div>
     ${canEdit ? `<div style="padding:8px 14px;font-size:11px;color:var(--t4);background:var(--surface2);border-top:1px solid var(--border)">
-      💡 Click any attendance cell to open that date in Daily Attendance tab for editing.
+      💡 Click any cell to toggle: <strong style="color:var(--green)">P</strong> → <strong style="color:var(--red)">A</strong> → <strong style="color:#d97706">L</strong> → clear. Changes save instantly.
     </div>` : ''}`;
 }
 
