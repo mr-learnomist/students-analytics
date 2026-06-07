@@ -314,7 +314,7 @@ export const AttendanceModule = {
 
     _root.innerHTML = _buildShell();
     _attachTabSwitcher();
-    _renderBatchWise();
+    _renderDailyAttendance();
   }
 };
 
@@ -323,20 +323,7 @@ function _buildShell() {
   return `
     <div class="att2-shell">
       <div class="att2-tabs">
-        <button class="att2-tab active" data-tab="batchwise">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <path d="M3 9h18M9 21V9"/>
-          </svg>
-          Batch-wise Attendance
-        </button>
-        <button class="att2-tab" data-tab="datewise">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
-          </svg>
-          Date-wise
-        </button>
-        <button class="att2-tab" data-tab="daily">
+        <button class="att2-tab active" data-tab="daily">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
@@ -359,10 +346,8 @@ function _attachTabSwitcher() {
       _root.querySelectorAll('.att2-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _activeTab = btn.dataset.tab;
-      if      (_activeTab === 'batchwise') _renderBatchWise();
-      else if (_activeTab === 'datewise')  _renderDateWise();
-      else if (_activeTab === 'daily')     _renderDailyAttendance();
-      else if (_activeTab === 'weekly')    _renderWeeklyAttendance();
+      if      (_activeTab === 'daily')  _renderDailyAttendance();
+      else if (_activeTab === 'weekly') _renderWeeklyAttendance();
     });
   });
 }
@@ -2259,7 +2244,7 @@ function _loadWeeklySheet(batch) {
       </div>` : `
 
     <!-- Horizontal attendance sheet -->
-    <div class="att2-sheet-wrap">
+    <div class="att2-sheet-wrap" id="weeklySheetWrap" style="flex:1;overflow:auto;position:relative;">
       ${_buildWeeklySheet(batch, students, classDates, records)}
     </div>`}
   `;
@@ -2269,62 +2254,56 @@ function _loadWeeklySheet(batch) {
     _exportWeeklyCSV(batch, students, classDates, records);
   });
 
-  // ── Wire cells: inline P→A→L→(clear) toggle ─────────────────
+  // ── Wire cells: click toggle + keyboard + first-student auto-fill ──
   if (isAdmin || isTeacher) {
     const markedBy = AppState.get('currentUser')?.id;
     const today    = toISODate(new Date());
+    const cycle    = { '': 'P', 'P': 'A', 'A': 'L', 'L': '' };
 
-    // Cycle order
-    const cycle = { '': 'P', 'P': 'A', 'A': 'L', 'L': '' };
+    // Helper: get all focusable cells in reading order [row][col]
+    const getGrid = () => {
+      const rows = [...mainEl.querySelectorAll('tbody tr')];
+      return rows.map(tr => [...tr.querySelectorAll('.weekly-date-cell:not(.future)')]);
+    };
 
-    mainEl.querySelector('.att2-sheet-wrap')?.addEventListener('click', e => {
-      const cell = e.target.closest('.weekly-date-cell');
-      if (!cell) return;
+    // Helper: apply status to a cell and save
+    const applyStatus = (cell, next) => {
       const date = cell.dataset.date;
       const sid  = cell.dataset.sid;
       if (!date || !sid || date > today) return;
 
-      // Get current status and cycle it
-      const cur    = cell.dataset.v || '';
-      const next   = cycle[cur] ?? 'P';
-
-      // Save to AppState
       if (next) {
         AttendanceService.markAttendance(batch.id, sid, date, next, markedBy);
       } else {
-        // Clear: remove the record
-        const records = AppState.get('attendanceRecords') || [];
+        const recs = AppState.get('attendanceRecords') || [];
         AppState.set('attendanceRecords',
-          records.filter(r => !(r.batchId === batch.id && r.studentId === sid && r.date === date)));
+          recs.filter(r => !(r.batchId === batch.id && r.studentId === sid && r.date === date)));
       }
       AppState.saveState();
 
-      // Update cell visually
+      // Visual update
       const bgMap = { P:'var(--green-dim)', A:'var(--red-dim)', L:'#fef3c7', '':'var(--surface2)' };
-      const txMap = { P:'var(--green)',     A:'var(--red)',      L:'#92400e',  '':'var(--t4)'      };
-      const brMap = { P:'var(--green)',     A:'var(--red)',      L:'#d97706',  '':'var(--border2)' };
-      cell.dataset.v               = next;
-      cell.textContent             = next;
-      cell.style.background        = bgMap[next];
-      cell.style.color             = txMap[next];
-      cell.style.borderColor       = brMap[next];
+      const txMap = { P:'var(--green)',     A:'var(--red)',      L:'#92400e', '':'var(--t4)'       };
+      const brMap = { P:'var(--green)',     A:'var(--red)',      L:'#d97706', '':'var(--border2)'  };
+      cell.dataset.v         = next;
+      cell.textContent       = next;
+      cell.style.background  = bgMap[next];
+      cell.style.color       = txMap[next];
+      cell.style.borderColor = brMap[next];
 
-      // Update per-row summary cells (P / A / L / %)
+      // Row summary update
       const tr = cell.closest('tr');
       if (tr) {
         const allCells = [...tr.querySelectorAll('.weekly-date-cell')];
         let p = 0, a = 0, l = 0;
         allCells.forEach(c => {
           const v = c.dataset.v || '';
-          if (v === 'P') p++;
-          else if (v === 'A') a++;
-          else if (v === 'L') l++;
+          if (v === 'P') p++; else if (v === 'A') a++; else if (v === 'L') l++;
         });
         const total    = p + a + l;
         const pct      = total > 0 ? Math.round((p / total) * 100) : null;
         const pctColor = pct === null ? 'var(--t4)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
-        const summCells = tr.querySelectorAll('td[data-summary]');
-        summCells.forEach(td => {
+        tr.querySelectorAll('td[data-summary]').forEach(td => {
           const type = td.dataset.summary;
           if      (type === 'P')   { td.textContent = p; td.style.color = 'var(--green)'; }
           else if (type === 'A')   { td.textContent = a; td.style.color = 'var(--red)';   }
@@ -2335,9 +2314,126 @@ function _loadWeeklySheet(batch) {
           }
         });
       }
-
-      // Update overall stats bar
       _updateWeeklyStatsBar(mainEl, batch, students, classDates);
+    };
+
+    // Helper: first-student auto-fill for a date column
+    const autoFillDate = (date, status) => {
+      const grid = getGrid();
+      grid.forEach((rowCells, rowIdx) => {
+        if (rowIdx === 0) return; // skip first student (already marked)
+        const cell = rowCells.find(c => c.dataset.date === date);
+        if (cell && !cell.dataset.v) applyStatus(cell, status);
+      });
+    };
+
+    // ── Track focused cell for keyboard nav ───────────────────
+    let _focusedCell = null;
+
+    const focusCell = (cell) => {
+      if (_focusedCell) {
+        _focusedCell.style.outline = '';
+        _focusedCell.style.outlineOffset = '';
+      }
+      _focusedCell = cell;
+      if (cell) {
+        cell.style.outline = '2px solid var(--blue)';
+        cell.style.outlineOffset = '1px';
+        cell.focus({ preventScroll: false });
+      }
+    };
+
+    // Make cells focusable
+    mainEl.querySelectorAll('.weekly-date-cell').forEach(cell => {
+      if (!cell.classList.contains('future') && cell.dataset.date <= today) {
+        cell.setAttribute('tabindex', '0');
+      }
+    });
+
+    // ── Click handler ─────────────────────────────────────────
+    mainEl.querySelector('#weeklySheetWrap')?.addEventListener('click', e => {
+      const cell = e.target.closest('.weekly-date-cell');
+      if (!cell || cell.dataset.date > today) return;
+      focusCell(cell);
+
+      const cur  = cell.dataset.v || '';
+      const next = cycle[cur] ?? 'P';
+      applyStatus(cell, next);
+
+      // First student auto-fill
+      const grid = getGrid();
+      if (grid.length && grid[0].includes(cell)) {
+        autoFillDate(cell.dataset.date, next);
+      }
+    });
+
+    // ── Keyboard handler ──────────────────────────────────────
+    mainEl.querySelector('#weeklySheetWrap')?.addEventListener('keydown', e => {
+      // Focus first cell on Tab into sheet if none focused
+      if (!_focusedCell && (e.key === 'Tab' || e.key === 'ArrowRight')) {
+        const first = mainEl.querySelector('.weekly-date-cell[tabindex="0"]');
+        if (first) { e.preventDefault(); focusCell(first); }
+        return;
+      }
+      if (!_focusedCell) return;
+
+      const grid = getGrid();
+      let rowIdx = -1, colIdx = -1;
+      grid.forEach((row, r) => row.forEach((c, col) => {
+        if (c === _focusedCell) { rowIdx = r; colIdx = col; }
+      }));
+      if (rowIdx === -1) return;
+
+      const key = e.key.toUpperCase();
+
+      // P / A / L direct set
+      if (key === 'P' || key === 'A' || key === 'L') {
+        e.preventDefault();
+        applyStatus(_focusedCell, key);
+        if (grid.length && rowIdx === 0) autoFillDate(_focusedCell.dataset.date, key);
+        // Move down after marking
+        const nextRow = grid[rowIdx + 1];
+        if (nextRow?.[colIdx]) focusCell(nextRow[colIdx]);
+        return;
+      }
+
+      // Delete / Backspace = clear
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        applyStatus(_focusedCell, '');
+        return;
+      }
+
+      // Space = cycle
+      if (e.key === ' ') {
+        e.preventDefault();
+        const cur  = _focusedCell.dataset.v || '';
+        const next = cycle[cur] ?? 'P';
+        applyStatus(_focusedCell, next);
+        if (grid.length && rowIdx === 0) autoFillDate(_focusedCell.dataset.date, next);
+        return;
+      }
+
+      // Arrow keys navigation
+      let nextCell = null;
+      if (e.key === 'ArrowDown')  nextCell = grid[rowIdx + 1]?.[colIdx];
+      if (e.key === 'ArrowUp')    nextCell = grid[rowIdx - 1]?.[colIdx];
+      if (e.key === 'ArrowRight') nextCell = grid[rowIdx]?.[colIdx + 1];
+      if (e.key === 'ArrowLeft')  nextCell = grid[rowIdx]?.[colIdx - 1];
+      if (e.key === 'Enter')      nextCell = grid[rowIdx + 1]?.[colIdx]; // Enter moves down
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        nextCell = e.shiftKey
+          ? (grid[rowIdx]?.[colIdx - 1] || grid[rowIdx - 1]?.[grid[rowIdx - 1].length - 1])
+          : (grid[rowIdx]?.[colIdx + 1] || grid[rowIdx + 1]?.[0]);
+      }
+      if (nextCell) { e.preventDefault(); focusCell(nextCell); }
+    });
+
+    // Focus cell on keyboard focus event too
+    mainEl.querySelector('#weeklySheetWrap')?.addEventListener('focusin', e => {
+      const cell = e.target.closest('.weekly-date-cell');
+      if (cell && cell !== _focusedCell) focusCell(cell);
     });
   }
 }
@@ -2512,8 +2608,12 @@ function _buildWeeklySheet(batch, students, classDates, records) {
         <tbody>${bodyRows}</tbody>
       </table>
     </div>
-    ${canEdit ? `<div style="padding:8px 14px;font-size:11px;color:var(--t4);background:var(--surface2);border-top:1px solid var(--border)">
-      💡 Click any cell to toggle: <strong style="color:var(--green)">P</strong> → <strong style="color:var(--red)">A</strong> → <strong style="color:#d97706">L</strong> → clear. Changes save instantly.
+    ${canEdit ? `<div style="padding:8px 14px;font-size:11px;color:var(--t4);background:var(--surface2);border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap">
+      <span>💡 <strong>Click</strong> or <strong>Space</strong> to cycle P→A→L→clear</span>
+      <span>⌨️ Type <strong style="color:var(--green)">P</strong> / <strong style="color:var(--red)">A</strong> / <strong style="color:#d97706">L</strong> to set directly</span>
+      <span>🔑 <strong>Arrow keys</strong> / <strong>Tab</strong> / <strong>Enter</strong> to navigate</span>
+      <span>🗑 <strong>Delete</strong> to clear</span>
+      <span>⚡ First student marks auto-fill all unmarked students in that column</span>
     </div>` : ''}`;
 }
 
