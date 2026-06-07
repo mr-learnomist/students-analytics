@@ -16,7 +16,7 @@ export const Modal = {
    * @param {string} opts.size       — 'sm' | 'md' | 'lg'
    * @param {Function} opts.onOpen   — called after DOM inject
    */
-  open({ title = '', body = '', actions = [], size = 'md', onOpen = null } = {}) {
+  open({ title = '', body = '', actions = [], size = 'md', onOpen = null, scrollable = true, bodyStyle = '' } = {}) {
     const id = `modal_${Date.now()}`;
 
     const sizeMap = { sm: '400px', md: '540px', lg: '720px' };
@@ -27,6 +27,11 @@ export const Modal = {
         ${a.label}
       </button>
     `).join('');
+
+    // Build body style — always scrollable, merge custom overrides
+    const resolvedBodyStyle = scrollable
+      ? `overflow-y:auto;${bodyStyle}`
+      : `overflow:hidden;${bodyStyle}`;
 
     const html = `
       <div class="modal-backdrop" id="${id}" role="dialog" aria-modal="true">
@@ -39,7 +44,7 @@ export const Modal = {
               </svg>
             </button>
           </div>
-          <div class="modal-body">${body}</div>
+          <div class="modal-body" style="${resolvedBodyStyle}">${body}</div>
           ${actions.length ? `<div class="modal-footer">${actionHTML}</div>` : ''}
         </div>
       </div>
