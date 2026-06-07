@@ -90,7 +90,7 @@ function _injectStyles() {
   background:var(--surface);
   position:relative; z-index:10;
 }
-.att2-sb-wrap:hover, .att2-sb-wrap.open {
+.att2-sb-wrap.open {
   width:280px; min-width:280px;
 }
 
@@ -110,17 +110,15 @@ function _injectStyles() {
   margin-top:4px;
 }
 
-/* Sidebar content — hidden when collapsed, visible when expanded */
+/* Sidebar content */
 .att2-sidebar {
   flex:1; display:flex; flex-direction:column; overflow:hidden;
   min-width:248px; opacity:0;
-  transition:opacity .15s ease;
+  transition:opacity .2s ease;
   pointer-events:none;
 }
-.att2-sb-wrap:hover .att2-sidebar,
 .att2-sb-wrap.open .att2-sidebar {
   opacity:1; pointer-events:auto;
-  transition:opacity .2s ease .1s;
 }
 
 .att2-filters {
@@ -566,6 +564,30 @@ function _attachBWEvents() {
   _root.querySelector('#att2FiltDisc')?.addEventListener('change',  e => { _filterDisc    = e.target.value; _renderBatchList(); });
   _root.querySelector('#att2FiltSess')?.addEventListener('change',  e => { _filterSession = e.target.value; _renderBatchList(); });
   _root.querySelector('#att2BatchSearch')?.addEventListener('input', e => { _batchSearch   = e.target.value.trim(); _renderBatchList(); });
+  _initSidebarToggle('att2SidebarWrap');
+}
+
+// ── Shared sidebar open/close via JS (CSS :hover blocked by inline styles) ──
+function _initSidebarToggle(wrapId) {
+  const wrap = _root.querySelector('#' + wrapId);
+  if (!wrap) return;
+  let closeTimer = null;
+
+  const open = () => {
+    clearTimeout(closeTimer);
+    wrap.classList.add('open');
+  };
+  const close = () => {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => wrap.classList.remove('open'), 180);
+  };
+
+  wrap.addEventListener('mouseenter', open);
+  wrap.addEventListener('mouseleave', close);
+  // Touch devices: tap strip to toggle
+  wrap.querySelector('.att2-sb-strip')?.addEventListener('click', () => {
+    wrap.classList.contains('open') ? wrap.classList.remove('open') : open();
+  });
 }
 
 // ── Load batch sheet ──────────────────────────────────────────
