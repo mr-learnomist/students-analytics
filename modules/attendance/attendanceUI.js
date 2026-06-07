@@ -342,6 +342,12 @@ function _buildShell() {
           </svg>
           Daily Attendance
         </button>
+        <button class="att2-tab" data-tab="weekly">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+          Weekly Report
+        </button>
       </div>
       <div id="att2Body" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
     </div>`;
@@ -356,6 +362,7 @@ function _attachTabSwitcher() {
       if      (_activeTab === 'batchwise') _renderBatchWise();
       else if (_activeTab === 'datewise')  _renderDateWise();
       else if (_activeTab === 'daily')     _renderDailyAttendance();
+      else if (_activeTab === 'weekly')    _renderWeeklyAttendance();
     });
   });
 }
@@ -1264,6 +1271,20 @@ function _openSummaryModal(batch) {
 let _dailySelBatch  = null;
 let _dailyDate      = toISODate(new Date()); // default today
 
+// ── Weekly tab state ──────────────────────────────────────────
+let _weeklySelBatch = null;
+// Default: current week Mon→Sun
+function _getWeekRange() {
+  const today = new Date();
+  const day   = today.getDay(); // 0=Sun
+  const mon   = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+  const sun   = new Date(mon);   sun.setDate(mon.getDate() + 6);
+  return { from: toISODate(mon), to: toISODate(sun) };
+}
+const _wr          = _getWeekRange();
+let _weeklyFrom    = _wr.from;
+let _weeklyTo      = _wr.to;
+
 function _renderDailyAttendance() {
   const body = _root.querySelector('#att2Body');
   if (!body) return;
@@ -1840,4 +1861,596 @@ function _buildDailyRow(stu, idx, existing, canMark) {
     </td>
   </tr>`;
 }
+
+// ══════════════════════════════════════════════════════════════
+// WEEKLY REPORT TAB
+// Layout: Same as Daily — Sidebar (filters + batch list) | Main (range sheet)
+// Date picker: From → To range, shows horizontal attendance sheet
+// ══════════════════════════════════════════════════════════════
+
+function _weeklyActiveBatches() {
+  const today  = toISODate(new Date());
+  const lpaMap = AppState.get('lpAssignments') || {};
+  const all    = AppState.get('batches') || [];
+  return all.filter(b => {
+    const matchCamp = !_filterCampus  || b.campusId     === _filterCampus;
+    const matchDisc = !_filterDisc    || b.disciplineId === _filterDisc;
+    const matchSess = !_filterSession || b.sessionPeriod === _filterSession;
+    if (!matchCamp || !matchDisc || !matchSess) return false;
+    const lpa    = lpaMap[b.id];
+    const lpEnd  = lpa?.endDate || (lpa?.rows?.length ? lpa.rows[lpa.rows.length - 1]?.date : null);
+    return !lpEnd || lpEnd >= _weeklyFrom;
+  });
+}
+
+function _renderWeeklyBatchList() {
+  const listEl  = _root.querySelector('#weeklyBatchList');
+  const countEl = _root.querySelector('#weeklyBatchCount');
+  if (!listEl) return;
+
+  const batches = _weeklyActiveBatches();
+  const lpaMap  = AppState.get('lpAssignments') || {};
+
+  if (countEl) countEl.textContent = `(${batches.length})`;
+
+  if (!batches.length) {
+    listEl.innerHTML = `<div style="padding:24px 12px;text-align:center;color:var(--t3);font-size:12px">
+      No batches found. Try changing filters.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = batches.map(b => {
+    const disc    = AppState.findById('disciplines', b.disciplineId);
+    const campus  = AppState.findById('campuses',   b.campusId);
+    const teacher = AppState.findById('teachers',   b.teacherId);
+    const lpa     = lpaMap[b.id];
+    const isSel   = _weeklySelBatch?.id === b.id;
+
+    // Count marked days in range
+    let classDatesInRange = [];
+    if (lpa?.rows?.length) {
+      classDatesInRange = lpa.rows.filter(r => r.date && r.date >= _weeklyFrom && r.date <= _weeklyTo).map(r => r.date);
+    } else {
+      const all = AttendanceDateGenerator.generate(b.id);
+      classDatesInRange = all.filter(d => d >= _weeklyFrom && d <= _weeklyTo);
+    }
+
+    const enrolments = (AppState.get('enrolments') || []).filter(e => e.batchId === b.id && e.status === 'active');
+    let anyMarked = false;
+    if (classDatesInRange.length && enrolments.length) {
+      anyMarked = classDatesInRange.some(d => {
+        const recs = AttendanceService.getRecordsForDate(b.id, d);
+        return Object.keys(recs).length > 0;
+      });
+    }
+
+    const badge = classDatesInRange.length === 0
+      ? `<span style="font-size:9.5px;color:var(--t4);padding:1px 6px">No Class</span>`
+      : anyMarked
+        ? `<span style="font-size:9.5px;font-weight:700;color:var(--green);background:var(--green-dim);padding:1px 7px;border-radius:8px;white-space:nowrap">✓ ${classDatesInRange.length}d</span>`
+        : `<span style="font-size:9.5px;font-weight:700;color:var(--yellow);background:var(--yellow-dim);padding:1px 7px;border-radius:8px;white-space:nowrap">${classDatesInRange.length} class days</span>`;
+
+    return `
+      <div class="att2-batch-item ${isSel ? 'sel' : ''}" data-wbid="${b.id}" style="padding:9px 12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <div class="att2-batch-name" style="font-size:12.5px">
+            ${disc ? `<span style="color:var(--blue)">${disc.abbreviation}</span> — ` : ''}${b.batchName}
+          </div>
+          ${badge}
+        </div>
+        <div class="att2-batch-sub" style="margin-top:3px;font-size:11px">
+          ${campus ? `<span>${campus.campusName.replace(/\s*campus\s*/i,'').trim()}</span>` : ''}
+          ${b.sessionPeriod ? `<span style="margin-left:5px;color:var(--t4)">${b.sessionPeriod}</span>` : ''}
+          ${teacher ? `<span style="margin-left:5px">· ${teacher.fullName}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.att2-batch-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const b = AppState.findById('batches', item.dataset.wbid);
+      if (!b) return;
+      _weeklySelBatch = b;
+      listEl.querySelectorAll('.att2-batch-item').forEach(i =>
+        i.classList.toggle('sel', i.dataset.wbid === b.id));
+      _loadWeeklySheet(b);
+    });
+  });
+}
+
+function _attachWeeklyEvents() {
+  _root.querySelector('#weeklyFiltCamp')?.addEventListener('change', e => {
+    _filterCampus = e.target.value; _renderWeeklyBatchList();
+  });
+  _root.querySelector('#weeklyFiltDisc')?.addEventListener('change', e => {
+    _filterDisc = e.target.value; _renderWeeklyBatchList();
+  });
+  _root.querySelector('#weeklyFiltSess')?.addEventListener('change', e => {
+    _filterSession = e.target.value; _renderWeeklyBatchList();
+  });
+  _root.querySelector('#weeklyFromPick')?.addEventListener('change', e => {
+    _weeklyFrom = e.target.value;
+    // Auto-correct: if from > to, move to forward
+    if (_weeklyFrom > _weeklyTo) {
+      _weeklyTo = _weeklyFrom;
+      const toPick = _root.querySelector('#weeklyToPick');
+      if (toPick) toPick.value = _weeklyTo;
+    }
+    _renderWeeklyBatchList();
+    if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
+  });
+  _root.querySelector('#weeklyToPick')?.addEventListener('change', e => {
+    _weeklyTo = e.target.value;
+    if (_weeklyTo < _weeklyFrom) {
+      _weeklyFrom = _weeklyTo;
+      const fromPick = _root.querySelector('#weeklyFromPick');
+      if (fromPick) fromPick.value = _weeklyFrom;
+    }
+    _renderWeeklyBatchList();
+    if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
+  });
+  _root.querySelector('#weeklyThisWeekBtn')?.addEventListener('click', () => {
+    const wr = _getWeekRange();
+    _weeklyFrom = wr.from; _weeklyTo = wr.to;
+    const fp = _root.querySelector('#weeklyFromPick');
+    const tp = _root.querySelector('#weeklyToPick');
+    if (fp) fp.value = _weeklyFrom;
+    if (tp) tp.value = _weeklyTo;
+    _renderWeeklyBatchList();
+    if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
+  });
+  _root.querySelector('#weeklyThisMonthBtn')?.addEventListener('click', () => {
+    const today = new Date();
+    _weeklyFrom = toISODate(new Date(today.getFullYear(), today.getMonth(), 1));
+    _weeklyTo   = toISODate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    const fp = _root.querySelector('#weeklyFromPick');
+    const tp = _root.querySelector('#weeklyToPick');
+    if (fp) fp.value = _weeklyFrom;
+    if (tp) tp.value = _weeklyTo;
+    _renderWeeklyBatchList();
+    if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
+  });
+}
+
+function _renderWeeklyAttendance() {
+  const body = _root.querySelector('#att2Body');
+  if (!body) return;
+
+  const batches     = AppState.get('batches')     || [];
+  const campuses    = AppState.get('campuses')    || [];
+  const disciplines = AppState.get('disciplines') || [];
+  const sessions    = [...new Set(batches.map(b => b.sessionPeriod).filter(Boolean))].sort().reverse();
+
+  const campOpts = campuses.map(c =>
+    `<option value="${c.id}" ${_filterCampus === c.id ? 'selected':''}>
+      ${c.campusName.replace(/\s*campus\s*/i,'').trim()}
+    </option>`).join('');
+  const discOpts = disciplines.map(d =>
+    `<option value="${d.id}" ${_filterDisc === d.id ? 'selected':''}>${d.abbreviation}</option>`).join('');
+  const sessOpts = sessions.map(s =>
+    `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0;overflow:hidden">
+
+      <!-- ── Sidebar ── -->
+      <aside style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+
+        <!-- Filters -->
+        <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <select class="att2-filter-sel" id="weeklyFiltCamp">
+            <option value="">All Campuses</option>${campOpts}
+          </select>
+          <select class="att2-filter-sel" id="weeklyFiltDisc">
+            <option value="">All Disciplines</option>${discOpts}
+          </select>
+          <select class="att2-filter-sel" id="weeklyFiltSess">
+            <option value="">All Sessions</option>${sessOpts}
+          </select>
+        </div>
+
+        <!-- Date range picker -->
+        <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-bottom:6px">Date Range</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:10.5px;color:var(--t3);min-width:24px">From</span>
+              <input type="date" id="weeklyFromPick" value="${_weeklyFrom}"
+                style="flex:1;background:var(--surface2);border:1px solid var(--border2);
+                       border-radius:var(--r-sm);color:var(--t1);font-size:11.5px;
+                       padding:4px 7px;outline:none;cursor:pointer;font-family:inherit"/>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:10.5px;color:var(--t3);min-width:24px">To</span>
+              <input type="date" id="weeklyToPick" value="${_weeklyTo}"
+                style="flex:1;background:var(--surface2);border:1px solid var(--border2);
+                       border-radius:var(--r-sm);color:var(--t1);font-size:11.5px;
+                       padding:4px 7px;outline:none;cursor:pointer;font-family:inherit"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:5px;margin-top:7px">
+            <button id="weeklyThisWeekBtn"
+              style="flex:1;font-size:10.5px;font-weight:700;padding:4px 0;border-radius:var(--r-sm);
+                     border:1px solid var(--blue);background:var(--blue-dim);color:var(--blue);
+                     cursor:pointer;font-family:inherit">This Week</button>
+            <button id="weeklyThisMonthBtn"
+              style="flex:1;font-size:10.5px;font-weight:700;padding:4px 0;border-radius:var(--r-sm);
+                     border:1px solid var(--border2);background:var(--surface2);color:var(--t2);
+                     cursor:pointer;font-family:inherit">This Month</button>
+          </div>
+        </div>
+
+        <!-- Batch list label -->
+        <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
+                    letter-spacing:.06em;color:var(--t3);flex-shrink:0">
+          Batches &nbsp;<span id="weeklyBatchCount" style="font-weight:400"></span>
+        </div>
+
+        <!-- Batch list -->
+        <div id="weeklyBatchList" style="flex:1;overflow-y:auto"></div>
+      </aside>
+
+      <!-- ── Main ── -->
+      <div id="weeklyMain" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="att2-placeholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.2" style="color:var(--t4)">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+          <h3>Select a Batch</h3>
+          <p>Select a batch and date range to view weekly attendance.</p>
+        </div>
+      </div>
+    </div>`;
+
+  _renderWeeklyBatchList();
+  _attachWeeklyEvents();
+
+  if (_weeklySelBatch) {
+    const b = AppState.findById('batches', _weeklySelBatch.id);
+    if (b) _loadWeeklySheet(b);
+  }
+}
+
+// ── Load weekly sheet ─────────────────────────────────────────
+function _loadWeeklySheet(batch) {
+  const mainEl = _root.querySelector('#weeklyMain');
+  if (!mainEl) return;
+
+  const today   = toISODate(new Date());
+  const lpaMap  = AppState.get('lpAssignments') || {};
+  const lpa     = lpaMap[batch.id];
+  const disc    = AppState.findById('disciplines', batch.disciplineId);
+  const campus  = AppState.findById('campuses',   batch.campusId);
+  const teacher = AppState.findById('teachers',   batch.teacherId);
+
+  // ── Compute class dates within range ──────────────────────
+  let classDates = [];
+  if (lpa?.rows?.length) {
+    classDates = lpa.rows
+      .filter(r => r.date && r.date >= _weeklyFrom && r.date <= _weeklyTo)
+      .map(r => r.date)
+      .sort();
+  } else {
+    const all = AttendanceDateGenerator.generate(batch.id);
+    classDates = all.filter(d => d >= _weeklyFrom && d <= _weeklyTo).sort();
+  }
+
+  // ── Get students ──────────────────────────────────────────
+  const enrolments = (AppState.get('enrolments') || [])
+    .filter(e => e.batchId === batch.id && e.status === 'active');
+  const students = enrolments
+    .map(e => AppState.findById('students', e.studentId))
+    .filter(Boolean)
+    .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+
+  const isAdmin   = Auth.can('admin');
+  const isTeacher = Auth.can('attendance');
+  const markedBy  = AppState.get('currentUser')?.id;
+
+  // ── Format range label ────────────────────────────────────
+  const fmt = d => {
+    const dt = parseLocalDate(d);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
+  };
+  const rangeLabel = `${fmt(_weeklyFrom)} — ${fmt(_weeklyTo)}`;
+
+  // ── Compute aggregate stats across all dates ──────────────
+  const records = {};
+  classDates.forEach(d => {
+    const dayRecs = AttendanceService.getRecordsForDate(batch.id, d);
+    Object.entries(dayRecs).forEach(([sid, rec]) => {
+      if (!records[sid]) records[sid] = { P:0, A:0, L:0, total:0 };
+      if (rec.status === 'P') { records[sid].P++; records[sid].total++; }
+      else if (rec.status === 'A') { records[sid].A++; records[sid].total++; }
+      else if (rec.status === 'L') { records[sid].L++; records[sid].total++; }
+    });
+  });
+
+  // ── Overall stats ─────────────────────────────────────────
+  let totalP = 0, totalA = 0, totalL = 0, totalMarked = 0;
+  students.forEach(s => {
+    const r = records[s.id];
+    if (r) { totalP += r.P; totalA += r.A; totalL += r.L; totalMarked += r.total; }
+  });
+  const overallPct = totalMarked > 0 ? Math.round((totalP / totalMarked) * 100) : null;
+  const pctColor   = overallPct === null ? 'var(--t3)' : overallPct >= 75 ? 'var(--green)' : 'var(--red)';
+
+  // ── Build status badge for batch ─────────────────────────
+  let statusBadge = '';
+  if (batch.startDate && batch.endDate) {
+    if (today < batch.startDate)    statusBadge = `<span class="att2-badge att2-badge-yellow">Not Started</span>`;
+    else if (today > batch.endDate) statusBadge = `<span class="att2-badge att2-badge-red">Ended</span>`;
+    else                            statusBadge = `<span class="att2-badge att2-badge-green">Active</span>`;
+  }
+
+  mainEl.innerHTML = `
+    <!-- Batch header -->
+    <div style="padding:12px 16px;background:var(--surface2);border-bottom:1px solid var(--border);
+                flex-shrink:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:15px;font-weight:800;font-family:var(--font-mono);color:var(--t1)">
+            ${disc ? `<span style="color:var(--blue)">${disc.abbreviation}</span> — ` : ''}${batch.batchName}
+          </span>
+          ${statusBadge}
+          <span class="att2-badge att2-badge-blue">📅 ${rangeLabel}</span>
+          ${classDates.length
+            ? `<span class="att2-badge" style="background:var(--surface3);color:var(--t2)">${classDates.length} class day${classDates.length !== 1 ? 's' : ''}</span>`
+            : `<span class="att2-badge" style="background:var(--yellow-dim);color:var(--yellow)">No class days in range</span>`}
+        </div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap">
+          ${campus  ? `<span>${campus.campusName.replace(/\s*campus\s*/i,'').trim()}</span>` : ''}
+          ${teacher ? `<span>· ${teacher.fullName}</span>` : ''}
+          <span>${students.length} students</span>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        ${overallPct !== null
+          ? `<div style="font-size:19px;font-weight:800;font-family:var(--font-mono);color:${pctColor}">${overallPct}%</div>
+             <div style="font-size:10.5px;color:var(--t3)">Overall Attendance</div>`
+          : `<div style="font-size:12px;color:var(--t3)">No records yet</div>`}
+      </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div style="padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+                display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface)">
+      ${totalMarked > 0 ? `
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent);
+                       padding:3px 10px;border-radius:20px">${totalP} P</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--red);background:color-mix(in srgb,var(--red) 12%,transparent);
+                       padding:3px 10px;border-radius:20px">${totalA} A</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;
+                       color:var(--t2);background:var(--surface2);
+                       padding:3px 10px;border-radius:20px">${totalL} Leave</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:80px;max-width:200px">
+          <div style="flex:1;height:5px;background:var(--surface3);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${overallPct||0}%;background:${pctColor};border-radius:3px;transition:width .3s"></div>
+          </div>
+          <span style="font-size:12px;font-weight:800;color:${pctColor};min-width:36px">${overallPct ?? '—'}%</span>
+        </div>
+        <span style="font-size:11px;color:var(--t3)">${totalMarked} total marks</span>
+      ` : `<span style="font-size:12px;color:var(--t3)">No attendance records in this range.</span>`}
+      <div style="margin-left:auto;display:flex;gap:6px">
+        <button id="weeklyExportBtn" class="att2-btn">⬇ Export CSV</button>
+      </div>
+    </div>
+
+    <!-- No class days empty state -->
+    ${!classDates.length ? `
+      <div class="att2-placeholder">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.3" style="color:var(--t4)">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <path d="M16 2v4M8 2v4M3 10h18"/>
+          <line x1="8" y1="15" x2="16" y2="15" stroke-dasharray="2 2"/>
+        </svg>
+        <h3>No Class Days in Range</h3>
+        <p>There are no scheduled class days for <strong>${batch.batchName}</strong> between ${rangeLabel}.</p>
+      </div>` : `
+
+    <!-- Horizontal attendance sheet -->
+    <div class="att2-sheet-wrap">
+      ${_buildWeeklySheet(batch, students, classDates, records)}
+    </div>`}
+  `;
+
+  // Wire export button
+  mainEl.querySelector('#weeklyExportBtn')?.addEventListener('click', () => {
+    _exportWeeklyCSV(batch, students, classDates, records);
+  });
+
+  // Wire attendance cells (read-only view for weekly — clicking opens daily tab for that date)
+  mainEl.querySelectorAll('.weekly-date-cell[data-date]').forEach(cell => {
+    cell.addEventListener('click', () => {
+      if (!isAdmin && !isTeacher) return;
+      const date = cell.dataset.date;
+      if (!date) return;
+      // Switch to daily tab for this date+batch
+      _dailyDate     = date;
+      _dailySelBatch = batch;
+      _activeTab     = 'daily';
+      _root.querySelectorAll('.att2-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === 'daily');
+      });
+      _renderDailyAttendance();
+    });
+  });
+}
+
+// ── Build weekly horizontal sheet ─────────────────────────────
+function _buildWeeklySheet(batch, students, classDates, records) {
+  if (!students.length) {
+    return `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">
+      No active enrolled students in this batch.
+    </div>`;
+  }
+
+  const today      = toISODate(new Date());
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Group dates by month
+  const byMonth = {};
+  classDates.forEach(d => {
+    const mk = d.slice(0, 7);
+    if (!byMonth[mk]) byMonth[mk] = [];
+    byMonth[mk].push(d);
+  });
+  const months = Object.keys(byMonth).sort();
+
+  // ── Get per-student per-date status map ───────────────────
+  const statusMap = {}; // { sid_date → 'P'|'A'|'L'|'' }
+  classDates.forEach(d => {
+    const dayRecs = AttendanceService.getRecordsForDate(batch.id, d);
+    students.forEach(s => {
+      statusMap[`${s.id}_${d}`] = dayRecs[s.id]?.status || '';
+    });
+  });
+
+  // ── Build thead ───────────────────────────────────────────
+  let monthHeaderRow = `
+    <th class="col-frozen col-frozen-0 th-month-hdr" rowspan="2">#</th>
+    <th class="col-frozen col-frozen-1 th-month-hdr" rowspan="2">Student Name</th>
+    <th class="col-frozen col-frozen-2 th-month-hdr" rowspan="2">Student ID</th>`;
+
+  months.forEach(mk => {
+    const [y, m] = mk.split('-');
+    const label  = `${monthNames[parseInt(m) - 1]} ${y}`;
+    monthHeaderRow += `<th class="th-month-hdr" colspan="${byMonth[mk].length}" style="text-align:center">${label}</th>`;
+  });
+  monthHeaderRow += `
+    <th class="th-month-hdr" rowspan="2" style="text-align:center;min-width:52px">P</th>
+    <th class="th-month-hdr" rowspan="2" style="text-align:center;min-width:52px">A</th>
+    <th class="th-month-hdr" rowspan="2" style="text-align:center;min-width:52px">L</th>
+    <th class="th-month-hdr" rowspan="2" style="text-align:center;min-width:60px">%</th>`;
+
+  let dateHeaderRow = '';
+  classDates.forEach(d => {
+    const dt      = parseLocalDate(d);
+    const dayShrt = DAY_SHORT[dt.getDay()];
+    const dayNum  = d.slice(8);
+    const isToday = d === today;
+    const isFut   = d > today;
+    dateHeaderRow += `
+      <th style="min-width:44px;max-width:54px;padding:4px 2px" title="${d}">
+        <div class="att2-date-col-hdr ${isToday ? 'is-today' : ''} ${isFut ? 'is-future' : ''}">
+          <span class="att2-date-col-day">${dayShrt}</span>
+          <span class="att2-date-col-date">${dayNum}</span>
+        </div>
+      </th>`;
+  });
+
+  // ── Build tbody ───────────────────────────────────────────
+  const isAdmin   = Auth.can('admin');
+  const isTeacher = Auth.can('attendance');
+  const canEdit   = isAdmin || isTeacher;
+
+  const bodyRows = students.map((stu, idx) => {
+    let pCount = 0, aCount = 0, lCount = 0, totalMarked = 0;
+
+    const cells = classDates.map(d => {
+      const status  = statusMap[`${stu.id}_${d}`];
+      const isFut   = d > today;
+      if (status === 'P') { pCount++; totalMarked++; }
+      else if (status === 'A') { aCount++; totalMarked++; }
+      else if (status === 'L') { lCount++; totalMarked++; }
+
+      const bgColor = status === 'P' ? 'var(--green-dim)' :
+                      status === 'A' ? 'var(--red-dim)'   :
+                      status === 'L' ? '#fef3c7'          : 'var(--surface2)';
+      const txColor = status === 'P' ? 'var(--green)'     :
+                      status === 'A' ? 'var(--red)'        :
+                      status === 'L' ? '#92400e'            : 'var(--t4)';
+      const brColor = status === 'P' ? 'var(--green)'     :
+                      status === 'A' ? 'var(--red)'        :
+                      status === 'L' ? '#d97706'            : 'var(--border2)';
+
+      const titleAttr = canEdit && !isFut ? `title="Click to mark attendance for ${d}"` : '';
+      const cursorSt  = canEdit && !isFut ? 'cursor:pointer;' : '';
+      const opacity   = isFut ? 'opacity:.35;' : '';
+
+      return `<td style="text-align:center;vertical-align:middle;padding:5px 3px">
+        <span class="weekly-date-cell" data-date="${d}" data-sid="${stu.id}" style="
+          display:inline-flex;align-items:center;justify-content:center;
+          width:34px;height:28px;border-radius:6px;font-size:12px;font-weight:800;
+          border:1.5px solid ${brColor};background:${bgColor};color:${txColor};
+          ${cursorSt}${opacity}font-family:var(--font-mono);transition:all .1s;user-select:none"
+          ${titleAttr}>${status || ''}</span>
+      </td>`;
+    }).join('');
+
+    const pct      = totalMarked > 0 ? Math.round((pCount / totalMarked) * 100) : null;
+    const pctColor = pct === null ? 'var(--t4)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
+    const shortId  = stu.registrationNo || stu.admissionNo || stu.studentCnic || stu.cnic || (stu.id?.slice(-6) || '—');
+
+    return `<tr>
+      <td class="col-frozen col-frozen-0" style="text-align:center;color:var(--t4);font-family:var(--font-mono);font-size:11px">${idx + 1}</td>
+      <td class="col-frozen col-frozen-1" style="font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${stu.studentName || '—'}</td>
+      <td class="col-frozen col-frozen-2" style="font-family:var(--font-mono);font-size:11px;color:var(--t3)">${shortId}</td>
+      ${cells}
+      <td style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--green)">${pCount}</td>
+      <td style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:var(--red)">${aCount}</td>
+      <td style="text-align:center;font-family:var(--font-mono);font-size:11.5px;font-weight:700;color:#d97706">${lCount}</td>
+      <td style="text-align:center;padding:5px 8px">
+        <div class="att2-pct" style="color:${pctColor}">${pct !== null ? pct + '%' : '—'}</div>
+        <div class="att2-pct-bar"><div class="att2-pct-bar-fill" style="width:${pct||0}%;background:${pctColor}"></div></div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="att2-sheet-table-wrap">
+      <table class="att2-sheet-table">
+        <thead>
+          <tr>${monthHeaderRow}</tr>
+          <tr>${dateHeaderRow}</tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>
+    ${canEdit ? `<div style="padding:8px 14px;font-size:11px;color:var(--t4);background:var(--surface2);border-top:1px solid var(--border)">
+      💡 Click any attendance cell to open that date in Daily Attendance tab for editing.
+    </div>` : ''}`;
+}
+
+// ── Export weekly CSV ─────────────────────────────────────────
+function _exportWeeklyCSV(batch, students, classDates, records) {
+  const fmt = d => {
+    const dt = parseLocalDate(d);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${dt.getDate()}-${months[dt.getMonth()]}-${dt.getFullYear()}`;
+  };
+
+  const header = ['#', 'Student Name', 'Student ID', ...classDates.map(fmt), 'P', 'A', 'L', '%'];
+  const rows   = students.map((stu, idx) => {
+    let p = 0, a = 0, l = 0;
+    const dayStatuses = classDates.map(d => {
+      const dayRecs = AttendanceService.getRecordsForDate(batch.id, d);
+      const st = dayRecs[stu.id]?.status || '';
+      if (st === 'P') p++;
+      else if (st === 'A') a++;
+      else if (st === 'L') l++;
+      return st || '—';
+    });
+    const total = p + a + l;
+    const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '—';
+    const sid   = stu.registrationNo || stu.admissionNo || stu.cnic || stu.id?.slice(-6) || '—';
+    return [idx + 1, stu.studentName || '—', sid, ...dayStatuses, p, a, l, pct];
+  });
+
+  const csv  = [header, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `weekly_attendance_${batch.batchName}_${_weeklyFrom}_to_${_weeklyTo}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  Toast.success('Weekly CSV exported.');
 }
