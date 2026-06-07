@@ -1347,16 +1347,17 @@ function _renderDailyAttendance() {
 
 function _dailyActiveBatches() {
   const today   = toISODate(new Date());
-  const lpaList = AppState.get('lpAssignments') || [];
+  // lpAssignments is an object {batchId: lpa}, not an array
+  const lpaMap  = AppState.get('lpAssignments') || {};
   const all     = AppState.get('batches') || [];
 
   return all.filter(b => {
-    if (_filterCampus  && b.campusId    !== _filterCampus)    return false;
+    if (_filterCampus  && b.campusId     !== _filterCampus)   return false;
     if (_filterDisc    && b.disciplineId !== _filterDisc)     return false;
     if (_filterSession && b.sessionPeriod !== _filterSession) return false;
 
-    // Must be active: LP endDate > today OR no LP (warn inside)
-    const lpa = lpaList.find(a => a.batchId === b.id);
+    // Show all batches — LP not required (warn inside sheet)
+    const lpa = lpaMap[b.id];
     if (!lpa) return true;
     const lpEnd = lpa.endDate || (lpa.rows?.length ? lpa.rows[lpa.rows.length-1]?.date : null);
     return !lpEnd || lpEnd >= today;
@@ -1369,14 +1370,15 @@ function _renderDailyBatchList() {
   if (!listEl) return;
 
   const batches  = _dailyActiveBatches();
-  const lpaList  = AppState.get('lpAssignments') || [];
+  // lpAssignments is object {batchId: lpa}
+  const lpaMap   = AppState.get('lpAssignments') || {};
   const today    = toISODate(new Date());
 
   if (countEl) countEl.textContent = `(${batches.length})`;
 
   if (!batches.length) {
     listEl.innerHTML = `<div style="padding:24px 12px;text-align:center;color:var(--t3);font-size:12px">
-      No active batches found.
+      No batches found. Try changing filters.
     </div>`;
     return;
   }
@@ -1385,13 +1387,12 @@ function _renderDailyBatchList() {
     const disc    = AppState.findById('disciplines', b.disciplineId);
     const campus  = AppState.findById('campuses',   b.campusId);
     const teacher = AppState.findById('teachers',   b.teacherId);
-    const lpa     = lpaList.find(a => a.batchId === b.id);
+    const lpa     = lpaMap[b.id];   // object lookup, not .find()
     const isSel   = _dailySelBatch?.id === b.id;
 
-    // Check if today's attendance is already marked
-    const records = AttendanceService.getRecordsForDate(b.id, _dailyDate);
-    const markedCount = Object.keys(records).length;
-    const isMarked = markedCount > 0;
+    // Check if selected date's attendance is already marked
+    const records    = AttendanceService.getRecordsForDate(b.id, _dailyDate);
+    const isMarked   = Object.keys(records).length > 0;
 
     // Is _dailyDate a class day for this batch?
     let isClassDay = false;
@@ -1468,8 +1469,8 @@ function _loadDailySheet(batch) {
 
   const today     = toISODate(new Date());
   const isFuture  = _dailyDate > today;
-  const lpaList   = AppState.get('lpAssignments') || [];
-  const lpa       = lpaList.find(a => a.batchId === batch.id);
+  const lpaMap    = AppState.get('lpAssignments') || {};
+  const lpa       = lpaMap[batch.id];   // object lookup
   const disc      = AppState.findById('disciplines', batch.disciplineId);
   const campus    = AppState.findById('campuses',   batch.campusId);
   const teacher   = AppState.findById('teachers',   batch.teacherId);
