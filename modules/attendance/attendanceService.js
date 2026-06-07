@@ -32,6 +32,46 @@ import { AppState, generateID } from '../../utils/state.js';
 const SCHEDULES_KEY = 'batchSchedules';
 const RECORDS_KEY   = 'attendanceRecords';
 
+// ── Attendance API — direct MongoDB per-record upsert ─────────
+// Race condition safe: har record independently upsert hota hai
+// 100 teachers ek saath mark kar sakte hain bina data overwrite ke
+const _API_BASE = '/api/attendance';
+const _API_KEY  = () => window.__SMS_API_KEY__ || '';
+
+async function _apiUpsert(records) {
+  try {
+    const res = await fetch(_API_BASE, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': _API_KEY() },
+      body:    JSON.stringify({ records }),
+    });
+    if (!res.ok) console.error('[AttendanceService] API upsert failed:', res.status);
+  } catch (e) {
+    console.error('[AttendanceService] API upsert error:', e.message);
+  }
+}
+
+export async function fetchAndSyncBatchAttendance(batchId) {
+  try {
+    const res = await fetch(`${_API_BASE}?batchId=${batchId}`, {
+      headers: { 'x-api-key': _API_KEY() },
+    });
+    if (!res.ok) return;
+    const { records } = await res.json();
+    if (!Array.isArray(records)) return;
+
+    // Merge fetched records into local AppState cache
+    const existing = AppState.get(RECORDS_KEY) || [];
+    const map = {};
+    existing.forEach(r => { map[r.id] = r; });
+    records.forEach(r => { map[r.id] = r; });
+    // Direct set without triggering saveState (read-only sync)
+    AppState._silentSet(RECORDS_KEY, Object.values(map));
+  } catch (e) {
+    console.error('[AttendanceService] fetchAndSync error:', e.message);
+  }
+}
+
 // Day index constants (mirrors JS Date.getDay())
 export const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 export const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -302,29 +342,32 @@ export const AttendanceService = {
     if (batch.endDate && date > batch.endDate)
       return { success: false, message: 'Date is after batch end date.' };
 
-    const all     = AppState.get(RECORDS_KEY) || [];
+    const all      = AppState.get(RECORDS_KEY) || [];
     const existing = all.find(r => r.batchId === batchId && r.studentId === studentId && r.date === date);
 
+    let record;
     if (existing) {
-      // Update in-place
-      AppState.update(RECORDS_KEY, existing.id, {
+      const updated = { ...existing, status, markedAt: new Date().toISOString(), markedBy: markedBy || null };
+      AppState.update(RECORDS_KEY, existing.id, { status, markedAt: updated.markedAt, markedBy: updated.markedBy });
+      record = updated;
+    } else {
+      record = {
+        id:        generateID('att'),
+        batchId,
+        studentId,
+        date,
         status,
-        markedAt: new Date().toISOString(),
-        markedBy: markedBy || null,
-      });
-      return { success: true, record: { ...existing, status } };
+        markedAt:  new Date().toISOString(),
+        markedBy:  markedBy || null,
+      };
+      AppState.add(RECORDS_KEY, record);
     }
 
-    const record = {
-      id:        generateID('att'),
-      batchId,
-      studentId,
-      date,
-      status,
-      markedAt:  new Date().toISOString(),
-      markedBy:  markedBy || null,
-    };
-    AppState.add(RECORDS_KEY, record);
+    // ✅ Direct MongoDB upsert — race condition safe
+    // AppState save se alag — sirf ye ek record MongoDB mein update hoga
+    // 100 teachers ek saath mark karein — koi overwrite nahi hogi
+    _apiUpsert([record]);
+
     return { success: true, record };
   },
 
