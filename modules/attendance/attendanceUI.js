@@ -333,6 +333,12 @@ function _buildShell() {
           </svg>
           Date-wise
         </button>
+        <button class="att2-tab" data-tab="daily">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          Daily Attendance
+        </button>
       </div>
       <div id="att2Body" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
     </div>`;
@@ -344,8 +350,9 @@ function _attachTabSwitcher() {
       _root.querySelectorAll('.att2-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _activeTab = btn.dataset.tab;
-      if (_activeTab === 'batchwise') _renderBatchWise();
-      else                            _renderDateWise();
+      if      (_activeTab === 'batchwise') _renderBatchWise();
+      else if (_activeTab === 'datewise')  _renderDateWise();
+      else if (_activeTab === 'daily')     _renderDailyAttendance();
     });
   });
 }
@@ -1239,5 +1246,446 @@ function _openSummaryModal(batch) {
       { label: 'Close', variant: 'ghost' },
       { label: 'Export CSV', variant: 'primary', handler: () => { AttendanceService.exportCSV(batch.id); Toast.success('CSV started.'); } }
     ]
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// DAILY ATTENDANCE TAB
+// Layout: Sidebar (filters + batch list) | Main (today's sheet)
+// ══════════════════════════════════════════════════════════════
+
+let _dailySelBatch  = null;
+let _dailyDate      = toISODate(new Date()); // default today
+
+function _renderDailyAttendance() {
+  const body = _root.querySelector('#att2Body');
+  if (!body) return;
+
+  const today      = toISODate(new Date());
+  const batches    = AppState.get('batches')     || [];
+  const campuses   = AppState.get('campuses')    || [];
+  const disciplines= AppState.get('disciplines') || [];
+  const sessions   = [...new Set(batches.map(b => b.sessionPeriod).filter(Boolean))].sort().reverse();
+
+  const campOpts = campuses.map(c =>
+    `<option value="${c.id}" ${_filterCampus === c.id ? 'selected':''}>
+      ${c.campusName.replace(/\s*campus\s*/i,'').trim()}
+    </option>`).join('');
+  const discOpts = disciplines.map(d =>
+    `<option value="${d.id}" ${_filterDisc === d.id ? 'selected':''}>${d.abbreviation}</option>`).join('');
+  const sessOpts = sessions.map(s =>
+    `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0;overflow:hidden">
+
+      <!-- ── Sidebar ── -->
+      <aside style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+
+        <!-- Filters -->
+        <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <select class="att2-filter-sel" id="dailyFiltCamp">
+            <option value="">All Campuses</option>${campOpts}
+          </select>
+          <select class="att2-filter-sel" id="dailyFiltDisc">
+            <option value="">All Disciplines</option>${discOpts}
+          </select>
+          <select class="att2-filter-sel" id="dailyFiltSess">
+            <option value="">All Sessions</option>${sessOpts}
+          </select>
+        </div>
+
+        <!-- Date picker -->
+        <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:8px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+          <input type="date" id="dailyDatePick" value="${_dailyDate}"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border2);
+                   border-radius:var(--r-sm);color:var(--t1);font-size:12px;
+                   padding:5px 8px;outline:none;cursor:pointer;font-family:inherit"/>
+          <button id="dailyTodayBtn"
+            style="font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:var(--r-sm);
+                   border:1px solid var(--blue);background:var(--blue-dim);color:var(--blue);
+                   cursor:pointer;white-space:nowrap;font-family:inherit">
+            Today
+          </button>
+        </div>
+
+        <!-- Batch list label -->
+        <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
+                    letter-spacing:.06em;color:var(--t3);flex-shrink:0">
+          Active Batches &nbsp;<span id="dailyBatchCount" style="font-weight:400"></span>
+        </div>
+
+        <!-- Batch list -->
+        <div id="dailyBatchList" style="flex:1;overflow-y:auto"></div>
+      </aside>
+
+      <!-- ── Main ── -->
+      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="att2-placeholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.2" style="color:var(--t4)">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <h3>Select a Batch</h3>
+          <p>Pick a batch from the left to mark today's attendance.</p>
+        </div>
+      </div>
+    </div>`;
+
+  _renderDailyBatchList();
+  _attachDailyEvents();
+
+  // Restore selected batch
+  if (_dailySelBatch) {
+    const b = AppState.findById('batches', _dailySelBatch.id);
+    if (b) _loadDailySheet(b);
+  }
+}
+
+function _dailyActiveBatches() {
+  const today   = toISODate(new Date());
+  const lpaList = AppState.get('lpAssignments') || [];
+  const all     = AppState.get('batches') || [];
+
+  return all.filter(b => {
+    if (_filterCampus  && b.campusId    !== _filterCampus)    return false;
+    if (_filterDisc    && b.disciplineId !== _filterDisc)     return false;
+    if (_filterSession && b.sessionPeriod !== _filterSession) return false;
+
+    // Must be active: LP endDate > today OR no LP (warn inside)
+    const lpa = lpaList.find(a => a.batchId === b.id);
+    if (!lpa) return true;
+    const lpEnd = lpa.endDate || (lpa.rows?.length ? lpa.rows[lpa.rows.length-1]?.date : null);
+    return !lpEnd || lpEnd >= today;
+  });
+}
+
+function _renderDailyBatchList() {
+  const listEl   = _root.querySelector('#dailyBatchList');
+  const countEl  = _root.querySelector('#dailyBatchCount');
+  if (!listEl) return;
+
+  const batches  = _dailyActiveBatches();
+  const lpaList  = AppState.get('lpAssignments') || [];
+  const today    = toISODate(new Date());
+
+  if (countEl) countEl.textContent = `(${batches.length})`;
+
+  if (!batches.length) {
+    listEl.innerHTML = `<div style="padding:24px 12px;text-align:center;color:var(--t3);font-size:12px">
+      No active batches found.
+    </div>`;
+    return;
+  }
+
+  listEl.innerHTML = batches.map(b => {
+    const disc    = AppState.findById('disciplines', b.disciplineId);
+    const campus  = AppState.findById('campuses',   b.campusId);
+    const teacher = AppState.findById('teachers',   b.teacherId);
+    const lpa     = lpaList.find(a => a.batchId === b.id);
+    const isSel   = _dailySelBatch?.id === b.id;
+
+    // Check if today's attendance is already marked
+    const records = AttendanceService.getRecordsForDate(b.id, _dailyDate);
+    const markedCount = Object.keys(records).length;
+    const isMarked = markedCount > 0;
+
+    // Is _dailyDate a class day for this batch?
+    let isClassDay = false;
+    if (lpa?.rows?.length) {
+      isClassDay = lpa.rows.some(r => r.date === _dailyDate);
+    } else {
+      const classDates = AttendanceDateGenerator.generate(b.id);
+      isClassDay = classDates.includes(_dailyDate);
+    }
+
+    return `
+      <div class="att2-batch-item ${isSel ? 'sel' : ''}" data-dbid="${b.id}"
+           style="padding:9px 12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <div class="att2-batch-name" style="font-size:12.5px">
+            ${disc ? `<span style="color:var(--blue)">${disc.abbreviation}</span> — ` : ''}${b.batchName}
+          </div>
+          ${isMarked
+            ? `<span style="font-size:9.5px;font-weight:700;color:var(--green);background:var(--green-dim);
+                           padding:1px 7px;border-radius:8px;white-space:nowrap">✓ Marked</span>`
+            : isClassDay
+            ? `<span style="font-size:9.5px;font-weight:700;color:var(--yellow);background:var(--yellow-dim);
+                           padding:1px 7px;border-radius:8px;white-space:nowrap">Pending</span>`
+            : `<span style="font-size:9.5px;color:var(--t4);padding:1px 6px">—</span>`
+          }
+        </div>
+        <div class="att2-batch-sub" style="margin-top:3px;font-size:11px">
+          ${campus ? `<span>${campus.campusName.replace(/\s*campus\s*/i,'').trim()}</span>` : ''}
+          ${b.sessionPeriod ? `<span style="margin-left:5px;color:var(--t4)">${b.sessionPeriod}</span>` : ''}
+          ${teacher ? `<span style="margin-left:5px">· ${teacher.fullName}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.att2-batch-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const b = AppState.findById('batches', item.dataset.dbid);
+      if (!b) return;
+      _dailySelBatch = b;
+      listEl.querySelectorAll('.att2-batch-item').forEach(i =>
+        i.classList.toggle('sel', i.dataset.dbid === b.id));
+      _loadDailySheet(b);
+    });
+  });
+}
+
+function _attachDailyEvents() {
+  _root.querySelector('#dailyFiltCamp')?.addEventListener('change', e => {
+    _filterCampus = e.target.value; _renderDailyBatchList();
+  });
+  _root.querySelector('#dailyFiltDisc')?.addEventListener('change', e => {
+    _filterDisc = e.target.value; _renderDailyBatchList();
+  });
+  _root.querySelector('#dailyFiltSess')?.addEventListener('change', e => {
+    _filterSession = e.target.value; _renderDailyBatchList();
+  });
+  _root.querySelector('#dailyDatePick')?.addEventListener('change', e => {
+    _dailyDate = e.target.value;
+    _renderDailyBatchList();
+    if (_dailySelBatch) _loadDailySheet(_dailySelBatch);
+  });
+  _root.querySelector('#dailyTodayBtn')?.addEventListener('click', () => {
+    _dailyDate = toISODate(new Date());
+    const pick = _root.querySelector('#dailyDatePick');
+    if (pick) pick.value = _dailyDate;
+    _renderDailyBatchList();
+    if (_dailySelBatch) _loadDailySheet(_dailySelBatch);
+  });
+}
+
+function _loadDailySheet(batch) {
+  const mainEl = _root.querySelector('#dailyMain');
+  if (!mainEl) return;
+
+  const today     = toISODate(new Date());
+  const isFuture  = _dailyDate > today;
+  const lpaList   = AppState.get('lpAssignments') || [];
+  const lpa       = lpaList.find(a => a.batchId === batch.id);
+  const disc      = AppState.findById('disciplines', batch.disciplineId);
+  const campus    = AppState.findById('campuses',   batch.campusId);
+  const teacher   = AppState.findById('teachers',   batch.teacherId);
+
+  // Check if selected date is a class day
+  let isClassDay = false;
+  if (lpa?.rows?.length) {
+    isClassDay = lpa.rows.some(r => r.date === _dailyDate);
+  } else {
+    const classDates = AttendanceDateGenerator.generate(batch.id);
+    isClassDay = classDates.includes(_dailyDate);
+  }
+
+  // Get students
+  const enrolments = (AppState.get('enrolments') || [])
+    .filter(e => e.batchId === batch.id && e.status === 'active');
+  const students = enrolments
+    .map(e => AppState.findById('students', e.studentId))
+    .filter(Boolean)
+    .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+
+  const existing  = AttendanceService.getRecordsForDate(batch.id, _dailyDate);
+  const isMarked  = Object.keys(existing).length > 0;
+  const isAdmin   = Auth.can('admin');
+  const isTeacher = Auth.can('attendance');
+  const canMark   = (isAdmin || isTeacher) && !isFuture;
+  const markedBy  = AppState.get('currentUser')?.id;
+
+  // Formatted date display
+  const dateObj  = new Date(_dailyDate + 'T00:00:00');
+  const days     = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dayName  = days[dateObj.getDay()];
+  const dateDisp = `${dayName}, ${dateObj.getDate()} ${months[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+  const isToday  = _dailyDate === today;
+
+  // Stats
+  let pCount = 0, aCount = 0, lCount = 0;
+  students.forEach(s => {
+    const rec = existing[s.id];
+    if (rec?.status === 'P') pCount++;
+    else if (rec?.status === 'A') aCount++;
+    else if (rec?.status === 'L') lCount++;
+  });
+  const markedTotal = pCount + aCount + lCount;
+  const pct = markedTotal > 0 ? Math.round((pCount / markedTotal) * 100) : null;
+
+  mainEl.innerHTML = `
+    <!-- Batch info bar -->
+    <div style="padding:12px 16px;background:var(--surface2);border-bottom:1px solid var(--border);
+                flex-shrink:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:15px;font-weight:800;font-family:var(--font-mono);color:var(--t1)">
+            ${disc ? `<span style="color:var(--blue)">${disc.abbreviation}</span> — ` : ''}${batch.batchName}
+          </span>
+          ${isMarked
+            ? `<span class="att2-badge att2-badge-green">✓ Marked</span>`
+            : isClassDay
+            ? `<span class="att2-badge att2-badge-yellow">Pending</span>`
+            : `<span class="att2-badge" style="background:var(--surface3);color:var(--t3)">Not a Class Day</span>`
+          }
+          ${isFuture ? `<span class="att2-badge att2-badge-yellow">Future Date</span>` : ''}
+        </div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap">
+          ${campus  ? `<span>${campus.campusName.replace(/\s*campus\s*/i,'').trim()}</span>` : ''}
+          ${teacher ? `<span>· ${teacher.fullName}</span>` : ''}
+          <span>· ${students.length} students</span>
+        </div>
+      </div>
+      <!-- Date display -->
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:13px;font-weight:700;color:${isToday ? 'var(--blue)' : 'var(--t1)'}">
+          ${isToday ? '📅 Today · ' : ''}${dateDisp}
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats bar -->
+    ${markedTotal > 0 ? `
+    <div style="padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+                display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--surface)">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--green)">${pCount} Present</span>
+        <span style="color:var(--border2)">|</span>
+        <span style="font-size:11px;font-weight:700;color:var(--red)">${aCount} Absent</span>
+        <span style="color:var(--border2)">|</span>
+        <span style="font-size:11px;font-weight:700;color:#d97706">${lCount} Late</span>
+      </div>
+      <div style="flex:1;min-width:80px;max-width:180px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+          <span style="font-size:10px;color:var(--t3)">Attendance</span>
+          <span style="font-size:11px;font-weight:800;color:${pct >= 75 ? 'var(--green)' : 'var(--red)'}">${pct}%</span>
+        </div>
+        <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${pct >= 75 ? 'var(--green)' : 'var(--red)'};border-radius:2px;transition:width .3s"></div>
+        </div>
+      </div>
+      ${canMark ? `
+      <div style="margin-left:auto;display:flex;gap:6px">
+        <button id="dailyAllP" class="att2-btn att2-btn-success" style="font-size:12px;padding:5px 12px">✓ All Present</button>
+        <button id="dailyAllA" class="att2-btn" style="font-size:12px;padding:5px 12px;border-color:var(--red);color:var(--red)">✗ All Absent</button>
+      </div>` : ''}
+    </div>` : canMark ? `
+    <div style="padding:8px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+                display:flex;justify-content:flex-end;gap:6px;background:var(--surface)">
+      <button id="dailyAllP" class="att2-btn att2-btn-success" style="font-size:12px;padding:5px 12px">✓ All Present</button>
+      <button id="dailyAllA" class="att2-btn" style="font-size:12px;padding:5px 12px;border-color:var(--red);color:var(--red)">✗ All Absent</button>
+    </div>` : ''}
+
+    ${!isClassDay && !isMarked ? `
+    <div class="att2-warn">
+      ⚠ ${_dailyDate === today ? 'Today' : dateDisp} is not a scheduled class day for this batch. You can still mark attendance if needed.
+    </div>` : ''}
+
+    <!-- Attendance table -->
+    <div style="flex:1;overflow-y:auto">
+      ${!students.length
+        ? `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">No active enrolled students.</div>`
+        : `<table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:var(--surface2);position:sticky;top:0;z-index:2">
+                <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:40px">#</th>
+                <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border)">Student Name</th>
+                <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:130px">ID</th>
+                <th style="padding:9px 12px;text-align:center;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:160px">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${students.map((stu, idx) => {
+                const rec    = existing[stu.id];
+                const status = rec?.status || '';
+                const sid    = stu.registrationNo || stu.admissionNo || stu.cnic || '—';
+                const rowBg  = status === 'P' ? 'background:color-mix(in srgb,var(--green) 5%,transparent)'
+                             : status === 'A' ? 'background:color-mix(in srgb,var(--red) 5%,transparent)'
+                             : status === 'L' ? 'background:color-mix(in srgb,#f59e0b 5%,transparent)'
+                             : '';
+                return `<tr data-sid="${stu.id}" style="${rowBg};transition:background .12s">
+                  <td style="padding:9px 12px;border-bottom:1px solid var(--border);
+                             color:var(--t4);font-family:var(--font-mono);font-size:11px">${idx+1}</td>
+                  <td style="padding:9px 12px;border-bottom:1px solid var(--border);
+                             font-weight:600;color:var(--t1)">${stu.studentName || '—'}</td>
+                  <td style="padding:9px 12px;border-bottom:1px solid var(--border);
+                             font-family:var(--font-mono);font-size:11.5px;color:var(--t3)">${sid}</td>
+                  <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+                    ${canMark
+                      ? `<div class="daily-status-grp" data-sid="${stu.id}"
+                              style="display:inline-flex;gap:4px;align-items:center">
+                           ${['P','A','L'].map(s => {
+                             const active = status === s;
+                             const colors = {
+                               P: { border:'var(--green)', bg:'var(--green)',    bgDim:'var(--green-dim)',  text:'var(--green)'  },
+                               A: { border:'var(--red)',   bg:'var(--red)',      bgDim:'var(--red-dim)',    text:'var(--red)'    },
+                               L: { border:'#d97706',     bg:'#f59e0b',         bgDim:'#fef3c7',           text:'#92400e'       },
+                             }[s];
+                             return `<button data-s="${s}"
+                               style="width:34px;height:34px;border-radius:7px;
+                                      font-size:12.5px;font-weight:800;cursor:pointer;
+                                      border:2px solid ${colors.border};
+                                      background:${active ? colors.bg : colors.bgDim};
+                                      color:${active ? '#fff' : colors.text};
+                                      transition:all .1s;font-family:inherit">${s}</button>`;
+                           }).join('')}
+                         </div>`
+                      : `<span style="font-family:var(--font-mono);font-weight:800;font-size:13px;
+                                     color:${status==='P'?'var(--green)':status==='A'?'var(--red)':status==='L'?'#d97706':'var(--t4)'}">${status || '—'}</span>`
+                    }
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>`
+      }
+    </div>
+  `;
+
+  if (!canMark || !students.length) return;
+
+  // Wire All Present / All Absent
+  mainEl.querySelector('#dailyAllP')?.addEventListener('click', () => {
+    students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, _dailyDate, 'P', markedBy));
+    _loadDailySheet(batch);
+    _renderDailyBatchList();
+  });
+  mainEl.querySelector('#dailyAllA')?.addEventListener('click', () => {
+    students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, _dailyDate, 'A', markedBy));
+    _loadDailySheet(batch);
+    _renderDailyBatchList();
+  });
+
+  // Wire P/A/L buttons per student
+  mainEl.querySelectorAll('.daily-status-grp').forEach(grp => {
+    grp.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-s]');
+      if (!btn) return;
+      const sid    = grp.dataset.sid;
+      const status = btn.dataset.s;
+
+      AttendanceService.markAttendance(batch.id, sid, _dailyDate, status, markedBy);
+
+      // First student → apply to all unmarked
+      if (students.length && students[0].id === sid) {
+        students.forEach(s => {
+          if (s.id === sid) return;
+          const rec = (AppState.get('attendanceRecords') || [])
+            .find(r => r.batchId === batch.id && r.studentId === s.id && r.date === _dailyDate);
+          if (!rec) AttendanceService.markAttendance(batch.id, s.id, _dailyDate, status, markedBy);
+        });
+      }
+
+      _loadDailySheet(batch);
+      _renderDailyBatchList();
+    });
   });
 }
