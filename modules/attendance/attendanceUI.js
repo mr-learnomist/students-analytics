@@ -1817,6 +1817,7 @@ function _loadDailySheet(batch) {
     _updateStats();
     _renderDailyBatchList();
   });
+} // end _loadDailySheet
 
 // ── Build a single table row for daily attendance ─────────────
 function _buildDailyRow(stu, idx, existing, canMark) {
