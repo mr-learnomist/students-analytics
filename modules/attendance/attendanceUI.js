@@ -1,15 +1,23 @@
 // ============================================================
-// modules/attendance/attendanceUI.js — Attendance Module UI
+// modules/attendance/attendanceUI.js  — Rebuilt Attendance UI
 //
-// ARCHITECTURE (3-panel SPA within the attendance view):
-//   Panel 1: Batch List          → select a batch to proceed
-//   Panel 2: Date List           → pick a date to mark attendance
-//   Panel 3: Attendance Sheet    → mark P / A / L per student
+// ARCHITECTURE:
+//   Tab 1: Batch-wise Attendance  (NEW — LP-driven horizontal sheet)
+//   Tab 2: Date-wise Attendance   (legacy date-grid approach preserved)
 //
-// Admin-only features:
-//   - Configure class days schedule (day-of-week picker)
-//   - Effective-from date for schedule changes (future only)
-//   - Export CSV
+// Batch-wise flow:
+//   Filters: Campus → Discipline → Session (sidebar)
+//   Sidebar: Active batches (LP endDate > today)
+//   Search bar above batch list
+//   Click batch → Horizontal attendance sheet loads on right
+//
+// Sheet layout:
+//   Frozen: # | Student Name | ID
+//   Scrollable columns: one per class date (LP workDays from LP startDate→endDate)
+//   Grouped by Month headers
+//   Cells: P / A / L toggle — click cycles P→A→L→(clear)
+//   First student mark → sets default for all unmarked students that date
+//   Live: re-derives dates from LP on each render
 // ============================================================
 
 import { AppState }            from '../../utils/state.js';
@@ -28,923 +36,1127 @@ import {
   parseLocalDate,
   formatDisplayDate,
 } from './attendanceService.js';
+import { EnrolmentService }    from '../enrolment/enrolmentService.js';
 
-// ── Inject attendance-specific styles ────────────────────────
-function injectAttendanceStyles() {
-  if (document.getElementById('att-styles')) return;
-  const style = document.createElement('style');
-  style.id = 'att-styles';
-  style.textContent = `
-    /* ── Layout ── */
-    .att-shell { display:grid; grid-template-columns:320px 1fr; gap:0; height:100%; min-height:calc(100vh - 160px); }
-    .att-sidebar { border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; }
-    .att-main { overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:20px; }
+// ── Module state ──────────────────────────────────────────────
+let _root          = null;
+let _activeTab     = 'batchwise';  // 'batchwise' | 'datewise'
+let _filterCampus  = '';
+let _filterDisc    = '';
+let _filterSession = '';
+let _batchSearch   = '';
+let _selBatch      = null;         // selected batch object
+let _pendingChanges = {};          // { `${batchId}|${studentId}|${date}` → status }
+let _dwSelectedBatch = null;       // date-wise tab state
+let _dwSelectedDate  = null;
 
-    /* ── Batch List ── */
-    .att-section-hdr {
-      padding:16px 16px 10px;
-      font-size:10.5px; font-weight:700; letter-spacing:.08em;
-      text-transform:uppercase; color:var(--t3);
-      border-bottom:1px solid var(--border);
-      display:flex; align-items:center; justify-content:space-between;
-    }
-    .att-batch-item {
-      padding:12px 16px; cursor:pointer; border-bottom:1px solid var(--border);
-      transition:background .12s; position:relative;
-    }
-    .att-batch-item:hover { background:var(--surface2); }
-    .att-batch-item.active {
-      background:var(--blue-dim);
-      border-left:3px solid var(--blue);
-    }
-    .att-batch-name { font-size:13px; font-weight:700; font-family:var(--font-mono); color:var(--t1); }
-    .att-batch-meta { font-size:11.5px; color:var(--t3); margin-top:3px; }
-    .att-batch-teacher { font-size:11.5px; color:var(--t2); margin-top:2px; display:flex; align-items:center; gap:5px; }
-    .att-batch-status {
-      font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;
-      position:absolute; right:12px; top:12px;
-    }
-    .att-batch-status--active  { background:var(--green-dim); color:var(--green); }
-    .att-batch-status--ended   { background:var(--red-dim);   color:var(--red);   }
-    .att-batch-status--pending { background:var(--yellow-dim);color:var(--yellow);}
+// ── Inject styles ─────────────────────────────────────────────
+function _injectStyles() {
+  if (document.getElementById('att2-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'att2-styles';
+  s.textContent = `
+/* ══ SHELL ══════════════════════════════════════════════════ */
+.att2-shell { display:flex; flex-direction:column; height:100%; min-height:calc(100vh - 140px); }
 
-    /* ── Empty sidebar state ── */
-    .att-empty-state {
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      gap:10px; flex:1; padding:40px 20px; text-align:center;
-    }
-    .att-empty-state svg { color:var(--t4); }
-    .att-empty-state p { font-size:13px; color:var(--t3); line-height:1.5; }
+/* ── Tabs ──────────────────────────────────────────────────── */
+.att2-tabs {
+  display:flex; gap:0; border-bottom:2px solid var(--border);
+  padding:0 20px; background:var(--surface); flex-shrink:0;
+}
+.att2-tab {
+  padding:11px 18px; font-size:13px; font-weight:600;
+  color:var(--t3); cursor:pointer; border:none; background:none;
+  border-bottom:2px solid transparent; margin-bottom:-2px;
+  transition:all .15s; display:inline-flex; align-items:center; gap:7px;
+}
+.att2-tab:hover { color:var(--t1); }
+.att2-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
 
-    /* ── Main area placeholder ── */
-    .att-placeholder {
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      gap:14px; min-height:400px; text-align:center;
-    }
-    .att-placeholder h3 { font-size:16px; color:var(--t2); font-weight:600; }
-    .att-placeholder p  { font-size:13px; color:var(--t3); max-width:380px; line-height:1.6; }
+/* ── Batch-wise layout ─────────────────────────────────────── */
+.att2-bw { display:grid; grid-template-columns:280px 1fr; flex:1; min-height:0; overflow:hidden; }
 
-    /* ── Batch header card ── */
-    .att-batch-hdr {
-      background:var(--surface2); border:1px solid var(--border);
-      border-radius:var(--r-lg); padding:16px 20px;
-      display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;
-    }
-    .att-batch-hdr-info { display:flex; flex-direction:column; gap:4px; }
-    .att-batch-hdr-name { font-size:18px; font-weight:800; font-family:var(--font-mono); color:var(--t1); }
-    .att-batch-hdr-sub  { font-size:12.5px; color:var(--t3); }
-    .att-batch-hdr-actions { display:flex; gap:8px; flex-wrap:wrap; }
+/* ── Sidebar ──────────────────────────────────────────────── */
+.att2-sidebar {
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.att2-filters {
+  flex-shrink:0; padding:10px; display:flex; flex-direction:column;
+  gap:6px; border-bottom:1px solid var(--border);
+}
+.att2-filter-sel {
+  width:100%; background:var(--surface2); border:1px solid var(--border2);
+  border-radius:var(--r-sm); color:var(--t1); font-size:12px;
+  padding:6px 8px; outline:none; cursor:pointer;
+}
+.att2-filter-sel:focus { border-color:var(--blue); }
+.att2-sb-search {
+  flex-shrink:0; display:flex; align-items:center; gap:7px;
+  padding:8px 10px; border-bottom:1px solid var(--border);
+}
+.att2-sb-search svg { color:var(--t4); flex-shrink:0; }
+.att2-sb-search input {
+  flex:1; background:none; border:none; outline:none;
+  font-size:12.5px; color:var(--t1); font-family:inherit;
+}
+.att2-sb-search input::placeholder { color:var(--t4); }
+.att2-batch-list { flex:1; overflow-y:auto; }
 
-    /* ── Buttons ── */
-    .att-btn {
-      display:inline-flex; align-items:center; gap:6px;
-      padding:7px 14px; border-radius:var(--r-sm); font-size:12.5px;
-      font-weight:600; cursor:pointer; border:1px solid transparent; transition:all .15s;
-    }
-    .att-btn--primary  { background:var(--blue);    color:#fff;         border-color:var(--blue); }
-    .att-btn--primary:hover { filter:brightness(1.1); }
-    .att-btn--ghost    { background:transparent;    color:var(--t2);    border-color:var(--border2); }
-    .att-btn--ghost:hover  { background:var(--surface2); }
-    .att-btn--success  { background:var(--green);   color:#fff;         border-color:var(--green); }
-    .att-btn--success:hover { filter:brightness(1.1); }
-    .att-btn--danger   { background:var(--red-dim); color:var(--red);   border-color:var(--red); }
-    .att-btn--sm { padding:5px 10px; font-size:11.5px; }
-
-    /* ── Stats bar ── */
-    .att-stats-bar {
-      display:flex; gap:12px; flex-wrap:wrap;
-    }
-    .att-stat-chip {
-      background:var(--surface2); border:1px solid var(--border);
-      border-radius:var(--r-sm); padding:8px 14px;
-      display:flex; flex-direction:column; gap:2px; min-width:90px;
-    }
-    .att-stat-val { font-size:20px; font-weight:800; font-family:var(--font-mono); color:var(--t1); }
-    .att-stat-lbl { font-size:10.5px; color:var(--t3); font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
-
-    /* ── Date tabs ── */
-    .att-date-section { display:flex; flex-direction:column; gap:8px; }
-    .att-date-section-hdr {
-      font-size:10.5px; font-weight:700; text-transform:uppercase;
-      letter-spacing:.07em; color:var(--t3); padding-bottom:6px;
-      border-bottom:1px solid var(--border); display:flex; align-items:center;
-      justify-content:space-between;
-    }
-    .att-date-grid {
-      display:flex; flex-wrap:wrap; gap:6px;
-    }
-    .att-date-chip {
-      padding:5px 10px; border-radius:var(--r-sm); font-size:11.5px;
-      font-weight:600; cursor:pointer; border:1px solid var(--border2);
-      background:var(--surface2); color:var(--t2); transition:all .12s;
-      font-family:var(--font-mono);
-      display:flex; flex-direction:column; align-items:center; gap:1px;
-    }
-    .att-date-chip:hover   { border-color:var(--blue); color:var(--blue); }
-    .att-date-chip.marked  { background:var(--green-dim); border-color:var(--green); color:var(--green); }
-    .att-date-chip.today   { border-color:var(--blue);    color:var(--blue); font-weight:800; }
-    .att-date-chip.active  { background:var(--blue); border-color:var(--blue); color:#fff; }
-    .att-date-chip .chip-day  { font-size:10px; opacity:.75; }
-
-    /* ── Attendance sheet ── */
-    .att-sheet-hdr {
-      background:var(--surface2); border:1px solid var(--border);
-      border-radius:var(--r-sm); padding:12px 16px;
-      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-    }
-    .att-sheet-date { font-size:15px; font-weight:700; color:var(--t1); }
-    .att-sheet-sub  { font-size:12px; color:var(--t3); margin-top:2px; }
-    .att-sheet-bulk { display:flex; gap:6px; }
-
-    .att-table { width:100%; border-collapse:separate; border-spacing:0; }
-    .att-table th {
-      background:var(--surface2); padding:9px 12px;
-      font-size:10.5px; font-weight:700; text-transform:uppercase;
-      letter-spacing:.06em; color:var(--t3);
-      border-bottom:2px solid var(--border);
-      text-align:left;
-    }
-    .att-table td {
-      padding:9px 12px; border-bottom:1px solid var(--border);
-      font-size:13px; color:var(--t2);
-      transition:background .1s;
-    }
-    .att-table tr:hover td { background:var(--surface2); }
-    .att-table .att-idx { font-family:var(--font-mono); font-size:11.5px; color:var(--t4); width:36px; }
-
-    /* ── Status toggle buttons ── */
-    .att-status-group { display:flex; gap:4px; }
-    .att-status-btn {
-      width:32px; height:32px; border-radius:var(--r-sm);
-      font-size:12.5px; font-weight:800; cursor:pointer;
-      border:2px solid transparent; transition:all .12s;
-      display:flex; align-items:center; justify-content:center;
-    }
-    .att-status-btn[data-s="P"]          { background:var(--surface3); color:var(--t3); border-color:var(--border2); }
-    .att-status-btn[data-s="P"].selected { background:var(--green);    color:#fff;      border-color:var(--green);   }
-    .att-status-btn[data-s="A"]          { background:var(--surface3); color:var(--t3); border-color:var(--border2); }
-    .att-status-btn[data-s="A"].selected { background:var(--red);      color:#fff;      border-color:var(--red);     }
-    .att-status-btn[data-s="L"]          { background:var(--surface3); color:var(--t3); border-color:var(--border2); }
-    .att-status-btn[data-s="L"].selected { background:var(--yellow);   color:#000;      border-color:var(--yellow);  }
-
-    /* ── Schedule config modal ── */
-    .day-chip-grid { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
-    .day-chip {
-      padding:7px 14px; border-radius:var(--r-sm); font-size:12.5px;
-      font-weight:600; cursor:pointer; border:2px solid var(--border2);
-      background:var(--surface2); color:var(--t2); transition:all .12s;
-      user-select:none;
-    }
-    .day-chip:hover   { border-color:var(--blue); color:var(--blue); }
-    .day-chip.selected { background:var(--blue); color:#fff; border-color:var(--blue); }
-    .day-chip.disabled { opacity:.35; cursor:not-allowed; }
-
-    /* ── Summary table ── */
-    .att-pct-bar-wrap { background:var(--surface3); border-radius:4px; height:5px; width:80px; overflow:hidden; }
-    .att-pct-bar { height:100%; border-radius:4px; transition:width .4s; }
-
-    /* ── Sidebar search ── */
-    .att-search-wrap {
-      padding:10px 12px; border-bottom:1px solid var(--border);
-      display:flex; align-items:center; gap:8px;
-    }
-    .att-search-wrap svg { color:var(--t4); flex-shrink:0; }
-    .att-search-input {
-      flex:1; background:none; border:none; outline:none;
-      font-size:13px; color:var(--t1); font-family:inherit;
-    }
-    .att-search-input::placeholder { color:var(--t4); }
-
-    /* Responsive */
-    @media(max-width:768px) {
-      .att-shell { grid-template-columns:1fr; }
-      .att-sidebar { border-right:none; border-bottom:1px solid var(--border); max-height:260px; }
-    }
-  `;
-  document.head.appendChild(style);
+/* ── Batch item ───────────────────────────────────────────── */
+.att2-batch-item {
+  padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border);
+  transition:background .12s; position:relative;
+}
+.att2-batch-item:hover { background:var(--surface2); }
+.att2-batch-item.sel {
+  background:var(--blue-dim); border-left:3px solid var(--blue);
+}
+.att2-batch-name { font-size:12.5px; font-weight:700; font-family:var(--font-mono); color:var(--t1); }
+.att2-batch-sub  { font-size:11px; color:var(--t3); margin-top:2px; }
+.att2-lp-badge   {
+  font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:8px;
+  background:var(--blue-dim); color:var(--blue); display:inline-flex; align-items:center; gap:3px;
+}
+.att2-no-lp-badge {
+  font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:8px;
+  background:var(--yellow-dim); color:var(--yellow);
 }
 
-// ── Module State ──────────────────────────────────────────────
-let _selectedBatch  = null;
-let _selectedDate   = null;
-let _rootEl         = null;
-let _pendingChanges = {}; // { studentId → status } — unsaved sheet changes
+/* ── Main area ────────────────────────────────────────────── */
+.att2-main {
+  display:flex; flex-direction:column; overflow:hidden;
+}
 
-// ── Public mount point ────────────────────────────────────────
+/* ── Batch header bar ─────────────────────────────────────── */
+.att2-batch-hdr {
+  flex-shrink:0; padding:14px 20px;
+  background:var(--surface2); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}
+.att2-batch-hdr-name { font-size:16px; font-weight:800; font-family:var(--font-mono); color:var(--t1); }
+.att2-badge { padding:2px 8px; border-radius:10px; font-size:10.5px; font-weight:700; }
+.att2-badge-green { background:var(--green-dim); color:var(--green); }
+.att2-badge-red   { background:var(--red-dim);   color:var(--red);   }
+.att2-badge-yellow{ background:var(--yellow-dim);color:var(--yellow);}
+.att2-badge-blue  { background:var(--blue-dim);  color:var(--blue);  }
+.att2-hdr-meta    { font-size:12px; color:var(--t3); }
+.att2-hdr-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+.att2-btn {
+  display:inline-flex; align-items:center; gap:5px; padding:6px 12px;
+  border-radius:var(--r-sm); font-size:12px; font-weight:600;
+  cursor:pointer; border:1px solid var(--border2); transition:all .15s;
+  background:var(--surface2); color:var(--t2);
+}
+.att2-btn:hover { border-color:var(--blue); color:var(--blue); }
+.att2-btn-primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+.att2-btn-primary:hover { filter:brightness(1.08); }
+.att2-btn-success { background:var(--green); color:#fff; border-color:var(--green); }
+.att2-btn-success:hover { filter:brightness(1.08); }
+
+/* ── Horizontal attendance sheet ─────────────────────────── */
+.att2-sheet-wrap { flex:1; overflow:auto; position:relative; }
+
+/* Outer table wrapper for frozen columns */
+.att2-sheet-table-wrap {
+  position:relative; overflow:visible;
+}
+
+.att2-sheet-table {
+  border-collapse:separate; border-spacing:0;
+  font-size:12.5px; min-width:100%;
+  table-layout:auto;
+}
+
+/* Frozen columns */
+.att2-sheet-table .col-frozen {
+  position:sticky; z-index:3;
+  background:var(--surface2);
+}
+.att2-sheet-table .col-frozen-0 { left:0;    min-width:36px;  max-width:36px;  border-right:1px solid var(--border2); }
+.att2-sheet-table .col-frozen-1 { left:36px; min-width:160px; max-width:200px; border-right:1px solid var(--border2); }
+.att2-sheet-table .col-frozen-2 { left:196px;min-width:120px; max-width:140px; border-right:2px solid var(--border); }
+
+/* Header row */
+.att2-sheet-table thead th {
+  background:var(--surface2); z-index:4;
+  padding:8px 6px; font-size:10px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.05em; color:var(--t3);
+  border-bottom:2px solid var(--border); white-space:nowrap;
+  text-align:center; position:sticky; top:0;
+}
+.att2-sheet-table thead th.col-frozen { z-index:5; }
+.att2-sheet-table thead .th-month-hdr {
+  text-align:center; background:var(--surface3); color:var(--t2);
+  font-size:11px; font-weight:700; padding:5px 0;
+  border-bottom:1px solid var(--border); position:sticky; top:0; z-index:4;
+}
+/* Month header frozen overlap fix */
+.att2-sheet-table thead .th-month-hdr.col-frozen { z-index:5; }
+
+/* Body rows */
+.att2-sheet-table tbody tr:hover td { background:rgba(var(--blue-rgb,37,99,235),.04); }
+.att2-sheet-table tbody td {
+  padding:7px 4px; border-bottom:1px solid var(--border);
+  text-align:center; vertical-align:middle;
+}
+.att2-sheet-table tbody td.col-frozen { text-align:left; padding:7px 8px; }
+
+/* Date column header */
+.att2-date-col-hdr {
+  display:flex; flex-direction:column; align-items:center; gap:1px;
+  min-width:44px;
+}
+.att2-date-col-day  { font-size:9px; color:var(--t4); }
+.att2-date-col-date { font-size:11px; font-weight:700; font-family:var(--font-mono); }
+.att2-date-col-hdr.is-today .att2-date-col-date { color:var(--blue); }
+.att2-date-col-hdr.is-future { opacity:.45; }
+
+/* Attendance cell */
+.att2-cell {
+  width:36px; height:30px; border-radius:6px;
+  font-size:12px; font-weight:800; cursor:pointer;
+  border:1.5px solid var(--border2); background:var(--surface2);
+  color:var(--t4); display:inline-flex; align-items:center; justify-content:center;
+  transition:all .1s; user-select:none; font-family:var(--font-mono);
+}
+.att2-cell:hover { border-color:var(--blue); color:var(--blue); }
+.att2-cell[data-v="P"] { background:var(--green-dim); border-color:var(--green); color:var(--green); }
+.att2-cell[data-v="A"] { background:var(--red-dim);   border-color:var(--red);   color:var(--red);   }
+.att2-cell[data-v="L"] { background:#fef3c7;           border-color:#d97706;      color:#92400e;      }
+.att2-cell.future      { opacity:.35; cursor:not-allowed; pointer-events:none; }
+.att2-cell.saving      { opacity:.5; pointer-events:none; }
+
+/* Summary column */
+.att2-pct {
+  font-size:11px; font-weight:700; font-family:var(--font-mono);
+  white-space:nowrap;
+}
+.att2-pct-bar { height:4px; border-radius:2px; background:var(--surface3); margin-top:3px; min-width:40px; }
+.att2-pct-bar-fill { height:100%; border-radius:2px; transition:width .3s; }
+
+/* ── Placeholder / empty ──────────────────────────────────── */
+.att2-placeholder {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:12px; padding:40px; text-align:center;
+}
+.att2-placeholder h3 { font-size:15px; font-weight:700; color:var(--t2); }
+.att2-placeholder p  { font-size:13px; color:var(--t3); max-width:340px; line-height:1.6; }
+
+/* ── Warn bar ─────────────────────────────────────────────── */
+.att2-warn {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 16px; background:var(--yellow-dim);
+  border-bottom:1px solid var(--yellow); font-size:12.5px; color:var(--t2);
+}
+
+/* ── Date-wise tab (legacy, preserved) ───────────────────── */
+.att2-dw { display:flex; flex:1; min-height:0; overflow:hidden; }
+.att2-dw-sidebar {
+  width:280px; flex-shrink:0; border-right:1px solid var(--border);
+  overflow-y:auto; display:flex; flex-direction:column;
+}
+.att2-dw-main { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px; }
+.att2-dw-batch-item {
+  padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border);
+  transition:background .12s; font-size:13px;
+}
+.att2-dw-batch-item:hover { background:var(--surface2); }
+.att2-dw-batch-item.sel { background:var(--blue-dim); border-left:3px solid var(--blue); }
+.att2-date-grid { display:flex; flex-wrap:wrap; gap:6px; }
+.att2-date-chip {
+  padding:5px 9px; border-radius:var(--r-sm); font-size:11px;
+  font-weight:600; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface2); color:var(--t2); transition:all .12s;
+  font-family:var(--font-mono); display:flex; flex-direction:column; align-items:center;
+}
+.att2-date-chip:hover   { border-color:var(--blue); color:var(--blue); }
+.att2-date-chip.marked  { background:var(--green-dim); border-color:var(--green); color:var(--green); }
+.att2-date-chip.today   { border-color:var(--blue); color:var(--blue); font-weight:800; }
+.att2-date-chip.active  { background:var(--blue); border-color:var(--blue); color:#fff; }
+
+/* ── Day chip (schedule modal) ────────────────────────────── */
+.day-chip-grid { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+.day-chip {
+  padding:7px 14px; border-radius:var(--r-sm); font-size:12.5px;
+  font-weight:600; cursor:pointer; border:2px solid var(--border2);
+  background:var(--surface2); color:var(--t2); transition:all .12s; user-select:none;
+}
+.day-chip:hover    { border-color:var(--blue); color:var(--blue); }
+.day-chip.selected { background:var(--blue); color:#fff; border-color:var(--blue); }
+.day-chip.disabled { opacity:.35; cursor:not-allowed; }
+
+/* ── Percentage bar (summary modal) ──────────────────────── */
+.att-pct-bar-wrap { background:var(--surface3); border-radius:4px; height:5px; width:80px; overflow:hidden; }
+.att-pct-bar { height:100%; border-radius:4px; transition:width .4s; }
+
+@media(max-width:768px){
+  .att2-bw { grid-template-columns:1fr; }
+  .att2-sidebar { max-height:260px; border-right:none; border-bottom:1px solid var(--border); }
+}
+`;
+  document.head.appendChild(s);
+}
+
+// ── Public API ────────────────────────────────────────────────
 export const AttendanceModule = {
-
   mount(container) {
     injectUIStyles();
-    injectAttendanceStyles();
+    _injectStyles();
     ensureAttendanceKeys();
 
-    const el = typeof container === 'string' ? document.querySelector(container) : container;
-    if (!el) return;
-    _rootEl = el;
+    _root = typeof container === 'string' ? document.querySelector(container) : container;
+    if (!_root) return;
 
-    el.innerHTML = _buildShell();
-    _renderBatchList();
-    _attachSidebarSearch();
-    _showPlaceholder();
-  },
+    _root.innerHTML = _buildShell();
+    _attachTabSwitcher();
+    _renderBatchWise();
+  }
 };
 
 // ── Shell HTML ────────────────────────────────────────────────
 function _buildShell() {
   return `
-    <div class="att-shell">
-      <aside class="att-sidebar" id="attSidebar">
-        <div class="att-section-hdr">
-          <span>Batches</span>
-          <span id="attBatchCount" style="font-size:10.5px;font-weight:600;
-            background:var(--surface3);color:var(--t3);padding:1px 7px;
-            border-radius:10px;font-family:var(--font-mono)">—</span>
-        </div>
-        <div class="att-search-wrap">
+    <div class="att2-shell">
+      <div class="att2-tabs">
+        <button class="att2-tab active" data-tab="batchwise">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18M9 21V9"/>
           </svg>
-          <input class="att-search-input" id="attBatchSearch" placeholder="Search batches…"/>
-        </div>
-        <div id="attBatchList" style="flex:1;overflow-y:auto;"></div>
-      </aside>
-      <div class="att-main" id="attMain"></div>
-    </div>
-  `;
+          Batch-wise Attendance
+        </button>
+        <button class="att2-tab" data-tab="datewise">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+          Date-wise
+        </button>
+      </div>
+      <div id="att2Body" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
+    </div>`;
 }
 
-// ── Batch List (Sidebar) ──────────────────────────────────────
-function _renderBatchList(filter = '') {
-  const listEl = _rootEl.querySelector('#attBatchList');
-  const countEl = _rootEl.querySelector('#attBatchCount');
+function _attachTabSwitcher() {
+  _root.querySelectorAll('.att2-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _root.querySelectorAll('.att2-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _activeTab = btn.dataset.tab;
+      if (_activeTab === 'batchwise') _renderBatchWise();
+      else                            _renderDateWise();
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// BATCH-WISE TAB
+// ══════════════════════════════════════════════════════════════
+function _renderBatchWise() {
+  const body = _root.querySelector('#att2Body');
+  if (!body) return;
+
+  const batches     = AppState.get('batches')     || [];
+  const campuses    = AppState.get('campuses')    || [];
+  const disciplines = AppState.get('disciplines') || [];
+
+  // Build unique session list
+  const sessions = [...new Set(batches.map(b => b.sessionPeriod).filter(Boolean))].sort().reverse();
+
+  // Filter options
+  const campOpts = campuses.map(c =>
+    `<option value="${c.id}" ${_filterCampus === c.id ? 'selected' : ''}>${c.campusName}</option>`).join('');
+  const discOpts = disciplines.map(d =>
+    `<option value="${d.id}" ${_filterDisc === d.id ? 'selected' : ''}>${d.abbreviation} — ${d.fullName}</option>`).join('');
+  const sessOpts = sessions.map(s =>
+    `<option value="${s}" ${_filterSession === s ? 'selected' : ''}>${s}</option>`).join('');
+
+  body.innerHTML = `
+    <div class="att2-bw" style="flex:1;min-height:0;overflow:hidden">
+      <!-- Sidebar -->
+      <aside class="att2-sidebar">
+        <div class="att2-filters">
+          <select class="att2-filter-sel" id="att2FiltCamp">
+            <option value="">All Campuses</option>${campOpts}
+          </select>
+          <select class="att2-filter-sel" id="att2FiltDisc">
+            <option value="">All Disciplines</option>${discOpts}
+          </select>
+          <select class="att2-filter-sel" id="att2FiltSess">
+            <option value="">All Sessions</option>${sessOpts}
+          </select>
+        </div>
+        <div class="att2-sb-search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input id="att2BatchSearch" placeholder="Search batches…" value="${_batchSearch}"/>
+        </div>
+        <div class="att2-batch-list" id="att2BatchList"></div>
+      </aside>
+
+      <!-- Main -->
+      <div class="att2-main" id="att2Main">
+        <div class="att2-placeholder">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" style="color:var(--t4)">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+          </svg>
+          <h3>Select a Batch</h3>
+          <p>Use the filters and batch list on the left to load an attendance sheet.</p>
+        </div>
+      </div>
+    </div>`;
+
+  _renderBatchList();
+  _attachBWEvents();
+
+  // Restore selected batch
+  if (_selBatch) {
+    const b = AppState.findById('batches', _selBatch.id);
+    if (b) _loadBatchSheet(b);
+  }
+}
+
+function _activeBatches() {
+  const today   = toISODate(new Date());
+  const lpaList = AppState.get('lpAssignments') || [];
+  const all     = AppState.get('batches') || [];
+
+  // Only batches that have an LP assigned whose endDate > today
+  return all.filter(b => {
+    const matchCamp = !_filterCampus  || b.campusId    === _filterCampus;
+    const matchDisc = !_filterDisc    || b.disciplineId === _filterDisc;
+    const matchSess = !_filterSession || b.sessionPeriod === _filterSession;
+    if (!matchCamp || !matchDisc || !matchSess) return false;
+
+    if (_batchSearch) {
+      const q = _batchSearch.toLowerCase();
+      const teacher = AppState.findById('teachers', b.teacherId);
+      const match = (b.batchName || '').toLowerCase().includes(q) ||
+                    (teacher?.fullName || '').toLowerCase().includes(q) ||
+                    (b.sessionPeriod  || '').toLowerCase().includes(q);
+      if (!match) return false;
+    }
+
+    // Check LP end date
+    const lpa = lpaList.find(a => a.batchId === b.id);
+    if (!lpa) return true; // show even without LP (warn inside)
+
+    const lpEndDate = lpa.endDate || (lpa.rows?.length ? lpa.rows[lpa.rows.length - 1]?.date : null);
+    return !lpEndDate || lpEndDate >= today;
+  });
+}
+
+function _renderBatchList() {
+  const listEl = _root.querySelector('#att2BatchList');
   if (!listEl) return;
 
-  let batches = AppState.get('batches') || [];
-  if (filter) {
-    const q = filter.toLowerCase();
-    batches = batches.filter(b => {
-      const teacher = AppState.findById('teachers', b.teacherId);
-      return (b.batchName || '').toLowerCase().includes(q) ||
-             (teacher?.fullName || '').toLowerCase().includes(q) ||
-             (b.sessionPeriod || '').toLowerCase().includes(q);
-    });
-  }
-
-  if (countEl) countEl.textContent = batches.length;
+  const batches  = _activeBatches();
+  const lpaList  = AppState.get('lpAssignments') || [];
+  const today    = toISODate(new Date());
 
   if (!batches.length) {
     listEl.innerHTML = `
-      <div class="att-empty-state">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
-        </svg>
-        <p>${filter ? 'No batches match your search.' : 'No batches found.<br>Create batches in the Batches module.'}</p>
+      <div style="padding:30px 16px;text-align:center;color:var(--t3);font-size:12.5px">
+        No active batches found for these filters.
       </div>`;
     return;
   }
 
-  const today = toISODate(new Date());
+  listEl.innerHTML = batches.map(b => {
+    const disc    = AppState.findById('disciplines', b.disciplineId);
+    const campus  = AppState.findById('campuses',   b.campusId);
+    const teacher = AppState.findById('teachers',   b.teacherId);
+    const lpa     = lpaList.find(a => a.batchId === b.id);
+    const isSel   = _selBatch?.id === b.id;
 
-  listEl.innerHTML = batches.map(batch => {
-    const teacher = AppState.findById('teachers', batch.teacherId);
-    const discipline = AppState.findById('disciplines', batch.disciplineId);
+    const lpBadge = lpa
+      ? `<span class="att2-lp-badge">LP ${lpa.lpCode || ''}</span>`
+      : `<span class="att2-no-lp-badge">No LP</span>`;
 
-    // Status
-    let statusLabel = 'Pending';
-    let statusClass = 'pending';
-    if (batch.startDate && batch.endDate) {
-      if (today < batch.startDate)        { statusLabel = 'Not Started'; statusClass = 'pending'; }
-      else if (today > batch.endDate)     { statusLabel = 'Ended';       statusClass = 'ended';   }
-      else                                { statusLabel = 'Active';      statusClass = 'active';  }
-    }
-
-    const isActive = _selectedBatch?.id === batch.id;
+    // Enrolled count from enrolments
+    const enrolCount = (AppState.get('enrolments') || []).filter(e => e.batchId === b.id && e.status === 'active').length;
 
     return `
-      <div class="att-batch-item ${isActive ? 'active' : ''}" data-batch-id="${batch.id}">
-        <span class="att-batch-status att-batch-status--${statusClass}">${statusLabel}</span>
-        <div class="att-batch-name">${batch.batchName}</div>
-        <div class="att-batch-meta">
-          ${discipline ? `<span class="badge badge--blue" style="font-size:10px">${discipline.abbreviation}</span>` : ''}
-          ${batch.sessionPeriod ? `<span style="margin-left:4px">${batch.sessionPeriod}</span>` : ''}
-          ${batch.startDate ? `<span style="margin-left:4px;color:var(--t4)">${batch.startDate} → ${batch.endDate || '?'}</span>` : ''}
+      <div class="att2-batch-item ${isSel ? 'sel' : ''}" data-bid="${b.id}">
+        <div class="att2-batch-name">${b.batchName}</div>
+        <div class="att2-batch-sub">
+          ${disc   ? `<span style="font-weight:600;color:var(--blue)">${disc.abbreviation}</span>` : ''}
+          ${campus ? `<span style="margin-left:4px">${campus.campusName.replace(/\s*campus\s*/i,'').trim()}</span>` : ''}
+          ${b.sessionPeriod ? `<span style="margin-left:4px;color:var(--t4)">${b.sessionPeriod}</span>` : ''}
         </div>
-        <div class="att-batch-teacher">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-          ${teacher ? teacher.fullName : '<span style="color:var(--t4)">No teacher assigned</span>'}
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">
+          ${lpBadge}
+          <span style="font-size:10px;color:var(--t4)">${enrolCount} enrolled</span>
+          ${teacher ? `<span style="font-size:10px;color:var(--t3)">👤 ${teacher.fullName}</span>` : ''}
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 
   // Click delegation
-  listEl.querySelectorAll('.att-batch-item').forEach(item => {
+  listEl.querySelectorAll('.att2-batch-item').forEach(item => {
     item.addEventListener('click', () => {
-      const batchId = item.dataset.batchId;
-      const batch   = AppState.findById('batches', batchId);
-      if (!batch) return;
-      _selectBatch(batch);
+      const b = AppState.findById('batches', item.dataset.bid);
+      if (!b) return;
+      _selBatch = b;
+      listEl.querySelectorAll('.att2-batch-item').forEach(i => i.classList.toggle('sel', i.dataset.bid === b.id));
+      _loadBatchSheet(b);
     });
   });
 }
 
-function _attachSidebarSearch() {
-  _rootEl.querySelector('#attBatchSearch')?.addEventListener('input', e => {
-    _renderBatchList(e.target.value.trim());
-  });
+function _attachBWEvents() {
+  _root.querySelector('#att2FiltCamp')?.addEventListener('change',  e => { _filterCampus  = e.target.value; _renderBatchList(); });
+  _root.querySelector('#att2FiltDisc')?.addEventListener('change',  e => { _filterDisc    = e.target.value; _renderBatchList(); });
+  _root.querySelector('#att2FiltSess')?.addEventListener('change',  e => { _filterSession = e.target.value; _renderBatchList(); });
+  _root.querySelector('#att2BatchSearch')?.addEventListener('input', e => { _batchSearch   = e.target.value.trim(); _renderBatchList(); });
 }
 
-// ── Select Batch → show main panel ───────────────────────────
-function _selectBatch(batch) {
-  _selectedBatch = batch;
-  _selectedDate  = null;
-  _pendingChanges = {};
+// ── Load batch sheet ──────────────────────────────────────────
+function _loadBatchSheet(batch) {
+  const mainEl = _root.querySelector('#att2Main');
+  if (!mainEl) return;
 
-  // Highlight sidebar item
-  _rootEl.querySelectorAll('.att-batch-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.batchId === batch.id);
-  });
+  const lpaList = AppState.get('lpAssignments') || [];
+  const lpa     = lpaList.find(a => a.batchId === batch.id);
+  const disc    = AppState.findById('disciplines', batch.disciplineId);
+  const campus  = AppState.findById('campuses',   batch.campusId);
+  const teacher = AppState.findById('teachers',   batch.teacherId);
+  const isAdmin = Auth.can('admin');
+  const today   = toISODate(new Date());
 
-  _renderMainPanel();
-}
+  // Get enrolled active students from enrolments
+  const enrolments = (AppState.get('enrolments') || []).filter(e => e.batchId === batch.id && e.status === 'active');
+  const students   = enrolments
+    .map(e => AppState.findById('students', e.studentId))
+    .filter(Boolean)
+    .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
 
-// ── Main Panel ────────────────────────────────────────────────
-function _renderMainPanel() {
-  const mainEl = _rootEl.querySelector('#attMain');
-  if (!mainEl || !_selectedBatch) return;
+  // Generate class dates from LP if assigned, else from schedule
+  let classDates = [];
+  let datesSource = 'schedule';
 
-  const batch    = _selectedBatch;
-  const teacher  = AppState.findById('teachers', batch.teacherId);
-  const disc     = AppState.findById('disciplines', batch.disciplineId);
-  const subject  = AppState.findById('subjects', batch.subjectId);
-  const students = (AppState.get('students') || []).filter(s => s.batchId === batch.id);
-  const schedule = ScheduleService.getActiveSchedule(batch.id, toISODate(new Date()));
-  const isAdmin  = Auth.can('admin');
-  const today    = toISODate(new Date());
+  if (lpa && lpa.rows?.length) {
+    // Derive dates from LP rows — LP has workDays embedded in rows as .date field
+    classDates = lpa.rows
+      .filter(r => r.date)
+      .map(r => r.date)
+      .filter(d => d <= today)
+      .sort();
+    datesSource = 'lp';
+  } else {
+    classDates = AttendanceDateGenerator.generate(batch.id);
+  }
 
-  // Summary stats
-  const summary    = AttendanceService.getSummary(batch.id);
-  const classDates = AttendanceDateGenerator.generate(batch.id);
-  const markedCount = classDates.filter(d => AttendanceService.isDateMarked(batch.id, d)).length;
-
-  // Batch status
-  let batchStatusBadge = '';
+  // Batch status badge
+  let statusBadge = '';
   if (batch.startDate && batch.endDate) {
-    if (today < batch.startDate)
-      batchStatusBadge = `<span style="background:var(--yellow-dim);color:var(--yellow);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Not Started</span>`;
-    else if (today > batch.endDate)
-      batchStatusBadge = `<span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Ended</span>`;
-    else
-      batchStatusBadge = `<span style="background:var(--green-dim);color:var(--green);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Active</span>`;
+    if (today < batch.startDate)    statusBadge = `<span class="att2-badge att2-badge-yellow">Not Started</span>`;
+    else if (today > batch.endDate) statusBadge = `<span class="att2-badge att2-badge-red">Ended</span>`;
+    else                            statusBadge = `<span class="att2-badge att2-badge-green">Active</span>`;
   }
 
   mainEl.innerHTML = `
-    <!-- Batch Header -->
-    <div class="att-batch-hdr">
-      <div class="att-batch-hdr-info">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span class="att-batch-hdr-name">${batch.batchName}</span>
-          ${batchStatusBadge}
-        </div>
-        <div class="att-batch-hdr-sub">
-          ${disc ? `<span class="badge badge--blue" style="font-size:10px">${disc.abbreviation}</span>` : ''}
-          ${subject ? `<span style="margin-left:6px">${subject.subjectCode} — ${subject.subjectName}</span>` : ''}
-          ${teacher ? `<span style="margin-left:10px;color:var(--t2)">👤 ${teacher.fullName}</span>` : ''}
-          ${batch.startDate ? `<span style="margin-left:10px;color:var(--t4)">${batch.startDate} → ${batch.endDate || '?'}</span>` : ''}
-        </div>
-      </div>
-      <div class="att-batch-hdr-actions">
-        ${isAdmin ? `<button class="att-btn att-btn--ghost att-btn--sm" id="attConfigBtn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.07 4.93A10 10 0 0 0 2.93 19.07M4.93 4.93A10 10 0 0 0 19.07 19.07"/>
-          </svg>
-          Class Schedule
-        </button>` : ''}
-        <button class="att-btn att-btn--ghost att-btn--sm" id="attSummaryBtn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-          </svg>
-          Summary
-        </button>
-        <button class="att-btn att-btn--ghost att-btn--sm" id="attExportBtn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Export CSV
-        </button>
-      </div>
-    </div>
-
-    <!-- Stats -->
-    <div class="att-stats-bar">
-      <div class="att-stat-chip">
-        <span class="att-stat-val">${students.length}</span>
-        <span class="att-stat-lbl">Students</span>
-      </div>
-      <div class="att-stat-chip">
-        <span class="att-stat-val">${classDates.length}</span>
-        <span class="att-stat-lbl">Class Days</span>
-      </div>
-      <div class="att-stat-chip">
-        <span class="att-stat-val">${markedCount}</span>
-        <span class="att-stat-lbl">Marked</span>
-      </div>
-      <div class="att-stat-chip">
-        <span class="att-stat-val" style="color:${summary.batchPercent !== null ? (summary.batchPercent >= 75 ? 'var(--green)' : 'var(--red)') : 'var(--t4)'}">
-          ${summary.batchPercent !== null ? summary.batchPercent + '%' : '—'}
-        </span>
-        <span class="att-stat-lbl">Avg Present</span>
-      </div>
-      <div class="att-stat-chip">
-        <span class="att-stat-val" style="font-size:13px;margin-top:3px;color:var(--t2)">
-          ${schedule ? schedule.classDays.map(d => DAY_SHORT[d]).join(', ') : '—'}
-        </span>
-        <span class="att-stat-lbl">Class Days</span>
-      </div>
-    </div>
-
-    <!-- No schedule warning -->
-    ${!schedule && isAdmin ? `
-    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;
-      background:var(--yellow-dim);border:1px solid var(--yellow);border-radius:var(--r-sm)">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>
+    <!-- Batch header -->
+    <div class="att2-batch-hdr">
       <div>
-        <div style="font-size:13px;font-weight:700;color:var(--yellow)">No Class Schedule Configured</div>
-        <div style="font-size:12px;color:var(--t2);margin-top:2px">
-          Click <strong>Class Schedule</strong> to define which days of the week this batch has classes.
-          Without a schedule, no attendance dates will be generated.
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="att2-batch-hdr-name">${batch.batchName}</span>
+          ${statusBadge}
+          ${lpa ? `<span class="att2-badge att2-badge-blue">LP: ${lpa.lpCode || lpa.lpTitle || 'Assigned'}</span>` : `<span class="att2-badge att2-badge-yellow">No LP Assigned</span>`}
+        </div>
+        <div class="att2-hdr-meta" style="margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">
+          ${disc   ? `<span>${disc.abbreviation}</span>` : ''}
+          ${campus ? `<span>${campus.campusName}</span>` : ''}
+          ${teacher ? `<span>👤 ${teacher.fullName}</span>` : ''}
+          <span>${students.length} students</span>
+          <span>${classDates.length} class days (${datesSource === 'lp' ? 'from LP' : 'from schedule'})</span>
         </div>
       </div>
-    </div>` : ''}
+      <div class="att2-hdr-actions">
+        ${isAdmin ? `<button class="att2-btn" id="att2SchedBtn">⚙ Schedule</button>` : ''}
+        <button class="att2-btn" id="att2SummaryBtn">📊 Summary</button>
+        <button class="att2-btn" id="att2ExportBtn">⬇ Export CSV</button>
+      </div>
+    </div>
 
-    ${!schedule && !isAdmin ? `
-    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;
-      background:var(--yellow-dim);border:1px solid var(--yellow);border-radius:var(--r-sm)">
-      <span style="font-size:13px;color:var(--yellow)">⚠ No class schedule configured. Contact your admin to set up class days.</span>
-    </div>` : ''}
+    ${!lpa ? `<div class="att2-warn">⚠ No Lecture Plan assigned to this batch. Dates are derived from class schedule. Assign an LP for accurate date tracking.</div>` : ''}
+    ${!classDates.length ? `<div class="att2-warn">⚠ No class dates found. ${lpa ? 'LP has no rows with dates.' : 'Configure class schedule first.'}</div>` : ''}
 
-    <!-- Date Grid -->
-    ${_buildDateGrid(batch, classDates)}
-
-    <!-- Attendance Sheet (rendered when date is selected) -->
-    <div id="attSheetContainer"></div>
+    <!-- Sheet -->
+    <div class="att2-sheet-wrap" id="att2SheetWrap">
+      ${_buildHorizontalSheet(batch, students, classDates)}
+    </div>
   `;
 
-  // Wire buttons
-  _rootEl.querySelector('#attConfigBtn')?.addEventListener('click', () => _openScheduleModal(batch));
-  _rootEl.querySelector('#attSummaryBtn')?.addEventListener('click', () => _openSummaryModal(batch));
-  _rootEl.querySelector('#attExportBtn')?.addEventListener('click', () => {
+  // Wire header buttons
+  mainEl.querySelector('#att2SchedBtn')?.addEventListener('click', () => _openScheduleModal(batch));
+  mainEl.querySelector('#att2SummaryBtn')?.addEventListener('click', () => _openSummaryModal(batch));
+  mainEl.querySelector('#att2ExportBtn')?.addEventListener('click', () => {
     AttendanceService.exportCSV(batch.id);
     Toast.success('CSV export started.');
   });
 
-  // Re-select date if one was selected
-  if (_selectedDate) {
-    _renderAttendanceSheet(batch, _selectedDate);
-    _rootEl.querySelectorAll('.att-date-chip').forEach(chip => {
-      if (chip.dataset.date === _selectedDate) chip.classList.add('active');
-    });
-  }
+  // Wire all attendance cells
+  _wireSheetCells(batch, students, classDates);
 }
 
-function _showPlaceholder() {
-  const mainEl = _rootEl.querySelector('#attMain');
-  if (!mainEl) return;
-  mainEl.innerHTML = `
-    <div class="att-placeholder">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.2" style="color:var(--t4)">
-        <rect x="3" y="4" width="18" height="18" rx="2"/>
-        <path d="M16 2v4M8 2v4M3 10h18"/>
-        <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/>
-      </svg>
-      <h3>Select a Batch</h3>
-      <p>Choose a batch from the left panel to view dates and mark attendance for students.</p>
-    </div>
-  `;
-}
-
-// ── Date Grid ─────────────────────────────────────────────────
-function _buildDateGrid(batch, classDates) {
-  const today = toISODate(new Date());
-
-  if (!classDates.length) {
-    const hasSchedule = !!ScheduleService.getActiveSchedule(batch.id, today);
-    return `
-      <div class="att-date-section">
-        <div class="att-date-section-hdr"><span>Class Dates</span></div>
-        <div style="padding:20px;text-align:center;color:var(--t3);font-size:13px">
-          ${!hasSchedule
-            ? 'No class schedule configured. Set up class days to generate attendance dates.'
-            : !batch.startDate
-              ? 'This batch has no start date configured.'
-              : 'No class dates generated yet for the current date range.'
-          }
-        </div>
-      </div>`;
+// ── Build horizontal attendance sheet ─────────────────────────
+function _buildHorizontalSheet(batch, students, classDates) {
+  if (!students.length) {
+    return `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">
+      No active enrolled students in this batch.
+    </div>`;
   }
 
-  // Group by month
-  const byMonth = {};
+  const today   = toISODate(new Date());
+  const records = AttendanceService.getRecordsForBatch(batch.id);
+  // Build record map: { studentId_date → status }
+  const recMap = {};
+  records.forEach(r => { recMap[`${r.studentId}_${r.date}`] = r.status; });
+
+  // Group dates by YYYY-MM
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const byMonth    = {};
   classDates.forEach(d => {
-    const key = d.slice(0, 7); // YYYY-MM
-    if (!byMonth[key]) byMonth[key] = [];
-    byMonth[key].push(d);
+    const mk = d.slice(0, 7);
+    if (!byMonth[mk]) byMonth[mk] = [];
+    byMonth[mk].push(d);
+  });
+  const months = Object.keys(byMonth).sort();
+
+  // ── Build <thead> ──────────────────────────────────────────
+  // Row 1: Month header cells (spanning date columns)
+  let monthHeaderRow = `
+    <th class="col-frozen col-frozen-0 att2-sheet-table th-month-hdr" rowspan="2">#</th>
+    <th class="col-frozen col-frozen-1 att2-sheet-table th-month-hdr" rowspan="2">Student Name</th>
+    <th class="col-frozen col-frozen-2 att2-sheet-table th-month-hdr" rowspan="2">Student ID</th>`;
+
+  months.forEach(mk => {
+    const [y, m] = mk.split('-');
+    const label  = `${monthNames[parseInt(m) - 1]} ${y}`;
+    const count  = byMonth[mk].length;
+    monthHeaderRow += `<th class="th-month-hdr" colspan="${count}" style="text-align:center">${label}</th>`;
+  });
+  monthHeaderRow += `<th class="th-month-hdr" rowspan="2" style="text-align:center;min-width:60px">%</th>`;
+
+  // Row 2: Date columns
+  let dateHeaderRow = '';
+  classDates.forEach(d => {
+    const dt      = parseLocalDate(d);
+    const dayShrt = DAY_SHORT[dt.getDay()];
+    const dayNum  = d.slice(8);
+    const isToday = d === today;
+    const isFut   = d > today;
+    dateHeaderRow += `
+      <th style="min-width:44px;max-width:54px;padding:4px 2px">
+        <div class="att2-date-col-hdr ${isToday ? 'is-today' : ''} ${isFut ? 'is-future' : ''}">
+          <span class="att2-date-col-day">${dayShrt}</span>
+          <span class="att2-date-col-date">${dayNum}</span>
+        </div>
+      </th>`;
   });
 
-  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // ── Build <tbody> ──────────────────────────────────────────
+  const bodyRows = students.map((stu, idx) => {
+    let pCount = 0, totalMarked = 0;
 
-  const monthSections = Object.entries(byMonth).map(([monthKey, dates]) => {
-    const [y, m] = monthKey.split('-');
-    const monthLabel = `${monthNames[parseInt(m) - 1]} ${y}`;
+    const cells = classDates.map(d => {
+      const key    = `${stu.id}_${d}`;
+      const pkey   = `${batch.id}|${stu.id}|${d}`;
+      const status = _pendingChanges[pkey] !== undefined ? _pendingChanges[pkey] : (recMap[key] || '');
+      const isFut  = d > today;
+      if (status === 'P') { pCount++; totalMarked++; }
+      else if (status === 'A' || status === 'L') totalMarked++;
 
-    const chips = dates.map(d => {
-      const dateObj  = parseLocalDate(d);
-      const dayName  = DAY_SHORT[dateObj.getDay()];
-      const isMarked = AttendanceService.isDateMarked(batch.id, d);
-      const isToday  = d === today;
-      const isFuture = d > today;
-
-      let cls = 'att-date-chip';
-      if (isMarked)                          cls += ' marked';
-      else if (isToday)                      cls += ' today';
-      if (_selectedDate === d)               cls += ' active';
-
-      return `
-        <div class="${cls}" data-date="${d}" title="${formatDisplayDate(d)}${isMarked ? ' ✓ Marked' : ''}${isFuture ? ' (future)' : ''}">
-          <span class="chip-day">${dayName}</span>
-          <span>${d.slice(8)}</span>
-        </div>`;
+      return `<td>
+        <span class="att2-cell ${isFut ? 'future' : ''}" 
+              data-bid="${batch.id}" data-sid="${stu.id}" data-date="${d}"
+              data-v="${status}">${status || ''}</span>
+      </td>`;
     }).join('');
 
-    const markedInMonth = dates.filter(d => AttendanceService.isDateMarked(batch.id, d)).length;
+    const pct    = totalMarked > 0 ? Math.round((pCount / totalMarked) * 100) : null;
+    const pctColor = pct === null ? 'var(--t4)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
 
-    return `
-      <div class="att-date-section">
-        <div class="att-date-section-hdr">
-          <span>${monthLabel}</span>
-          <span style="font-size:10.5px;color:var(--t4)">${markedInMonth}/${dates.length} marked</span>
+    const shortId = stu.registrationNo || stu.admissionNo || stu.studentCnic || stu.cnic || (stu.id?.slice(-6) || '—');
+
+    return `<tr>
+      <td class="col-frozen col-frozen-0" style="text-align:center;color:var(--t4);font-family:var(--font-mono);font-size:11px">${idx + 1}</td>
+      <td class="col-frozen col-frozen-1" style="font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${stu.studentName || '—'}</td>
+      <td class="col-frozen col-frozen-2" style="font-family:var(--font-mono);font-size:11px;color:var(--t3)">${shortId}</td>
+      ${cells}
+      <td>
+        <div class="att2-pct" style="color:${pctColor}">${pct !== null ? pct + '%' : '—'}</div>
+        <div class="att2-pct-bar">
+          <div class="att2-pct-bar-fill" style="width:${pct || 0}%;background:${pctColor}"></div>
         </div>
-        <div class="att-date-grid">${chips}</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="att2-sheet-table-wrap">
+      <table class="att2-sheet-table">
+        <thead>
+          <tr>${monthHeaderRow}</tr>
+          <tr>${dateHeaderRow}</tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Wire sheet cell click events ──────────────────────────────
+function _wireSheetCells(batch, students, classDates) {
+  const sheetWrap = _root.querySelector('#att2SheetWrap');
+  if (!sheetWrap) return;
+
+  const today    = toISODate(new Date());
+  const isAdmin  = Auth.can('admin');
+  const isTeacher= Auth.can('attendance');
+  const canMark  = isAdmin || isTeacher;
+  if (!canMark) return;
+
+  sheetWrap.addEventListener('click', e => {
+    const cell = e.target.closest('.att2-cell');
+    if (!cell || cell.classList.contains('future') || cell.classList.contains('saving')) return;
+
+    const bid  = cell.dataset.bid;
+    const sid  = cell.dataset.sid;
+    const date = cell.dataset.date;
+    const cur  = cell.dataset.v;
+
+    // Cycle: '' → 'P' → 'A' → 'L' → ''
+    const cycle = { '': 'P', 'P': 'A', 'A': 'L', 'L': '' };
+    const next  = cycle[cur] ?? 'P';
+
+    // Save immediately
+    cell.classList.add('saving');
+    _saveCell(bid, sid, date, next, cell, batch, students, classDates);
+  });
+}
+
+function _saveCell(batchId, studentId, date, status, cell, batch, students, classDates) {
+  const pkey   = `${batchId}|${studentId}|${date}`;
+  const markedBy = AppState.get('currentUser')?.id;
+
+  const isFirstStudent = students.length > 0 && students[0].id === studentId;
+  const wasEmpty       = !cell.dataset.v; // was unmarked before
+
+  const save = (sid, st) => {
+    if (!st) {
+      // "clear" — remove record by marking with '' which we treat as delete
+      // Since service doesn't have delete, we'll use a workaround: just track locally
+      const pkey2 = `${batchId}|${sid}|${date}`;
+      _pendingChanges[pkey2] = '';
+      const r = (AppState.get('attendanceRecords') || []).find(r => r.batchId === batchId && r.studentId === sid && r.date === date);
+      if (r) AppState.update('attendanceRecords', r.id, { status: null, markedAt: new Date().toISOString(), markedBy });
+    } else {
+      AttendanceService.markAttendance(batchId, sid, date, st, markedBy);
+      _pendingChanges[`${batchId}|${sid}|${date}`] = st;
+    }
+  };
+
+  // Save this student
+  save(studentId, status);
+  _updateCell(cell, status);
+
+  // "Default for all" — if this is first student marking on a fresh date for that column,
+  // apply same status to all students who are NOT yet marked on that date
+  if (isFirstStudent && status) {
+    const records = AppState.get('attendanceRecords') || [];
+    students.forEach(s => {
+      if (s.id === studentId) return;
+      const alreadyMarked = records.some(r => r.batchId === batchId && r.studentId === s.id && r.date === date);
+      const pendingKey    = `${batchId}|${s.id}|${date}`;
+      const hasPending    = _pendingChanges[pendingKey] !== undefined;
+      if (!alreadyMarked && !hasPending) {
+        save(s.id, status);
+        // Update cell visually
+        const otherCell = _root.querySelector(`.att2-cell[data-sid="${s.id}"][data-date="${date}"]`);
+        if (otherCell) _updateCell(otherCell, status);
+      }
+    });
+  }
+
+  // Refresh % column for this student
+  _refreshStudentPct(batch, students, classDates, studentId);
+}
+
+function _updateCell(cell, status) {
+  cell.dataset.v  = status || '';
+  cell.textContent = status || '';
+  cell.classList.remove('saving');
+}
+
+function _refreshStudentPct(batch, students, classDates, studentId) {
+  const records = AttendanceService.getRecordsForBatch(batch.id);
+  const recMap  = {};
+  records.forEach(r => {
+    if (r.studentId === studentId) recMap[r.date] = r.status;
+  });
+
+  let pCount = 0, totalMarked = 0;
+  classDates.forEach(d => {
+    const pkey = `${batch.id}|${studentId}|${d}`;
+    const st   = _pendingChanges[pkey] !== undefined ? _pendingChanges[pkey] : recMap[d];
+    if (st === 'P') { pCount++; totalMarked++; }
+    else if (st === 'A' || st === 'L') totalMarked++;
+  });
+
+  const pct = totalMarked > 0 ? Math.round((pCount / totalMarked) * 100) : null;
+  const color = pct === null ? 'var(--t4)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
+
+  const row = _root.querySelector(`.att2-cell[data-sid="${studentId}"]`)?.closest('tr');
+  if (!row) return;
+  const lastTd = row.querySelector('td:last-child');
+  if (lastTd) {
+    lastTd.innerHTML = `
+      <div class="att2-pct" style="color:${color}">${pct !== null ? pct + '%' : '—'}</div>
+      <div class="att2-pct-bar"><div class="att2-pct-bar-fill" style="width:${pct || 0}%;background:${color}"></div></div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// DATE-WISE TAB (legacy, preserved from original)
+// ══════════════════════════════════════════════════════════════
+function _renderDateWise() {
+  const body = _root.querySelector('#att2Body');
+  if (!body) return;
+
+  body.innerHTML = `
+    <div class="att2-dw" style="flex:1;min-height:0;overflow:hidden">
+      <aside class="att2-dw-sidebar">
+        <div style="padding:12px;border-bottom:1px solid var(--border);font-size:10.5px;
+          font-weight:700;text-transform:uppercase;color:var(--t3)">Batches</div>
+        <div class="att2-sb-search" style="padding:8px 10px;border-bottom:1px solid var(--border)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input id="att2DWSearch" placeholder="Search batches…"/>
+        </div>
+        <div id="att2DWBatchList" style="flex:1;overflow-y:auto"></div>
+      </aside>
+      <div class="att2-dw-main" id="att2DWMain">
+        <div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">
+          Select a batch to view dates and mark attendance.
+        </div>
+      </div>
+    </div>`;
+
+  _renderDWBatchList();
+  _root.querySelector('#att2DWSearch')?.addEventListener('input', e => _renderDWBatchList(e.target.value.trim()));
+}
+
+function _renderDWBatchList(q = '') {
+  const listEl = _root.querySelector('#att2DWBatchList');
+  if (!listEl) return;
+  let batches = AppState.get('batches') || [];
+  if (q) {
+    const ql = q.toLowerCase();
+    batches = batches.filter(b =>
+      (b.batchName || '').toLowerCase().includes(ql) ||
+      (b.sessionPeriod || '').toLowerCase().includes(ql)
+    );
+  }
+  listEl.innerHTML = batches.map(b => `
+    <div class="att2-dw-batch-item ${_dwSelectedBatch?.id === b.id ? 'sel' : ''}" data-bid="${b.id}">
+      <div style="font-weight:600;font-family:var(--font-mono);font-size:12.5px">${b.batchName}</div>
+      <div style="font-size:11px;color:var(--t3)">${b.sessionPeriod || ''}</div>
+    </div>`).join('');
+
+  listEl.querySelectorAll('.att2-dw-batch-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const b = AppState.findById('batches', item.dataset.bid);
+      if (!b) return;
+      _dwSelectedBatch = b;
+      _dwSelectedDate  = null;
+      listEl.querySelectorAll('.att2-dw-batch-item').forEach(i => i.classList.toggle('sel', i.dataset.bid === b.id));
+      _renderDWMainPanel(b);
+    });
+  });
+}
+
+function _renderDWMainPanel(batch) {
+  const mainEl = _root.querySelector('#att2DWMain');
+  if (!mainEl) return;
+
+  const today      = toISODate(new Date());
+  const classDates = AttendanceDateGenerator.generate(batch.id);
+  const schedule   = ScheduleService.getActiveSchedule(batch.id, today);
+  const isAdmin    = Auth.can('admin');
+
+  // Enrolment-based students
+  const enrolments = (AppState.get('enrolments') || []).filter(e => e.batchId === batch.id && e.status === 'active');
+  const students   = enrolments.map(e => AppState.findById('students', e.studentId)).filter(Boolean);
+
+  const summary    = AttendanceService.getSummary(batch.id);
+  const markedCount = classDates.filter(d => AttendanceService.isDateMarked(batch.id, d)).length;
+
+  // Group by month
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const byMonth    = {};
+  classDates.forEach(d => {
+    const mk = d.slice(0, 7);
+    if (!byMonth[mk]) byMonth[mk] = [];
+    byMonth[mk].push(d);
+  });
+
+  const dateGrid = Object.entries(byMonth).map(([mk, dates]) => {
+    const [y, m] = mk.split('-');
+    const chips  = dates.map(d => {
+      const dt      = parseLocalDate(d);
+      const marked  = AttendanceService.isDateMarked(batch.id, d);
+      const isToday = d === today;
+      let cls = 'att2-date-chip';
+      if (marked)                    cls += ' marked';
+      else if (isToday)              cls += ' today';
+      if (_dwSelectedDate === d)     cls += ' active';
+      return `<div class="${cls}" data-date="${d}" title="${formatDisplayDate(d)}">
+        <span style="font-size:9px">${DAY_SHORT[dt.getDay()]}</span>
+        <span>${d.slice(8)}</span>
+      </div>`;
+    }).join('');
+    const markedIn = dates.filter(d => AttendanceService.isDateMarked(batch.id, d)).length;
+    return `
+      <div>
+        <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);
+          padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:6px;
+          display:flex;justify-content:space-between">
+          <span>${monthNames[parseInt(m)-1]} ${y}</span>
+          <span style="color:var(--t4)">${markedIn}/${dates.length} marked</span>
+        </div>
+        <div class="att2-date-grid">${chips}</div>
       </div>`;
   }).join('');
 
-  const html = `<div id="attDateGrid" style="display:flex;flex-direction:column;gap:14px">${monthSections}</div>`;
+  mainEl.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:17px;font-weight:800;font-family:var(--font-mono)">${batch.batchName}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:3px">${students.length} students · ${classDates.length} class days · ${markedCount} marked</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${isAdmin ? `<button class="att2-btn" id="att2DWSchedBtn">⚙ Schedule</button>` : ''}
+        <button class="att2-btn" id="att2DWSummaryBtn">📊 Summary</button>
+        <button class="att2-btn" id="att2DWExportBtn">⬇ Export CSV</button>
+      </div>
+    </div>
 
-  // Wire date chip clicks after DOM insert via event delegation on container
-  setTimeout(() => {
-    _rootEl.querySelector('#attDateGrid')?.addEventListener('click', e => {
-      const chip = e.target.closest('.att-date-chip');
-      if (!chip || !chip.dataset.date) return;
+    ${!schedule && isAdmin ? `<div class="att2-warn">⚠ No class schedule configured. Click Schedule to set up class days.</div>` : ''}
 
-      const date = chip.dataset.date;
-      const today = toISODate(new Date());
+    <div id="att2DWDateGrid" style="display:flex;flex-direction:column;gap:14px">${dateGrid || '<div style="color:var(--t3);text-align:center;padding:20px">No class dates found.</div>'}</div>
+    <div id="att2DWSheet"></div>
+  `;
 
-      // Optionally allow future dates to be clicked (just won't be saveable)
-      _selectedDate = date;
+  mainEl.querySelector('#att2DWSchedBtn')?.addEventListener('click',   () => _openScheduleModal(batch));
+  mainEl.querySelector('#att2DWSummaryBtn')?.addEventListener('click', () => _openSummaryModal(batch));
+  mainEl.querySelector('#att2DWExportBtn')?.addEventListener('click',  () => { AttendanceService.exportCSV(batch.id); Toast.success('CSV export started.'); });
 
-      // Update active state
-      _rootEl.querySelectorAll('.att-date-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-
-      _renderAttendanceSheet(_selectedBatch, date);
-      // Scroll sheet into view
-      setTimeout(() => {
-        _rootEl.querySelector('#attSheetContainer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-    });
-  }, 0);
-
-  return html;
-}
-
-// ── Attendance Sheet ──────────────────────────────────────────
-function _renderAttendanceSheet(batch, date) {
-  const sheetEl = _rootEl.querySelector('#attSheetContainer');
-  if (!sheetEl) return;
-
-  const students  = (AppState.get('students') || []).filter(s => s.batchId === batch.id);
-  const today     = toISODate(new Date());
-  const isFuture  = date > today;
-  const existing  = AttendanceService.getRecordsForDate(batch.id, date);
-  const isAdmin   = Auth.can('admin');
-  const isTeacher = Auth.can('attendance');
-
-  // Build pending changes from existing records (pre-load)
-  _pendingChanges = {};
-  Object.entries(existing).forEach(([sid, rec]) => {
-    _pendingChanges[sid] = rec.status;
+  mainEl.querySelector('#att2DWDateGrid')?.addEventListener('click', e => {
+    const chip = e.target.closest('.att2-date-chip');
+    if (!chip?.dataset.date) return;
+    _dwSelectedDate = chip.dataset.date;
+    mainEl.querySelectorAll('.att2-date-chip').forEach(c => c.classList.toggle('active', c.dataset.date === _dwSelectedDate));
+    _renderDWSheet(batch, students, _dwSelectedDate);
   });
 
+  if (_dwSelectedDate) _renderDWSheet(batch, students, _dwSelectedDate);
+}
+
+function _renderDWSheet(batch, students, date) {
+  const sheetEl = _root.querySelector('#att2DWSheet');
+  if (!sheetEl) return;
+
+  const today    = toISODate(new Date());
+  const isFuture = date > today;
+  const existing = AttendanceService.getRecordsForDate(batch.id, date);
+  const isAdmin  = Auth.can('admin');
+  const isTeacher= Auth.can('attendance');
+  const canMark  = (isAdmin || isTeacher) && !isFuture;
+
+  const pdwKey   = d => `dw|${batch.id}|${d}`;
+
   if (!students.length) {
-    sheetEl.innerHTML = `
-      <div style="padding:20px;text-align:center;color:var(--t3);font-size:13px;
-        background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm)">
-        No students enrolled in this batch yet.
-      </div>`;
+    sheetEl.innerHTML = `<div style="padding:20px;text-align:center;color:var(--t3)">No enrolled students.</div>`;
     return;
   }
 
-  const canMark = (isAdmin || isTeacher) && !isFuture;
   const alreadyMarked = Object.keys(existing).length > 0;
 
   sheetEl.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <!-- Sheet header -->
-      <div class="att-sheet-hdr">
-        <div>
-          <div class="att-sheet-date">${formatDisplayDate(date)}</div>
-          <div class="att-sheet-sub">
-            ${students.length} student${students.length !== 1 ? 's' : ''} •
-            ${alreadyMarked ? `<span style="color:var(--green);font-weight:600">✓ Attendance already recorded</span>` : 'Not yet marked'}
-            ${isFuture ? `<span style="color:var(--yellow);margin-left:8px">⚠ Future date — cannot mark yet</span>` : ''}
-          </div>
+    <div style="margin-top:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:14px;font-weight:700">${formatDisplayDate(date)}</div>
+        <div style="font-size:12px;color:var(--t3)">
+          ${alreadyMarked ? '<span style="color:var(--green);font-weight:600">✓ Already marked</span>' : 'Not yet marked'}
+          ${isFuture ? '<span style="color:var(--yellow);margin-left:8px">⚠ Future date</span>' : ''}
         </div>
-        ${canMark ? `
-        <div class="att-sheet-bulk">
-          <button class="att-btn att-btn--ghost att-btn--sm" id="markAllP">✓ All Present</button>
-          <button class="att-btn att-btn--ghost att-btn--sm" id="markAllA">✗ All Absent</button>
-          <button class="att-btn att-btn--success att-btn--sm" id="saveAttBtn">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-            </svg>
-            Save Attendance
-          </button>
-        </div>` : ''}
       </div>
-
-      <!-- Table -->
-      <table class="att-table">
+      ${canMark ? `<div style="display:flex;gap:6px">
+        <button class="att2-btn" id="dw-allP">✓ All Present</button>
+        <button class="att2-btn" id="dw-allA">✗ All Absent</button>
+      </div>` : ''}
+    </div>
+    <div style="overflow-x:auto;margin-top:8px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
-          <tr>
-            <th class="att-idx">#</th>
-            <th>Student Name</th>
-            <th style="width:140px">CNIC</th>
-            <th style="width:140px">Status</th>
+          <tr style="background:var(--surface2)">
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:36px">#</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border)">Student Name</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:140px">ID / CNIC</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:150px">Status</th>
           </tr>
         </thead>
-        <tbody id="attSheetBody">
+        <tbody>
           ${students.map((stu, idx) => {
             const rec    = existing[stu.id];
-            const status = _pendingChanges[stu.id] || rec?.status || null;
-            return `
-              <tr data-student-id="${stu.id}">
-                <td class="att-idx">${idx + 1}</td>
-                <td style="font-weight:500;color:var(--t1)">${stu.studentName}</td>
-                <td style="font-family:var(--font-mono);font-size:11.5px;color:var(--t3)">${stu.cnic || '—'}</td>
-                <td>
-                  ${canMark
-                    ? `<div class="att-status-group" data-student-id="${stu.id}">
-                        ${['P','A','L'].map(s => `
-                          <button class="att-status-btn ${status === s ? 'selected' : ''}"
-                                  data-s="${s}" title="${s === 'P' ? 'Present' : s === 'A' ? 'Absent' : 'Leave'}">
-                            ${s}
-                          </button>`).join('')}
-                       </div>`
-                    : `<span style="font-family:var(--font-mono);font-weight:700;font-size:13px;
-                         color:${status === 'P' ? 'var(--green)' : status === 'A' ? 'var(--red)' : status === 'L' ? 'var(--yellow)' : 'var(--t4)'}">
-                         ${status || '—'}
-                       </span>`
-                  }
-                </td>
-              </tr>`;
+            const status = rec?.status || '';
+            const sid    = stu.registrationNo || stu.admissionNo || stu.cnic || '—';
+            return `<tr data-sid="${stu.id}">
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);color:var(--t4);font-family:var(--font-mono);font-size:11px">${idx+1}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:500;color:var(--t1)">${stu.studentName}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:11.5px;color:var(--t3)">${sid}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border)">
+                ${canMark
+                  ? `<div class="att-status-group" data-sid="${stu.id}" style="display:flex;gap:4px">
+                      ${['P','A','L'].map(s => `<button class="att2-dw-status-btn ${status === s ? 'sel-'+s : ''}" data-s="${s}"
+                        style="width:32px;height:32px;border-radius:6px;font-size:12.5px;font-weight:800;cursor:pointer;
+                          border:2px solid ${s==='P'?'var(--green)':s==='A'?'var(--red)':'#d97706'};
+                          background:${status===s ? (s==='P'?'var(--green)':s==='A'?'var(--red)':'#f59e0b') : 'var(--surface2)'};
+                          color:${status===s?'#fff':(s==='P'?'var(--green)':s==='A'?'var(--red)':'#92400e')};
+                          transition:all .1s">${s}</button>`).join('')}
+                    </div>`
+                  : `<span style="font-family:var(--font-mono);font-weight:800;font-size:13px;
+                       color:${status==='P'?'var(--green)':status==='A'?'var(--red)':status==='L'?'#d97706':'var(--t4)'}">${status || '—'}</span>`
+                }
+              </td>
+            </tr>`;
           }).join('')}
         </tbody>
       </table>
-    </div>
-  `;
+    </div>`;
 
   if (!canMark) return;
 
-  // Wire status toggle buttons
-  sheetEl.querySelectorAll('.att-status-group').forEach(group => {
-    group.addEventListener('click', e => {
-      const btn = e.target.closest('.att-status-btn');
+  const markedBy = AppState.get('currentUser')?.id;
+
+  // Wire status buttons
+  sheetEl.querySelectorAll('.att-status-group').forEach(grp => {
+    grp.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-s]');
       if (!btn) return;
-      const studentId = group.dataset.studentId;
-      const status    = btn.dataset.s;
+      const sid    = grp.dataset.sid;
+      const status = btn.dataset.s;
+      AttendanceService.markAttendance(batch.id, sid, date, status, markedBy);
 
-      _pendingChanges[studentId] = status;
+      // If first student, apply to all unmarked
+      if (students.length && students[0].id === sid) {
+        students.forEach(s => {
+          if (s.id === sid) return;
+          const rec = (AppState.get('attendanceRecords') || []).find(r => r.batchId === batch.id && r.studentId === s.id && r.date === date);
+          if (!rec) {
+            AttendanceService.markAttendance(batch.id, s.id, date, status, markedBy);
+          }
+        });
+      }
 
-      // Update button visuals in this group
-      group.querySelectorAll('.att-status-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-    });
-  });
-
-  // Mark all present
-  sheetEl.querySelector('#markAllP')?.addEventListener('click', () => {
-    students.forEach(s => { _pendingChanges[s.id] = 'P'; });
-    _refreshStatusButtons(sheetEl, 'P');
-  });
-
-  // Mark all absent
-  sheetEl.querySelector('#markAllA')?.addEventListener('click', () => {
-    students.forEach(s => { _pendingChanges[s.id] = 'A'; });
-    _refreshStatusButtons(sheetEl, 'A');
-  });
-
-  // Save
-  sheetEl.querySelector('#saveAttBtn')?.addEventListener('click', () => {
-    _saveAttendance(batch, date, students, sheetEl);
-  });
-}
-
-function _refreshStatusButtons(sheetEl, status) {
-  sheetEl.querySelectorAll('.att-status-group').forEach(group => {
-    group.querySelectorAll('.att-status-btn').forEach(btn => {
-      btn.classList.toggle('selected', btn.dataset.s === status);
-    });
-  });
-}
-
-function _saveAttendance(batch, date, students, sheetEl) {
-  // Validate: all students must have a status
-  const missing = students.filter(s => !_pendingChanges[s.id]);
-  if (missing.length) {
-    Toast.warning(`Please mark attendance for all students. ${missing.length} student${missing.length !== 1 ? 's' : ''} not marked.`);
-    // Highlight missing rows
-    missing.forEach(s => {
-      const row = sheetEl.querySelector(`tr[data-student-id="${s.id}"]`);
-      if (row) {
-        row.style.background = 'var(--red-dim)';
-        setTimeout(() => { row.style.background = ''; }, 2000);
+      _renderDWSheet(batch, students, date);
+      // Update chip
+      const chip = _root.querySelector(`.att2-date-chip[data-date="${date}"]`);
+      if (chip && !chip.classList.contains('marked')) {
+        chip.classList.remove('today'); chip.classList.add('marked');
       }
     });
-    return;
-  }
-
-  const currentUser = AppState.get('currentUser');
-  const entries = students.map(s => ({ studentId: s.id, status: _pendingChanges[s.id] }));
-
-  const { saved, errors } = AttendanceService.bulkMarkAttendance(
-    batch.id, date, entries, currentUser?.id
-  );
-
-  if (errors.length) {
-    Toast.error(`${errors.length} record(s) failed to save.`);
-    console.error('[Attendance] Save errors:', errors);
-    return;
-  }
-
-  Toast.success(`Attendance for ${formatDisplayDate(date)} saved — ${saved} records.`);
-
-  // Refresh the date chip to show "marked" state
-  _rootEl.querySelectorAll('.att-date-chip').forEach(chip => {
-    if (chip.dataset.date === date) {
-      chip.classList.add('marked');
-      chip.classList.remove('today');
-    }
   });
 
-  // Refresh the sheet header to show "already marked"
-  const subEl = sheetEl.querySelector('.att-sheet-sub');
-  if (subEl) {
-    subEl.innerHTML = `${students.length} students • <span style="color:var(--green);font-weight:600">✓ Attendance already recorded</span>`;
-  }
-
-  // Refresh stats bar
-  _refreshStatsBar(batch);
+  sheetEl.querySelector('#dw-allP')?.addEventListener('click', () => {
+    students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, date, 'P', markedBy));
+    _renderDWSheet(batch, students, date);
+    _updateChipMarked(date);
+  });
+  sheetEl.querySelector('#dw-allA')?.addEventListener('click', () => {
+    students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, date, 'A', markedBy));
+    _renderDWSheet(batch, students, date);
+    _updateChipMarked(date);
+  });
 }
 
-function _refreshStatsBar(batch) {
-  const summary    = AttendanceService.getSummary(batch.id);
-  const classDates = AttendanceDateGenerator.generate(batch.id);
-  const markedCount = classDates.filter(d => AttendanceService.isDateMarked(batch.id, d)).length;
-
-  const statsBar = _rootEl.querySelector('.att-stats-bar');
-  if (!statsBar) return;
-
-  const chips = statsBar.querySelectorAll('.att-stat-chip');
-  if (chips[2]) chips[2].querySelector('.att-stat-val').textContent = markedCount;
-  if (chips[3]) {
-    const pctEl = chips[3].querySelector('.att-stat-val');
-    pctEl.textContent = summary.batchPercent !== null ? summary.batchPercent + '%' : '—';
-    pctEl.style.color = summary.batchPercent !== null
-      ? (summary.batchPercent >= 75 ? 'var(--green)' : 'var(--red)')
-      : 'var(--t4)';
-  }
+function _updateChipMarked(date) {
+  const chip = _root.querySelector(`.att2-date-chip[data-date="${date}"]`);
+  if (chip) { chip.classList.remove('today'); chip.classList.add('marked', 'active'); }
 }
 
-// ── Schedule Config Modal (Admin only) ────────────────────────
+// ══════════════════════════════════════════════════════════════
+// SCHEDULE MODAL (from original — preserved)
+// ══════════════════════════════════════════════════════════════
 function _openScheduleModal(batch) {
-  const existing  = ScheduleService.getSchedulesForBatch(batch.id);
-  const active    = ScheduleService.getActiveSchedule(batch.id, toISODate(new Date()));
-  const today     = toISODate(new Date());
-
-  // Default effective date = today
+  const today    = toISODate(new Date());
+  const existing = ScheduleService.getSchedulesForBatch(batch.id);
+  const latest   = existing[existing.length - 1];
+  const selectedDays  = new Set(latest?.classDays || []);
   const defaultEffective = today;
-  const selectedDays = new Set(active?.classDays || []);
 
   const historyHTML = existing.length
-    ? existing.map(s => `
-        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-          <div style="flex:1">
-            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--t1)">
-              ${s.classDays.map(d => DAY_NAMES[d]).join(', ')}
-            </span>
+    ? existing.slice().reverse().map(s => `
+        <div style="display:flex;align-items:center;justify-content:space-between;
+             padding:8px 10px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);margin-bottom:6px">
+          <div style="font-size:12.5px;font-weight:600;color:var(--t1)">
+            ${s.classDays.map(d => DAY_SHORT[d]).join(', ')}
             <span style="font-size:11.5px;color:var(--t3);margin-left:8px">from ${s.effectiveFrom}</span>
-            ${s.effectiveFrom === (existing[existing.length - 1]?.effectiveFrom) && existing.length > 1
-              ? `<span style="font-size:10px;background:var(--green-dim);color:var(--green);
-                   padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:700">Current</span>` : ''}
+            ${s.id === latest?.id && existing.length > 1 ? `<span style="font-size:10px;background:var(--green-dim);color:var(--green);padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:700">Current</span>` : ''}
           </div>
-          ${existing.length > 1 ? `
-          <button class="att-btn att-btn--danger att-btn--sm" data-delete-sch="${s.id}" title="Delete this schedule">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
-            </svg>
-          </button>` : ''}
+          ${existing.length > 1 ? `<button class="att2-btn" data-del-sch="${s.id}" style="padding:3px 8px;font-size:11px;color:var(--red);border-color:var(--red)">✕</button>` : ''}
         </div>`).join('')
     : `<div style="color:var(--t3);font-size:12.5px;padding:8px 0">No schedules configured yet.</div>`;
 
   Modal.open({
     title: `Class Schedule — ${batch.batchName}`,
-    size:  'md',
+    size: 'md',
     body: `
-      <!-- Day picker -->
       <div class="form-group">
         <label class="form-label">Select Class Days <span class="req">*</span></label>
         <div class="day-chip-grid" id="dayChipGrid">
-          ${[1,2,3,4,5,6].map(d => `
-            <div class="day-chip ${selectedDays.has(d) ? 'selected' : ''}" data-day="${d}" title="${DAY_NAMES[d]}">
-              ${DAY_SHORT[d]}
-            </div>`).join('')}
-          <div class="day-chip disabled" title="Sunday is always excluded">Sun</div>
+          ${[1,2,3,4,5,6].map(d => `<div class="day-chip ${selectedDays.has(d) ? 'selected' : ''}" data-day="${d}">${DAY_SHORT[d]}</div>`).join('')}
+          <div class="day-chip disabled">Sun</div>
         </div>
-        <span class="form-hint">Sunday is permanently excluded. Select 1–6 days.</span>
+        <span class="form-hint">Sunday excluded. Select 1–6 days.</span>
       </div>
-
-      <!-- Effective from -->
       <div class="form-group">
         <label class="form-label">Effective From <span class="req">*</span></label>
-        <input type="date" id="schedEffectiveFrom" class="form-input"
-               value="${defaultEffective}"
-               min="${batch.startDate || today}"
-               max="${batch.endDate || ''}"/>
-        <span class="form-hint">
-          Changes apply from this date onward. Past attendance records are never modified.
-        </span>
+        <input type="date" id="schedEffFrom" class="form-input" value="${defaultEffective}"
+               min="${batch.startDate || today}" max="${batch.endDate || ''}"/>
+        <span class="form-hint">Past attendance records are never modified.</span>
       </div>
-
-      <!-- History -->
       <div class="form-group" style="margin-top:16px">
         <label class="form-label" style="margin-bottom:8px">Schedule History</label>
-        <div id="schedHistoryList">${historyHTML}</div>
-      </div>
-    `,
+        <div id="schedHistory">${historyHTML}</div>
+      </div>`,
     actions: [
       { label: 'Cancel', variant: 'ghost' },
-      {
-        label: 'Save Schedule',
-        variant: 'primary',
-        close: false,
-        handler: (modalEl) => {
-          const grid = modalEl.querySelector('#dayChipGrid');
-          const days = [...grid.querySelectorAll('.day-chip.selected:not(.disabled)')]
-            .map(c => parseInt(c.dataset.day));
-          const effective = modalEl.querySelector('#schedEffectiveFrom').value;
-          const currentUser = AppState.get('currentUser');
-
-          const result = ScheduleService.setSchedule(batch.id, days, effective, currentUser?.id);
-          if (!result.success) {
-            Toast.error(result.message);
-            return;
-          }
-
-          Toast.success('Class schedule saved. Future attendance dates updated.');
-          Modal.closeAll();
-
-          // Re-render main panel
-          _renderMainPanel();
-        }
-      }
+      { label: 'Save Schedule', variant: 'primary', close: false, handler: (modalEl) => {
+        const days = [...modalEl.querySelectorAll('.day-chip.selected:not(.disabled)')].map(c => parseInt(c.dataset.day));
+        const eff  = modalEl.querySelector('#schedEffFrom').value;
+        const r    = ScheduleService.setSchedule(batch.id, days, eff, AppState.get('currentUser')?.id);
+        if (!r.success) { Toast.error(r.message); return; }
+        Toast.success('Schedule saved.');
+        Modal.closeAll();
+        if (_activeTab === 'batchwise') _loadBatchSheet(batch);
+        else _renderDWMainPanel(batch);
+      }}
     ],
     onOpen: (modalEl) => {
-      // Day chip toggle
       modalEl.querySelector('#dayChipGrid')?.addEventListener('click', e => {
         const chip = e.target.closest('.day-chip:not(.disabled)');
-        if (!chip) return;
-        chip.classList.toggle('selected');
+        if (chip) chip.classList.toggle('selected');
       });
-
-      // Delete schedule entries
-      modalEl.querySelector('#schedHistoryList')?.addEventListener('click', e => {
-        const btn = e.target.closest('[data-delete-sch]');
+      modalEl.querySelector('#schedHistory')?.addEventListener('click', e => {
+        const btn = e.target.closest('[data-del-sch]');
         if (!btn) return;
-        const id = btn.dataset.deleteSch;
-        const r  = ScheduleService.deleteSchedule(id);
+        const r = ScheduleService.deleteSchedule(btn.dataset.delSch);
         if (!r.success) { Toast.error(r.message); return; }
-        Toast.info('Schedule entry deleted.');
         Modal.closeAll();
         _openScheduleModal(batch);
       });
@@ -952,82 +1164,80 @@ function _openScheduleModal(batch) {
   });
 }
 
-// ── Summary Modal ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// SUMMARY MODAL
+// ══════════════════════════════════════════════════════════════
 function _openSummaryModal(batch) {
-  const summary  = AttendanceService.getSummary(batch.id);
-  const students = summary.students;
+  const enrolments = (AppState.get('enrolments') || []).filter(e => e.batchId === batch.id && e.status === 'active');
+  const students   = enrolments.map(e => AppState.findById('students', e.studentId)).filter(Boolean);
+  const records    = AttendanceService.getRecordsForBatch(batch.id);
 
-  const rowsHTML = students.length
-    ? students.map((s, i) => {
-        const pct   = s.attendancePercent;
-        const color = pct === null ? 'var(--t4)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
-        const barW  = pct !== null ? pct : 0;
-        return `
-          <tr>
-            <td style="color:var(--t3);font-family:var(--font-mono);font-size:11.5px;width:32px">${i+1}</td>
-            <td style="font-weight:500;color:var(--t1)">${s.studentName}</td>
-            <td style="text-align:center;font-family:var(--font-mono);font-weight:700;color:var(--green)">${s.P}</td>
-            <td style="text-align:center;font-family:var(--font-mono);font-weight:700;color:var(--red)">${s.A}</td>
-            <td style="text-align:center;font-family:var(--font-mono);font-weight:700;color:var(--yellow)">${s.L}</td>
-            <td>
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-weight:700;color:${color};font-family:var(--font-mono);min-width:36px">
-                  ${pct !== null ? pct + '%' : '—'}
-                </span>
-                <div class="att-pct-bar-wrap">
-                  <div class="att-pct-bar" style="width:${barW}%;background:${color}"></div>
-                </div>
-              </div>
-            </td>
-          </tr>`;
-      }).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:var(--t3);padding:20px">No students enrolled.</td></tr>`;
+  const stats = students.map(s => {
+    const sRecs = records.filter(r => r.studentId === s.id);
+    const P = sRecs.filter(r => r.status === 'P').length;
+    const A = sRecs.filter(r => r.status === 'A').length;
+    const L = sRecs.filter(r => r.status === 'L').length;
+    const total = P + A + L;
+    const pct   = total > 0 ? Math.round((P / total) * 100) : null;
+    return { name: s.studentName, P, A, L, total, pct };
+  });
+
+  const totalRecords = records.length;
+  const allP = records.filter(r => r.status === 'P').length;
+  const batchPct = totalRecords > 0 ? Math.round((allP / totalRecords) * 100) : null;
+
+  const rows = stats.map((s, i) => {
+    const c = s.pct === null ? 'var(--t4)' : s.pct >= 75 ? 'var(--green)' : 'var(--red)';
+    return `<tr>
+      <td style="padding:8px 12px;color:var(--t3);font-family:var(--font-mono);font-size:11.5px">${i+1}</td>
+      <td style="padding:8px 12px;font-weight:500;color:var(--t1)">${s.name}</td>
+      <td style="padding:8px 12px;text-align:center;font-family:var(--font-mono);font-weight:700;color:var(--green)">${s.P}</td>
+      <td style="padding:8px 12px;text-align:center;font-family:var(--font-mono);font-weight:700;color:var(--red)">${s.A}</td>
+      <td style="padding:8px 12px;text-align:center;font-family:var(--font-mono);font-weight:700;color:#d97706">${s.L}</td>
+      <td style="padding:8px 12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:700;color:${c};font-family:var(--font-mono);min-width:36px">${s.pct !== null ? s.pct+'%' : '—'}</span>
+          <div class="att-pct-bar-wrap"><div class="att-pct-bar" style="width:${s.pct||0}%;background:${c}"></div></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 
   Modal.open({
     title: `Attendance Summary — ${batch.batchName}`,
-    size:  'lg',
+    size: 'lg',
     body: `
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-        <div class="att-stat-chip">
-          <span class="att-stat-val">${summary.totalRecords}</span>
-          <span class="att-stat-lbl">Total Records</span>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 14px;min-width:80px">
+          <div style="font-size:20px;font-weight:800;font-family:var(--font-mono)">${totalRecords}</div>
+          <div style="font-size:10.5px;color:var(--t3);font-weight:700;text-transform:uppercase">Records</div>
         </div>
-        <div class="att-stat-chip">
-          <span class="att-stat-val" style="color:${summary.batchPercent !== null && summary.batchPercent >= 75 ? 'var(--green)' : 'var(--red)'}">
-            ${summary.batchPercent !== null ? summary.batchPercent + '%' : '—'}
-          </span>
-          <span class="att-stat-lbl">Batch Average</span>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 14px;min-width:80px">
+          <div style="font-size:20px;font-weight:800;font-family:var(--font-mono);color:${batchPct!==null?(batchPct>=75?'var(--green)':'var(--red)'):'var(--t4)'}">
+            ${batchPct !== null ? batchPct+'%' : '—'}</div>
+          <div style="font-size:10.5px;color:var(--t3);font-weight:700;text-transform:uppercase">Avg</div>
         </div>
-        <div class="att-stat-chip">
-          <span class="att-stat-val">${students.filter(s => s.attendancePercent !== null && s.attendancePercent < 75).length}</span>
-          <span class="att-stat-lbl">Below 75%</span>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 14px;min-width:80px">
+          <div style="font-size:20px;font-weight:800;font-family:var(--font-mono);color:var(--red)">${stats.filter(s=>s.pct!==null&&s.pct<75).length}</div>
+          <div style="font-size:10.5px;color:var(--t3);font-weight:700;text-transform:uppercase">Below 75%</div>
         </div>
       </div>
       <div style="overflow-x:auto">
-        <table class="att-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Student Name</th>
-              <th style="text-align:center;color:var(--green)">P</th>
-              <th style="text-align:center;color:var(--red)">A</th>
-              <th style="text-align:center;color:var(--yellow)">L</th>
-              <th>Attendance %</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHTML}</tbody>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--surface2)">
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border)">#</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border)">Student</th>
+            <th style="padding:8px 12px;text-align:center;font-size:10.5px;font-weight:700;color:var(--green);border-bottom:2px solid var(--border)">P</th>
+            <th style="padding:8px 12px;text-align:center;font-size:10.5px;font-weight:700;color:var(--red);border-bottom:2px solid var(--border)">A</th>
+            <th style="padding:8px 12px;text-align:center;font-size:10.5px;font-weight:700;color:#d97706;border-bottom:2px solid var(--border)">L</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border)">Attendance %</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
         </table>
-      </div>
-    `,
+      </div>`,
     actions: [
       { label: 'Close', variant: 'ghost' },
-      {
-        label: 'Export CSV', variant: 'primary',
-        handler: () => {
-          AttendanceService.exportCSV(batch.id);
-          Toast.success('CSV export started.');
-        }
-      }
+      { label: 'Export CSV', variant: 'primary', handler: () => { AttendanceService.exportCSV(batch.id); Toast.success('CSV started.'); } }
     ]
   });
 }
