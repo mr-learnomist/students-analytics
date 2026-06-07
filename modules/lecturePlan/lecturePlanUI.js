@@ -116,7 +116,8 @@ function injectLPStyles() {
     .lp-view-box .modal-header { flex-shrink: 0; }
     .lp-view-box .modal-footer { flex-shrink: 0; }
     .lp-view-box .modal-body {
-      flex: 1 1 auto !important;
+      flex: 1 1 0% !important;
+      height: 0 !important;
       overflow-y: auto !important;
       overflow-x: hidden !important;
       min-height: 0 !important;
@@ -1969,7 +1970,7 @@ function _openAssignModal(batchId, container) {
   let _mid;
   _mid = Modal.open({
     title:  `${existing ? 'Re-assign' : 'Assign'} LP → ${batch?.batchName}`,
-    size:   'xl',
+    size:   'lg',
     body: `
       ${existingNote}
       ${filteredNote}
