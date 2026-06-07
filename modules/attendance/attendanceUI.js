@@ -58,7 +58,7 @@ function _injectStyles() {
   s.id = 'att2-styles';
   s.textContent = `
 /* ══ SHELL ══════════════════════════════════════════════════ */
-.att2-shell { display:flex; flex-direction:column; height:100%; min-height:calc(100vh - 140px); }
+.att2-shell { display:flex; flex-direction:column; height:100%; min-height:0; margin-top:0; }
 
 @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 
@@ -66,6 +66,7 @@ function _injectStyles() {
 .att2-tabs {
   display:flex; gap:0; border-bottom:2px solid var(--border);
   padding:0 20px; background:var(--surface); flex-shrink:0;
+  margin-top:0;
 }
 .att2-tab {
   padding:11px 18px; font-size:13px; font-weight:600;
@@ -1356,10 +1357,31 @@ function _renderDailyAttendance() {
     `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0;overflow:hidden">
+    <div style="display:flex;flex:1;min-height:0;overflow:hidden;position:relative">
 
-      <!-- ── Sidebar ── -->
-      <aside style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+      <!-- ── Sidebar trigger strip ── -->
+      <div id="dailySidebarTrigger" style="
+        position:relative;z-index:20;flex-shrink:0;
+        width:28px;height:100%;
+        background:var(--surface2);border-right:1px solid var(--border2);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:6px;cursor:pointer;transition:background .15s">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--t3)">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;
+                     letter-spacing:.1em;text-transform:uppercase;color:var(--t4);white-space:nowrap">Batches</span>
+      </div>
+
+      <!-- ── Sidebar panel (slides in on hover) ── -->
+      <aside id="dailySidebar" style="
+        position:absolute;top:0;left:28px;z-index:15;
+        width:260px;height:100%;
+        background:var(--surface);border-right:1px solid var(--border);
+        display:flex;flex-direction:column;overflow:hidden;
+        transform:translateX(-288px);
+        transition:transform .25s cubic-bezier(.4,0,.2,1),box-shadow .25s;
+        box-shadow:none">
 
         <!-- Filters -->
         <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
@@ -1402,14 +1424,14 @@ function _renderDailyAttendance() {
       </aside>
 
       <!-- ── Main ── -->
-      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden">
+      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.2" style="color:var(--t4)">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
           <h3>Select a Batch</h3>
-          <p>Pick a batch from the left to mark today's attendance.</p>
+          <p>Hover the left panel to open filters and batch list.</p>
         </div>
       </div>
     </div>`;
@@ -1539,6 +1561,37 @@ function _attachDailyEvents() {
     if (pick) pick.value = _dailyDate;
     _renderDailyBatchList();
     if (_dailySelBatch) _loadDailySheet(_dailySelBatch);
+  });
+
+  // ── Sidebar hover auto-show/hide ──────────────────────────
+  const trigger = _root.querySelector('#dailySidebarTrigger');
+  const sidebar = _root.querySelector('#dailySidebar');
+  if (!trigger || !sidebar) return;
+
+  let _hideTimer = null;
+
+  const _show = () => {
+    clearTimeout(_hideTimer);
+    sidebar.style.transform = 'translateX(0)';
+    sidebar.style.boxShadow = '4px 0 24px rgba(0,0,0,.3)';
+  };
+  const _hide = () => {
+    clearTimeout(_hideTimer);
+    _hideTimer = setTimeout(() => {
+      sidebar.style.transform = 'translateX(-288px)';
+      sidebar.style.boxShadow = 'none';
+    }, 200);
+  };
+
+  trigger.addEventListener('mouseenter', _show);
+  trigger.addEventListener('mouseleave', _hide);
+  sidebar.addEventListener('mouseenter', _show);
+  sidebar.addEventListener('mouseleave', _hide);
+
+  // Click toggle for mobile
+  trigger.addEventListener('click', () => {
+    const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.style.transform === 'translateX(0)';
+    if (isOpen) _hide(); else _show();
   });
 }
 
@@ -2064,6 +2117,36 @@ function _attachWeeklyEvents() {
     _renderWeeklyBatchList();
     if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
   });
+
+  // ── Sidebar hover auto-show/hide ──────────────────────────
+  const trigger = _root.querySelector('#weeklySidebarTrigger');
+  const sidebar = _root.querySelector('#weeklySidebar');
+  if (!trigger || !sidebar) return;
+
+  let _wHideTimer = null;
+
+  const _wShow = () => {
+    clearTimeout(_wHideTimer);
+    sidebar.style.transform = 'translateX(0)';
+    sidebar.style.boxShadow = '4px 0 24px rgba(0,0,0,.3)';
+  };
+  const _wHide = () => {
+    clearTimeout(_wHideTimer);
+    _wHideTimer = setTimeout(() => {
+      sidebar.style.transform = 'translateX(-288px)';
+      sidebar.style.boxShadow = 'none';
+    }, 200);
+  };
+
+  trigger.addEventListener('mouseenter', _wShow);
+  trigger.addEventListener('mouseleave', _wHide);
+  sidebar.addEventListener('mouseenter', _wShow);
+  sidebar.addEventListener('mouseleave', _wHide);
+
+  trigger.addEventListener('click', () => {
+    const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.style.transform === 'translateX(0)';
+    if (isOpen) _wHide(); else _wShow();
+  });
 }
 
 function _renderWeeklyAttendance() {
@@ -2085,10 +2168,31 @@ function _renderWeeklyAttendance() {
     `<option value="${s}" ${_filterSession === s ? 'selected':''}>${s}</option>`).join('');
 
   body.innerHTML = `
-    <div style="display:grid;grid-template-columns:260px 1fr;flex:1;min-height:0;overflow:hidden">
+    <div style="display:flex;flex:1;min-height:0;overflow:hidden;position:relative">
 
-      <!-- ── Sidebar ── -->
-      <aside style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+      <!-- ── Sidebar trigger strip ── -->
+      <div id="weeklySidebarTrigger" style="
+        position:relative;z-index:20;flex-shrink:0;
+        width:28px;height:100%;
+        background:var(--surface2);border-right:1px solid var(--border2);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:6px;cursor:pointer;transition:background .15s">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--t3)">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:700;
+                     letter-spacing:.1em;text-transform:uppercase;color:var(--t4);white-space:nowrap">Batches</span>
+      </div>
+
+      <!-- ── Sidebar panel (slides in on hover) ── -->
+      <aside id="weeklySidebar" style="
+        position:absolute;top:0;left:28px;z-index:15;
+        width:260px;height:100%;
+        background:var(--surface);border-right:1px solid var(--border);
+        display:flex;flex-direction:column;overflow:hidden;
+        transform:translateX(-288px);
+        transition:transform .25s cubic-bezier(.4,0,.2,1),box-shadow .25s;
+        box-shadow:none">
 
         <!-- Filters -->
         <div style="padding:10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border);flex-shrink:0">
@@ -2145,14 +2249,14 @@ function _renderWeeklyAttendance() {
       </aside>
 
       <!-- ── Main ── -->
-      <div id="weeklyMain" style="display:flex;flex-direction:column;overflow:hidden">
+      <div id="weeklyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.2" style="color:var(--t4)">
             <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
           </svg>
           <h3>Select a Batch</h3>
-          <p>Select a batch and date range to view weekly attendance.</p>
+          <p>Hover the left panel to open filters and batch list.</p>
         </div>
       </div>
     </div>`;
