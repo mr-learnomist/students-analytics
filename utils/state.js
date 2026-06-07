@@ -150,6 +150,12 @@ export const AppState = {
     return (this.get(key) || []).find(item => item.id === id) ?? null;
   },
 
+  // ✅ Silent set — sirf memory update, no saveState, no notify
+  // Attendance sync ke liye use hota hai
+  _silentSet(key, value) {
+    _state[key] = value;
+  },
+
   getDependents(key, id) {
     const deps = {
       disciplines: [
