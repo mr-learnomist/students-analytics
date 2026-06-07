@@ -17,7 +17,6 @@ let _viewMode    = localStorage.getItem('sms_teacher_view') || 'card';
 let _searchVal   = '';
 let _discFilter  = '';
 let _campFilter  = '';
-let _subjFilter  = new Set(); // multi-select subject IDs
 
 // ── Visible columns (table view) ──────────────────────────────
 const _DEFAULT_COLS = ['name','qualification','disciplines','subjects','campuses','contact','status'];
@@ -51,9 +50,7 @@ function _render(container) {
       (t.qualification || '').toLowerCase().includes(q);
     const matchDisc = !_discFilter || (t.disciplines || []).includes(_discFilter);
     const matchCamp = !_campFilter || (t.campuses    || []).includes(_campFilter);
-    const matchSubj = !_subjFilter.size ||
-      (t.teachingSubjects || []).some(sid => _subjFilter.has(sid));
-    return matchSearch && matchDisc && matchCamp && matchSubj;
+    return matchSearch && matchDisc && matchCamp;
   });
 
   // Count
@@ -632,21 +629,14 @@ function _attachToolbar(container) {
   // Discipline filter
   el.querySelector('#teacherDiscFilter')?.addEventListener('change', e => {
     _discFilter = e.target.value;
-    // reset subject filter when discipline changes
-    _subjFilter = new Set();
-    _refreshSubjectDropdown(el);
     _render(el);
   });
 
   // Campus filter
   el.querySelector('#teacherCampFilter')?.addEventListener('change', e => {
     _campFilter = e.target.value;
-    _refreshSubjectDropdown(el);
     _render(el);
   });
-
-  // ── Subject multi-select filter ───────────────────────────
-  _attachSubjectFilter(el);
 
   // View toggle
   el.querySelector('#viewCard')?.addEventListener('click', () => {
@@ -691,160 +681,6 @@ function _attachToolbar(container) {
 function _updateViewToggle(el) {
   el.querySelector('#viewCard')?.classList.toggle('view-btn--active',  _viewMode === 'card');
   el.querySelector('#viewTable')?.classList.toggle('view-btn--active', _viewMode === 'table');
-}
-
-// ── Subject filter helpers ────────────────────────────────────
-function _attachSubjectFilter(container) {
-  const trigger  = container.querySelector('#teacherSubjTrigger');
-  const dropdown = container.querySelector('#teacherSubjDropdown');
-  const searchIn = container.querySelector('#teacherSubjSearch');
-  const clearBtn = container.querySelector('#teacherSubjClear');
-  if (!trigger || !dropdown) return;
-
-  // Toggle open/close
-  trigger.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isOpen = dropdown.style.display === 'block';
-    dropdown.style.display = isOpen ? 'none' : 'block';
-    if (!isOpen) {
-      _refreshSubjectDropdown(container);
-      searchIn?.focus();
-    }
-  });
-
-  // Search inside dropdown
-  searchIn?.addEventListener('input', () => {
-    _refreshSubjectDropdown(container, searchIn.value.trim().toLowerCase());
-  });
-
-  // Clear button
-  clearBtn?.addEventListener('click', () => {
-    _subjFilter = new Set();
-    _refreshSubjectLabel(container);
-    _refreshSubjectDropdown(container);
-    _render(container);
-  });
-
-  // Close on outside click
-  document.addEventListener('click', (e) => {
-    if (!container.querySelector('#teacherSubjWrap')?.contains(e.target)) {
-      dropdown.style.display = 'none';
-    }
-  });
-
-  _refreshSubjectDropdown(container);
-}
-
-function _refreshSubjectDropdown(container, query = '') {
-  const listEl = container.querySelector('#teacherSubjList');
-  if (!listEl) return;
-
-  const allSubjects    = AppState.get('subjects')    || [];
-  const allDisciplines = AppState.get('disciplines') || [];
-
-  // If discipline filter active → only that disc's subjects
-  // else → group by discipline
-  const filteredDiscs = _discFilter
-    ? allDisciplines.filter(d => d.id === _discFilter)
-    : allDisciplines;
-
-  // subject → level → discipline chain (same pattern as lecturePlanUI.js)
-  const allLevels = AppState.get('levels') || [];
-
-  function getDiscId(s) {
-    if (s.levelId) {
-      const lv = allLevels.find(l => l.id === s.levelId);
-      if (lv?.disciplineId) return lv.disciplineId;
-    }
-    // fallbacks for any future data shape changes
-    if (s.disciplineId) return s.disciplineId;
-    if (Array.isArray(s.disciplineIds) && s.disciplineIds.length) return s.disciplineIds[0];
-    if (Array.isArray(s.disciplines)   && s.disciplines.length)   return s.disciplines[0];
-    return null;
-  }
-
-  let html = '';
-  let totalShown = 0;
-
-  for (const disc of filteredDiscs) {
-    const discSubjects = allSubjects.filter(s => getDiscId(s) === disc.id);
-    if (!discSubjects.length) continue;
-
-    const filtered = query
-      ? discSubjects.filter(s =>
-          _subjectCode(s).toLowerCase().includes(query) ||
-          (s.subjectName || '').toLowerCase().includes(query))
-      : discSubjects;
-
-    if (!filtered.length) continue;
-
-    // Group header (only when showing all discs)
-    if (!_discFilter) {
-      html += `<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;
-                color:var(--t3);text-transform:uppercase;letter-spacing:.06em;
-                position:sticky;top:0;background:var(--surface)">${disc.abbreviation || disc.fullName}</div>`;
-    }
-
-    for (const s of filtered) {
-      const code    = _subjectCode(s);
-      const checked = _subjFilter.has(s.id) ? 'checked' : '';
-      html += `
-        <label class="teacher-subj-opt" data-subj-id="${s.id}" style="
-          display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;
-          transition:background .1s;user-select:none;font-size:12.5px;color:var(--t2)">
-          <input type="checkbox" ${checked} style="
-            width:14px;height:14px;accent-color:var(--blue);flex-shrink:0;cursor:pointer"/>
-          <span class="ts-drop-code" style="font-family:var(--font-mono);font-size:11px;
-            color:var(--blue);background:var(--blue-dim);padding:1px 5px;border-radius:4px;
-            flex-shrink:0">${code}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t2)">${s.subjectName || ''}</span>
-        </label>`;
-      totalShown++;
-    }
-  }
-
-  if (!totalShown) {
-    html = `<div style="padding:14px;text-align:center;font-size:12px;color:var(--t3)">
-      ${query ? `No subjects match "<strong>${query}</strong>"` : 'No subjects available'}
-    </div>`;
-  }
-
-  listEl.innerHTML = html;
-
-  // Wire checkboxes
-  listEl.querySelectorAll('.teacher-subj-opt').forEach(label => {
-    label.querySelector('input')?.addEventListener('change', (e) => {
-      const sid = label.dataset.subjId;
-      if (!sid) return;
-      if (e.target.checked) _subjFilter.add(sid);
-      else                  _subjFilter.delete(sid);
-      _refreshSubjectLabel(container);
-      _render(container);
-    });
-  });
-
-  // Hover style
-  listEl.querySelectorAll('.teacher-subj-opt').forEach(label => {
-    label.addEventListener('mouseenter', () => label.style.background = 'var(--surface2)');
-    label.addEventListener('mouseleave', () => label.style.background = '');
-  });
-}
-
-function _refreshSubjectLabel(container) {
-  const labelEl = container.querySelector('#teacherSubjLabel');
-  const trigger = container.querySelector('#teacherSubjTrigger');
-  if (!labelEl) return;
-  if (!_subjFilter.size) {
-    labelEl.textContent = 'All Subjects';
-    if (trigger) trigger.style.borderColor = '';
-    return;
-  }
-  const allSubjects = AppState.get('subjects') || [];
-  const codes = [..._subjFilter]
-    .map(id => { const s = allSubjects.find(x => x.id === id); return s ? _subjectCode(s) : '?'; })
-    .join(', ');
-  labelEl.textContent = codes;
-  if (trigger) trigger.style.borderColor = 'var(--blue)';
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -929,49 +765,6 @@ function _pageTemplate() {
           <option value="">All Campuses</option>${campOpts}
         </select>
 
-        <!-- Subject multi-select filter -->
-        <div class="teacher-subj-wrap" id="teacherSubjWrap" style="position:relative">
-          <button id="teacherSubjTrigger" class="form-input" style="
-            display:inline-flex;align-items:center;gap:6px;min-width:150px;max-width:200px;
-            height:38px;padding:0 10px;cursor:pointer;text-align:left;white-space:nowrap;
-            font-size:13px;font-weight:500;color:var(--t2);background:var(--surface2);
-            border:1px solid var(--border2);border-radius:var(--r-sm);">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-            </svg>
-            <span id="teacherSubjLabel" style="flex:1;overflow:hidden;text-overflow:ellipsis">All Subjects</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--t4)">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
-          <div id="teacherSubjDropdown" style="
-            display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:300;
-            background:var(--surface);border:1px solid var(--border2);border-radius:10px;
-            box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:220px;max-width:280px;">
-            <!-- search inside dropdown -->
-            <div style="padding:8px 10px;border-bottom:1px solid var(--border)">
-              <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);
-                          border:1px solid var(--border2);border-radius:7px;padding:5px 8px">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--t3);flex-shrink:0">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input id="teacherSubjSearch" placeholder="Search subjects…" style="
-                  background:none;border:none;outline:none;font-size:12px;
-                  color:var(--t1);width:100%;font-family:var(--font-body)"/>
-              </div>
-            </div>
-            <!-- discipline group list -->
-            <div id="teacherSubjList" style="max-height:260px;overflow-y:auto;padding:6px 0"></div>
-            <!-- footer: clear -->
-            <div style="padding:7px 10px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
-              <button id="teacherSubjClear" style="font-size:11.5px;font-weight:600;color:var(--t3);
-                background:none;border:none;cursor:pointer;padding:0;font-family:var(--font-body)">
-                Clear
-              </button>
-            </div>
-          </div>
-        </div>
-
         <span class="record-count">— teachers</span>
 
         <!-- View toggle -->
@@ -1046,8 +839,7 @@ function _exportTeachers(fmt, container) {
     const matchSearch = !q || (t.fullName||'').toLowerCase().includes(q) || (t.email||'').toLowerCase().includes(q);
     const matchDisc = !_discFilter || (t.disciplines||[]).includes(_discFilter);
     const matchCamp = !_campFilter || (t.campuses||[]).includes(_campFilter);
-    const matchSubj = !_subjFilter.size || (t.teachingSubjects||[]).some(sid => _subjFilter.has(sid));
-    return matchSearch && matchDisc && matchCamp && matchSubj;
+    return matchSearch && matchDisc && matchCamp;
   });
 
   const subjects = AppState.get('subjects')    || [];
@@ -1079,11 +871,8 @@ function _exportTeachers(fmt, container) {
     const c = camps.find(x => x.id === _campFilter);
     if (c) filterParts.push(`<span class="filter-chip"><span class="fk">Campus:</span> ${c.campusName}</span>`);
   }
-  if (_subjFilter.size) {
-    const codes = [..._subjFilter]
-      .map(id => { const s = subjects.find(x => x.id === id); return s ? _subjectCode(s) : '?'; })
-      .join(', ');
-    filterParts.push(`<span class="filter-chip"><span class="fk">Subjects:</span> ${codes}</span>`);
+  if (_searchVal) {
+    filterParts.push(`<span class="filter-chip"><span class="fk">Search:</span> ${_searchVal}</span>`);
   }
   const filterHTML = filterParts.length
     ? `<span class="filters-label">&#9660; Filters</span> ${filterParts.join('')}`
@@ -1582,8 +1371,7 @@ function _injectTeacherStyles() {
 
 .modal-body {
   flex: 1 1 0% !important;
-  min-height: 0 !important;
-  height: 0 !important;
+  min-height: 120px !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain !important;
@@ -1728,7 +1516,7 @@ function _injectTeacherStyles() {
     .modal-header { flex-shrink: 0 !important; }
     .modal-footer { flex-shrink: 0 !important; }
     .modal-body {
-      flex: 1 1 0% !important; min-height: 0 !important; height: 0 !important;
+      flex: 1 1 0% !important; min-height: 120px !important;
       overflow-y: auto !important; overflow-x: hidden !important;
       overscroll-behavior: contain !important;
     }
