@@ -30,6 +30,7 @@ import {
   ScheduleService,
   AttendanceDateGenerator,
   AttendanceService,
+  fetchAndSyncBatchAttendance,
   DAY_NAMES,
   DAY_SHORT,
   toISODate,
@@ -503,11 +504,13 @@ function _renderBatchList() {
 
   // Click delegation
   listEl.querySelectorAll('.att2-batch-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async () => {
       const b = AppState.findById('batches', item.dataset.bid);
       if (!b) return;
       _selBatch = b;
       listEl.querySelectorAll('.att2-batch-item').forEach(i => i.classList.toggle('sel', i.dataset.bid === b.id));
+      // ✅ Fresh attendance data MongoDB se load karo pehle
+      await fetchAndSyncBatchAttendance(b.id);
       _loadBatchSheet(b);
     });
   });
@@ -875,12 +878,14 @@ function _renderDWBatchList(q = '') {
     </div>`).join('');
 
   listEl.querySelectorAll('.att2-dw-batch-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async () => {
       const b = AppState.findById('batches', item.dataset.bid);
       if (!b) return;
       _dwSelectedBatch = b;
       _dwSelectedDate  = null;
       listEl.querySelectorAll('.att2-dw-batch-item').forEach(i => i.classList.toggle('sel', i.dataset.bid === b.id));
+      // ✅ Fresh attendance data MongoDB se load karo pehle
+      await fetchAndSyncBatchAttendance(b.id);
       _renderDWMainPanel(b);
     });
   });
