@@ -1895,10 +1895,12 @@ function _renderWeeklyBatchList() {
     // Count marked days in range
     let classDatesInRange = [];
     if (lpa?.rows?.length) {
-      classDatesInRange = lpa.rows.filter(r => r.date && r.date >= _weeklyFrom && r.date <= _weeklyTo).map(r => r.date);
+      classDatesInRange = [...new Set(
+        lpa.rows.filter(r => r.date && r.date >= _weeklyFrom && r.date <= _weeklyTo).map(r => r.date)
+      )];
     } else {
       const all = AttendanceDateGenerator.generate(b.id);
-      classDatesInRange = all.filter(d => d >= _weeklyFrom && d <= _weeklyTo);
+      classDatesInRange = [...new Set(all.filter(d => d >= _weeklyFrom && d <= _weeklyTo))];
     }
 
     const enrolments = (AppState.get('enrolments') || []).filter(e => e.batchId === b.id && e.status === 'active');
@@ -2113,13 +2115,14 @@ function _loadWeeklySheet(batch) {
   // ── Compute class dates within range ──────────────────────
   let classDates = [];
   if (lpa?.rows?.length) {
-    classDates = lpa.rows
-      .filter(r => r.date && r.date >= _weeklyFrom && r.date <= _weeklyTo)
-      .map(r => r.date)
-      .sort();
+    classDates = [...new Set(
+      lpa.rows
+        .filter(r => r.date && r.date >= _weeklyFrom && r.date <= _weeklyTo)
+        .map(r => r.date)
+    )].sort();
   } else {
     const all = AttendanceDateGenerator.generate(batch.id);
-    classDates = all.filter(d => d >= _weeklyFrom && d <= _weeklyTo).sort();
+    classDates = [...new Set(all.filter(d => d >= _weeklyFrom && d <= _weeklyTo))].sort();
   }
 
   // ── Get students ──────────────────────────────────────────
