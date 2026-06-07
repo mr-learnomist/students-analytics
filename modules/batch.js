@@ -1226,9 +1226,8 @@ export const BatchModule = {
           if (footer) footer.style.setProperty('flex-shrink', '0',        'important');
           if (body) {
             body.style.setProperty('flex',       '1 1 0%', 'important');
-            body.style.setProperty('height',     '0',      'important');
+            body.style.setProperty('min-height', '120px',  'important');
             body.style.setProperty('overflow-y', 'auto',   'important');
-            body.style.setProperty('min-height', '0',      'important');
             body.style.setProperty('max-height', 'none',   'important');
           }
         };
