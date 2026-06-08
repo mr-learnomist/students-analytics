@@ -97,6 +97,17 @@ function showLogin() {
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appShell').style.display    = 'none';
   document.title = 'EduTrack — Login';
+  const old = document.getElementById('loginPass');
+  if (old) {
+    const fresh = document.createElement('input');
+    fresh.id = 'loginPass';
+    fresh.className = old.className;
+    fresh.type = 'password';
+    fresh.placeholder = 'Enter password';
+    fresh.setAttribute('autocomplete', 'off');
+    fresh.setAttribute('data-lpignore', 'true');
+    old.replaceWith(fresh);
+  }
   // setTimeout(() => document.getElementById('loginUser')?.focus(), 100);
 }
 
