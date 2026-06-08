@@ -1422,7 +1422,7 @@ function _renderDailyAttendance() {
           </div>
 
           <!-- Batch list -->
-          <div id="dailyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
+          <div id="dailyBatchList" style="flex:1;overflow-y:auto;min-height:0;max-height:calc(100vh - 300px);scrollbar-width:thin;scrollbar-color:var(--surface4) transparent"></div>
         </aside>
       </div>
 
@@ -2222,7 +2222,7 @@ function _renderWeeklyAttendance() {
           </div>
 
           <!-- Batch list -->
-          <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0;scrollbar-width:thin;scrollbar-color:var(--surface4) transparent"></div>
+          <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0;max-height:calc(100vh - 300px);scrollbar-width:thin;scrollbar-color:var(--surface4) transparent"></div>
         </aside>
       </div>
 
