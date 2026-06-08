@@ -371,6 +371,14 @@ function _buildShell() {
           </svg>
           Weekly Report
         </button>
+        <button class="att2-tab" data-tab="importexport">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          Import / Export
+        </button>
       </div>
       <div id="att2Body" style="flex:1;height:100%;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
     </div>`;
@@ -382,8 +390,9 @@ function _attachTabSwitcher() {
       _root.querySelectorAll('.att2-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _activeTab = btn.dataset.tab;
-      if      (_activeTab === 'daily')  _renderDailyAttendance();
-      else if (_activeTab === 'weekly') _renderWeeklyAttendance();
+      if      (_activeTab === 'daily')        _renderDailyAttendance();
+      else if (_activeTab === 'weekly')      _renderWeeklyAttendance();
+      else if (_activeTab === 'importexport') _renderImportExport();
     });
   });
 }
@@ -2878,4 +2887,415 @@ function _exportWeeklyCSV(batch, students, classDates, records) {
   a.click();
   URL.revokeObjectURL(url);
   Toast.success('Weekly CSV exported.');
+}
+
+// ══════════════════════════════════════════════════════════════
+// IMPORT / EXPORT MODULE
+// ══════════════════════════════════════════════════════════════
+
+function _renderImportExport() {
+  const body = _root.querySelector('#att2Body');
+  if (!body) return;
+
+  body.innerHTML = `
+    <div style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px;max-width:800px;margin:0 auto;width:100%">
+
+      <!-- Header -->
+      <div>
+        <h2 style="font-family:var(--font-display,sans-serif);font-size:18px;font-weight:800;color:var(--t1);margin-bottom:4px">Import / Export Attendance</h2>
+        <p style="font-size:13px;color:var(--t3)">Export attendance template as Excel, fill it offline, then import back. Already marked records will NOT be overwritten.</p>
+      </div>
+
+      <!-- EXPORT CARD -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--blue-dim);display:flex;align-items:center;justify-content:center;color:var(--blue)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:700;color:var(--t1)">Export Template</div>
+            <div style="font-size:12px;color:var(--t3)">Download Excel file with all batches and class dates</div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--t3);display:block;margin-bottom:4px">CAMPUS</label>
+            <select id="exCamp" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--t1);font-size:12.5px;padding:7px 10px;outline:none;font-family:inherit">
+              <option value="">All Campuses</option>
+              ${(AppState.get('campuses')||[]).map(c=>`<option value="${c.id}">${c.campusName}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--t3);display:block;margin-bottom:4px">DISCIPLINE</label>
+            <select id="exDisc" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--t1);font-size:12.5px;padding:7px 10px;outline:none;font-family:inherit">
+              <option value="">All Disciplines</option>
+              ${(AppState.get('disciplines')||[]).map(d=>`<option value="${d.id}">${d.abbreviation}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:var(--t3);display:block;margin-bottom:4px">DATE RANGE</label>
+            <select id="exRange" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--t1);font-size:12.5px;padding:7px 10px;outline:none;font-family:inherit">
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="all">All Dates</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px">
+          <button id="exportExcelBtn" style="display:flex;align-items:center;gap:8px;padding:9px 18px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download Excel Template
+          </button>
+          <span style="font-size:12px;color:var(--t3)" id="exBatchCount"></span>
+        </div>
+      </div>
+
+      <!-- IMPORT CARD -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--green-dim);display:flex;align-items:center;justify-content:center;color:var(--green)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:700;color:var(--t1)">Import Attendance</div>
+            <div style="font-size:12px;color:var(--t3)">Upload filled Excel file — already marked records will be skipped</div>
+          </div>
+        </div>
+
+        <!-- Drop Zone -->
+        <div id="dropZone" style="border:2px dashed var(--border2);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;margin-bottom:14px">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--t3);margin:0 auto 10px">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <div style="font-size:13.5px;font-weight:600;color:var(--t2);margin-bottom:4px">Drop Excel file here</div>
+          <div style="font-size:12px;color:var(--t3)">or click to browse • .xlsx files only</div>
+          <input id="importFileInput" type="file" accept=".xlsx" style="display:none"/>
+        </div>
+
+        <!-- Preview area -->
+        <div id="importPreview" style="display:none"></div>
+      </div>
+
+      <!-- HOW TO USE -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:18px">
+        <div style="font-size:12px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">How to Use</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${['1. Click "Download Excel Template" to get the attendance sheet','2. Fill in P (Present), A (Absent), or L (Leave) for each student and date','3. Leave cells empty if you don\'t want to change existing records','4. Upload the file using the import section above','5. Review the preview and confirm — done!'].map(s=>`
+            <div style="display:flex;align-items:flex-start;gap:10px;font-size:12.5px;color:var(--t2)">${s}</div>
+          `).join('')}
+        </div>
+      </div>
+
+    </div>`;
+
+  _attachImportExportEvents();
+}
+
+function _attachImportExportEvents() {
+  // Update batch count on filter change
+  const updateCount = () => {
+    const camp = _root.querySelector('#exCamp')?.value || '';
+    const disc = _root.querySelector('#exDisc')?.value || '';
+    const batches = (AppState.get('batches')||[]).filter(b =>
+      (!camp || b.campusId === camp) && (!disc || b.disciplineId === disc)
+    );
+    const el = _root.querySelector('#exBatchCount');
+    if (el) el.textContent = `${batches.length} batches selected`;
+  };
+  _root.querySelector('#exCamp')?.addEventListener('change', updateCount);
+  _root.querySelector('#exDisc')?.addEventListener('change', updateCount);
+  updateCount();
+
+  // Export button
+  _root.querySelector('#exportExcelBtn')?.addEventListener('click', _exportExcel);
+
+  // Drop zone
+  const dropZone = _root.querySelector('#dropZone');
+  const fileInput = _root.querySelector('#importFileInput');
+
+  dropZone?.addEventListener('click', () => fileInput?.click());
+  dropZone?.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--blue)';
+    dropZone.style.background = 'var(--blue-dim)';
+  });
+  dropZone?.addEventListener('dragleave', () => {
+    dropZone.style.borderColor = 'var(--border2)';
+    dropZone.style.background = '';
+  });
+  dropZone?.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--border2)';
+    dropZone.style.background = '';
+    const file = e.dataTransfer?.files?.[0];
+    if (file) _handleImportFile(file);
+  });
+  fileInput?.addEventListener('change', e => {
+    const file = e.target.files?.[0];
+    if (file) _handleImportFile(file);
+  });
+}
+
+function _getDateRange() {
+  const range = _root.querySelector('#exRange')?.value || 'week';
+  const today = new Date();
+  if (range === 'week') {
+    const day = today.getDay();
+    const mon = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { from: toISODate(mon), to: toISODate(sun) };
+  } else if (range === 'month') {
+    return {
+      from: toISODate(new Date(today.getFullYear(), today.getMonth(), 1)),
+      to:   toISODate(new Date(today.getFullYear(), today.getMonth() + 1, 0))
+    };
+  }
+  return { from: '2020-01-01', to: toISODate(today) };
+}
+
+function _exportExcel() {
+  const camp = _root.querySelector('#exCamp')?.value || '';
+  const disc = _root.querySelector('#exDisc')?.value || '';
+  const { from, to } = _getDateRange();
+
+  const allBatches = (AppState.get('batches')||[]).filter(b =>
+    (!camp || b.campusId === camp) && (!disc || b.disciplineId === disc)
+  );
+
+  if (!allBatches.length) { Toast.error('No batches found for selected filters.'); return; }
+
+  const students  = AppState.get('students')  || [];
+  const disciplines = AppState.get('disciplines') || [];
+
+  // Build CSV with multi-batch format
+  const rows = [];
+
+  // Instructions row
+  rows.push(['EDUTRACK ATTENDANCE IMPORT', '', '', 'Fill: P=Present, A=Absent, L=Leave', 'Leave blank to keep existing data', `Exported: ${new Date().toLocaleDateString()}`]);
+  rows.push([]);
+
+  allBatches.forEach(batch => {
+    const disc = disciplines.find(d => d.id === batch.disciplineId);
+    const batchStudents = students.filter(s => s.batchId === batch.id || (s.batches||[]).includes(batch.id));
+    if (!batchStudents.length) return;
+
+    // Generate class dates for this batch in range
+    let classDates = [];
+    try {
+      const lpaMap = AppState.get('lpAssignments') || {};
+      const lpa = lpaMap[batch.id];
+      if (lpa?.rows?.length) {
+        classDates = lpa.rows.map(r => r.date).filter(d => d >= from && d <= to).sort();
+      } else {
+        classDates = (AttendanceDateGenerator.generate(batch.id) || []).filter(d => d >= from && d <= to).sort();
+      }
+    } catch(e) { classDates = []; }
+
+    if (!classDates.length) return;
+
+    // Batch header
+    rows.push([`BATCH: ${batch.batchName}`, `ID: ${batch.id}`, `Discipline: ${disc?.abbreviation||''}`, `From: ${from}`, `To: ${to}`]);
+    rows.push(['#', 'Student ID', 'Student Name', ...classDates]);
+
+    batchStudents.forEach((stu, idx) => {
+      const existing = AttendanceService.getRecordsForBatch(batch.id);
+      const statusRow = classDates.map(d => {
+        const rec = existing[stu.id]?.[d];
+        return rec ? rec.status : '';
+      });
+      rows.push([idx + 1, stu.studentId || stu.id, stu.fullName || stu.name || '', ...statusRow]);
+    });
+
+    rows.push([]); // spacer between batches
+  });
+
+  // Convert to CSV
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const bom = '\uFEFF'; // UTF-8 BOM for Excel
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `attendance_template_${from}_to_${to}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  Toast.success(`Exported ${allBatches.length} batches!`);
+}
+
+function _handleImportFile(file) {
+  if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.csv')) {
+    Toast.error('Please upload .xlsx or .csv file only');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result;
+      // Remove BOM if present
+      const clean = text.replace(/^\uFEFF/, '');
+      const lines = clean.split('\n').map(l => l.split(',').map(v => v.replace(/^"|"$/g,'').replace(/""/g,'"').trim()));
+
+      _parseAndPreviewImport(lines);
+    } catch(err) {
+      Toast.error('Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function _parseAndPreviewImport(lines) {
+  const preview = _root.querySelector('#importPreview');
+  if (!preview) return;
+
+  const allBatches  = AppState.get('batches')  || [];
+  const allStudents = AppState.get('students') || [];
+
+  let currentBatch = null;
+  let currentDates = [];
+  const updates = []; // { batchId, studentId, date, status }
+  const skipped = []; // already marked
+
+  let inBatch = false;
+  let headerRow = null;
+
+  lines.forEach(row => {
+    if (!row || !row[0]) { inBatch = false; currentBatch = null; return; }
+
+    // Detect batch header
+    if (row[0].startsWith('BATCH:')) {
+      const batchName = row[0].replace('BATCH:', '').trim();
+      const batchId   = row[1]?.replace('ID:', '').trim();
+      currentBatch = allBatches.find(b => b.id === batchId || b.batchName === batchName);
+      inBatch = !!currentBatch;
+      headerRow = null;
+      return;
+    }
+
+    if (!inBatch || !currentBatch) return;
+
+    // Detect column header row (#, Student ID, Student Name, date1, date2...)
+    if (row[0] === '#') {
+      currentDates = row.slice(3).filter(Boolean);
+      headerRow = true;
+      return;
+    }
+
+    if (!headerRow) return;
+
+    // Skip instruction/empty rows
+    if (!row[1] || row[0] === 'EDUTRACK ATTENDANCE IMPORT') return;
+
+    const stuId   = row[1];
+    const stuName = row[2];
+    const student = allStudents.find(s => (s.studentId || s.id) === stuId || s.fullName === stuName);
+    if (!student) return;
+
+    const existing = AttendanceService.getRecordsForBatch(currentBatch.id);
+
+    currentDates.forEach((date, i) => {
+      const status = (row[3 + i] || '').toUpperCase();
+      if (!status || !['P','A','L'].includes(status)) return;
+
+      const alreadyMarked = existing[student.id]?.[date]?.status;
+      if (alreadyMarked) {
+        skipped.push({ batch: currentBatch.batchName, student: student.fullName || stuName, date, existing: alreadyMarked });
+      } else {
+        updates.push({ batchId: currentBatch.id, studentId: student.id, date, status, batchName: currentBatch.batchName, studentName: student.fullName || stuName });
+      }
+    });
+  });
+
+  // Show preview
+  preview.style.display = 'block';
+  preview.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <!-- Summary -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border)">
+        <div style="padding:14px 18px;border-right:1px solid var(--border)">
+          <div style="font-size:22px;font-weight:800;color:var(--green)">${updates.length}</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:2px">Records to be saved</div>
+        </div>
+        <div style="padding:14px 18px">
+          <div style="font-size:22px;font-weight:800;color:var(--yellow)">${skipped.length}</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:2px">Already marked (will skip)</div>
+        </div>
+      </div>
+
+      ${updates.length === 0 ? `
+        <div style="padding:20px;text-align:center;color:var(--t3);font-size:13px">
+          No new records to import. All data is already marked or file is empty.
+        </div>
+      ` : `
+        <!-- Preview table -->
+        <div style="max-height:240px;overflow-y:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--surface2)">
+                <th style="padding:8px 12px;text-align:left;color:var(--t3);font-weight:600;border-bottom:1px solid var(--border)">Batch</th>
+                <th style="padding:8px 12px;text-align:left;color:var(--t3);font-weight:600;border-bottom:1px solid var(--border)">Student</th>
+                <th style="padding:8px 12px;text-align:left;color:var(--t3);font-weight:600;border-bottom:1px solid var(--border)">Date</th>
+                <th style="padding:8px 12px;text-align:center;color:var(--t3);font-weight:600;border-bottom:1px solid var(--border)">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${updates.slice(0,50).map(u => `
+                <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:7px 12px;color:var(--t2)">${u.batchName}</td>
+                  <td style="padding:7px 12px;color:var(--t1)">${u.studentName}</td>
+                  <td style="padding:7px 12px;color:var(--t3);font-family:monospace">${u.date}</td>
+                  <td style="padding:7px 12px;text-align:center">
+                    <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;
+                      background:${u.status==='P'?'var(--green-dim)':u.status==='A'?'var(--red-dim)':'var(--yellow-dim)'};
+                      color:${u.status==='P'?'var(--green)':u.status==='A'?'var(--red)':'var(--yellow)'}">
+                      ${u.status==='P'?'Present':u.status==='A'?'Absent':'Leave'}
+                    </span>
+                  </td>
+                </tr>
+              `).join('')}
+              ${updates.length > 50 ? `<tr><td colspan="4" style="padding:8px 12px;text-align:center;color:var(--t3);font-size:11px">...and ${updates.length - 50} more records</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Confirm button -->
+        <div style="padding:14px 18px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--border)">
+          <button id="confirmImportBtn" style="display:flex;align-items:center;gap:8px;padding:9px 20px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirm Import (${updates.length} records)
+          </button>
+          <button id="cancelImportBtn" style="padding:9px 16px;background:var(--surface2);color:var(--t2);border:1px solid var(--border2);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+            Cancel
+          </button>
+          ${skipped.length ? `<span style="font-size:12px;color:var(--yellow)">⚠ ${skipped.length} already-marked records will be skipped</span>` : ''}
+        </div>
+      `}
+    </div>`;
+
+  // Wire confirm/cancel
+  _root.querySelector('#confirmImportBtn')?.addEventListener('click', () => {
+    let saved = 0;
+    const user = (AppState.get('currentUser')?.name) || 'Import';
+    updates.forEach(u => {
+      try {
+        AttendanceService.markAttendance(u.batchId, u.studentId, u.date, u.status, user);
+        saved++;
+      } catch(e) { console.warn('Import error:', e); }
+    });
+    Toast.success(`✅ ${saved} records imported successfully! ${skipped.length} skipped.`);
+    preview.innerHTML = `
+      <div style="padding:20px;text-align:center;background:var(--green-dim);border:1px solid var(--green);border-radius:10px">
+        <div style="font-size:18px;font-weight:800;color:var(--green);margin-bottom:4px">✅ Import Complete!</div>
+        <div style="font-size:13px;color:var(--t2)">${saved} records saved · ${skipped.length} skipped (already marked)</div>
+      </div>`;
+  });
+
+  _root.querySelector('#cancelImportBtn')?.addEventListener('click', () => {
+    preview.style.display = 'none';
+    const fi = _root.querySelector('#importFileInput');
+    if (fi) fi.value = '';
+  });
 }
