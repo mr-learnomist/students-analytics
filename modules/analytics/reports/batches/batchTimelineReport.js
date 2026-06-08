@@ -207,6 +207,28 @@ function renderBatchTimeline(el, state) {
     </div>`;
   };
 
+  // ── All available columns (must be defined before el.innerHTML uses vis()) ──
+  const ALL_COLS = [
+    { key:'campus',     label:'Campus',      def:true  },
+    { key:'subject',    label:'Subject',     def:true  },
+    { key:'batchNo',    label:'Batch #',     def:true  },
+    { key:'teacher',    label:'Teacher',     def:true  },
+    { key:'session',    label:'Session',     def:true  },
+    { key:'startDate',  label:'Start Date',  def:true  },
+    { key:'endDate',    label:'End Date',    def:true  },
+    { key:'duration',   label:'Duration',    def:true  },
+    { key:'hTeaching',  label:'Teaching h',  def:true  },
+    { key:'hTest',      label:'Test h',      def:true  },
+    { key:'hMock',      label:'Mock h',      def:true  },
+    { key:'hRevision',  label:'Revision h',  def:false },
+    { key:'completion', label:'Completion',  def:true  },
+    { key:'remarks',    label:'Remarks',     def:true  },
+  ];
+  if (!state.visibleCols) {
+    state.visibleCols = new Set(ALL_COLS.filter(c => c.def).map(c => c.key));
+  }
+  const vis = (key) => state.visibleCols.has(key);
+
   // Build rows
   let rows = assigned.map(b => {
     const lpa     = allAssign[b.id];
@@ -428,28 +450,6 @@ function renderBatchTimeline(el, state) {
     </div>`;
 
   // ── Init filters ─────────────────────────────────────────────
-
-  // ── All available columns ────────────────────────────────────
-  const ALL_COLS = [
-    { key:'campus',     label:'Campus',      def:true  },
-    { key:'subject',    label:'Subject',     def:true  },
-    { key:'batchNo',    label:'Batch #',     def:true  },
-    { key:'teacher',    label:'Teacher',     def:true  },
-    { key:'session',    label:'Session',     def:true  },
-    { key:'startDate',  label:'Start Date',  def:true  },
-    { key:'endDate',    label:'End Date',    def:true  },
-    { key:'duration',   label:'Duration',    def:true  },
-    { key:'hTeaching',  label:'Teaching h',  def:true  },
-    { key:'hTest',      label:'Test h',      def:true  },
-    { key:'hMock',      label:'Mock h',      def:true  },
-    { key:'hRevision',  label:'Revision h',  def:false },
-    { key:'completion', label:'Completion',  def:true  },
-    { key:'remarks',    label:'Remarks',     def:true  },
-  ];
-  if (!state.visibleCols) {
-    state.visibleCols = new Set(ALL_COLS.filter(c => c.def).map(c => c.key));
-  }
-  const vis = (key) => state.visibleCols.has(key);
 
   const rerender = () => renderBatchTimeline(el, state);
 
