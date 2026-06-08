@@ -1421,6 +1421,14 @@ function _renderDailyAttendance() {
             Active Batches &nbsp;<span id="dailyBatchCount" style="font-weight:400"></span>
           </div>
 
+          <!-- Search bar -->
+          <div style="padding:4px 8px 6px;flex-shrink:0">
+            <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px 8px">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--t3);flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="dailyBatchSearch" type="text" placeholder="Search batches..." style="background:none;border:none;outline:none;color:var(--t1);font-size:11.5px;width:100%;font-family:inherit" />
+            </div>
+          </div>
+
           <!-- Batch list -->
           <div id="dailyBatchList" style="flex:1;overflow-y:auto;min-height:0;max-height:calc(100vh - 300px);scrollbar-width:thin;scrollbar-color:var(--surface4) transparent"></div>
         </aside>
@@ -1564,6 +1572,14 @@ function _attachDailyEvents() {
     if (pick) pick.value = _dailyDate;
     _renderDailyBatchList();
     if (_dailySelBatch) _loadDailySheet(_dailySelBatch);
+  });
+
+  _root.querySelector('#dailyBatchSearch')?.addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    _root.querySelectorAll('#dailyBatchList .att2-batch-item').forEach(item => {
+      const text = item.textContent.toLowerCase();
+      item.style.display = text.includes(q) ? '' : 'none';
+    });
   });
 
   // ── Sidebar hover: CSS width handled by .att2-sb-wrap:hover,
@@ -2109,6 +2125,14 @@ function _attachWeeklyEvents() {
     if (_weeklySelBatch) _loadWeeklySheet(_weeklySelBatch);
   });
 
+  _root.querySelector('#weeklyBatchSearch')?.addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    _root.querySelectorAll('#weeklyBatchList .att2-batch-item').forEach(item => {
+      const text = item.textContent.toLowerCase();
+      item.style.display = text.includes(q) ? '' : 'none';
+    });
+  });
+
   // ── Sidebar hover: CSS width + JS opacity ────────────────
   const wWrap    = _root.querySelector('#weeklySidebarWrap');
   const wSidebar = _root.querySelector('#weeklySidebar');
@@ -2219,6 +2243,14 @@ function _renderWeeklyAttendance() {
           <div style="padding:7px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;
                       letter-spacing:.06em;color:var(--t3);flex-shrink:0">
             Batches &nbsp;<span id="weeklyBatchCount" style="font-weight:400"></span>
+          </div>
+
+          <!-- Search bar -->
+          <div style="padding:4px 8px 6px;flex-shrink:0">
+            <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px 8px">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--t3);flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="weeklyBatchSearch" type="text" placeholder="Search batches..." style="background:none;border:none;outline:none;color:var(--t1);font-size:11.5px;width:100%;font-family:inherit" />
+            </div>
           </div>
 
           <!-- Batch list -->
