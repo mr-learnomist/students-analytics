@@ -287,6 +287,14 @@ function renderBatchTimeline(el, state) {
         <div class="tl-mf" id="btSubjFilter"></div>
         <div class="tl-mf" id="btSessFilter"></div>
 
+        <button id="btApplyBtn" style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 16px;
+          border-radius:8px;border:none;background:var(--blue);color:#fff;
+          font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;
+          box-shadow:0 1px 6px rgba(59,130,246,.2);transition:opacity .15s">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Apply
+        </button>
+
         ${anyFilter ? `
           <button id="btClearAll" style="display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.06);color:var(--red,#ef4444);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -330,7 +338,12 @@ function renderBatchTimeline(el, state) {
             </tr>
           </thead>
           <tbody>
-            ${rows.length ? rows.map((r,i) => {
+            ${!state.applied ? `<tr><td colspan="14" style="padding:60px;text-align:center">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--t3)">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                <div style="font-size:13.5px;font-weight:600;color:var(--t2)">Select filters and click Apply to load report</div>
+              </div>
+            </td></tr>` : rows.length ? rows.map((r,i) => {
               const rem = remarksMap[r.batchId]||'';
               return `
                 <tr style="border-bottom:1px solid var(--border);transition:background .12s"
@@ -383,11 +396,11 @@ function renderBatchTimeline(el, state) {
   const subjWrap  = el.querySelector('#btSubjFilter');
   const sessWrap  = el.querySelector('#btSessFilter');
 
-  _initMultiFilter(campWrap,  'All Campuses',    campItems,    vals => { state.campFilter    = vals; rerender(); });
-  _initMultiFilter(discWrap,  'All Disciplines', discItems,    vals => { state.discFilter    = vals; rerender(); });
-  _initMultiFilter(levelWrap, 'All Levels',      levelItems,   vals => { state.levelFilter   = vals; rerender(); });
-  _initMultiFilter(subjWrap,  'All Subjects',    subjItems,    vals => { state.subjFilter    = vals; rerender(); });
-  _initMultiFilter(sessWrap,  'All Sessions',    sessionItems, vals => { state.sessionFilter = vals; rerender(); });
+  _initMultiFilter(campWrap,  'All Campuses',    campItems,    vals => { state.campFilter    = vals; });
+  _initMultiFilter(discWrap,  'All Disciplines', discItems,    vals => { state.discFilter    = vals; });
+  _initMultiFilter(levelWrap, 'All Levels',      levelItems,   vals => { state.levelFilter   = vals; });
+  _initMultiFilter(subjWrap,  'All Subjects',    subjItems,    vals => { state.subjFilter    = vals; });
+  _initMultiFilter(sessWrap,  'All Sessions',    sessionItems, vals => { state.sessionFilter = vals; });
 
   // Restore selected values
   const restoreMF = (wrap, vals) => {
@@ -408,10 +421,17 @@ function renderBatchTimeline(el, state) {
   restoreMF(subjWrap,  state.subjFilter);
   restoreMF(sessWrap,  state.sessionFilter);
 
+  // Apply button
+  el.querySelector('#btApplyBtn')?.addEventListener('click', () => {
+    state.applied = true;
+    rerender();
+  });
+
   // Clear all
   el.querySelector('#btClearAll')?.addEventListener('click', () => {
     state.campFilter = []; state.discFilter = []; state.levelFilter = [];
     state.subjFilter = []; state.sessionFilter = []; state.search = '';
+    state.applied = false;
     rerender();
   });
 
@@ -435,7 +455,7 @@ function renderBatchTimeline(el, state) {
   // Sort
   el.querySelector('#btSort')?.addEventListener('change', e => {
     state.sort = e.target.value;
-    rerender();
+    if (state.applied) rerender();
   });
 
   // Remarks edit
@@ -503,7 +523,8 @@ export const BatchTimelineReport = {
       this._state = {
         sort: 'oldest', search: '',
         campFilter: [], discFilter: [], levelFilter: [],
-        subjFilter: [], sessionFilter: [], _filteredRows: []
+        subjFilter: [], sessionFilter: [], _filteredRows: [],
+        applied: false,
       };
     }
     renderBatchTimeline(container, this._state);
