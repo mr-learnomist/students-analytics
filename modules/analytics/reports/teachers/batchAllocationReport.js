@@ -99,6 +99,86 @@ function _injectStyles() {
     }
     .ba-dash { color:var(--t4); font-size:13px; }
 
+    /* Teacher multi-filter (reuse tl-mf pattern) */
+    .ba-mf { position:relative; flex-shrink:0; }
+    .ba-mf-btn {
+      display:flex; align-items:center; gap:5px; cursor:pointer;
+      padding:0 10px; height:34px; border:1px solid var(--border);
+      border-radius:8px; background:var(--surface2); color:var(--t2);
+      font-size:12.5px; white-space:nowrap; user-select:none;
+      min-width:110px; max-width:200px; font-family:inherit;
+    }
+    .ba-mf-btn:hover { border-color:var(--blue); color:var(--blue); }
+    .ba-mf-btn.active { border-color:var(--blue); background:var(--blue-dim); color:var(--blue); font-weight:600; }
+    .ba-mf-btn .mf-label { overflow:hidden; text-overflow:ellipsis; flex:1; }
+    .ba-mf-btn .mf-caret { font-size:9px; flex-shrink:0; opacity:.6; }
+    .ba-mf-btn .mf-badge { background:var(--blue); color:#fff; font-size:9.5px; font-weight:700; border-radius:10px; padding:1px 5px; flex-shrink:0; }
+    .ba-mf-panel {
+      position:absolute; top:calc(100% + 4px); left:0; z-index:999;
+      background:var(--surface,#fff); border:1px solid var(--border);
+      border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12);
+      min-width:180px; max-width:260px; overflow:hidden;
+      display:none; flex-direction:column;
+    }
+    .ba-mf-panel.open { display:flex; }
+    .ba-mf-search { padding:8px 10px 4px; border-bottom:1px solid var(--border); }
+    .ba-mf-search input { width:100%; padding:4px 8px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:var(--surface2); color:var(--t1); outline:none; }
+    .ba-mf-list { overflow-y:auto; max-height:220px; padding:4px 0; }
+    .ba-mf-item { display:flex; align-items:center; gap:9px; padding:7px 12px; cursor:pointer; font-size:12.5px; color:var(--t2); transition:background .1s,color .1s; user-select:none; }
+    .ba-mf-item:hover { background:var(--blue-dim); color:var(--blue); }
+    .ba-mf-item.checked { color:var(--blue); font-weight:600; }
+    .ba-mf-chk { width:15px; height:15px; border-radius:4px; flex-shrink:0; border:1.5px solid var(--border2); display:inline-flex; align-items:center; justify-content:center; transition:all .12s; background:var(--surface); }
+    .ba-mf-item.checked .ba-mf-chk { background:var(--blue); border-color:var(--blue); }
+    .ba-mf-item.checked .ba-mf-chk::after { content:''; display:block; width:4px; height:7px; border:2px solid #fff; border-top:none; border-left:none; transform:rotate(45deg) translate(-1px,-1px); }
+    .ba-mf-lbl { flex:1; }
+    .ba-mf-footer { border-top:1px solid var(--border); padding:7px 10px; display:flex; justify-content:space-between; align-items:center; gap:6px; background:var(--surface2); }
+    .ba-mf-count { font-size:11px; color:var(--t3); }
+    .ba-mf-clear { font-size:11px; padding:3px 10px; border-radius:6px; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--t2); font-family:inherit; transition:all .12s; }
+    .ba-mf-clear:hover { border-color:var(--red,#ef4444); color:var(--red,#ef4444); }
+
+    /* Column selector modal */
+    .ba-col-modal-backdrop {
+      position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1000;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .ba-col-modal {
+      background:var(--surface,#fff); border-radius:14px;
+      box-shadow:0 16px 48px rgba(0,0,0,.22);
+      padding:20px 22px 16px; min-width:260px; max-width:340px; width:100%;
+    }
+    .ba-col-modal-title {
+      font-size:14px; font-weight:700; color:var(--t1);
+      margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;
+    }
+    .ba-col-modal-close {
+      width:26px; height:26px; border-radius:6px; border:1px solid var(--border);
+      background:var(--surface2); color:var(--t3); cursor:pointer;
+      display:flex; align-items:center; justify-content:center; font-size:13px;
+    }
+    .ba-col-modal-close:hover { border-color:var(--red,#ef4444); color:var(--red,#ef4444); }
+    .ba-col-list { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+    .ba-col-item {
+      display:flex; align-items:center; gap:9px; padding:7px 10px;
+      border-radius:8px; border:1px solid var(--border);
+      background:var(--surface2); cursor:pointer; user-select:none;
+      transition:border-color .12s, background .12s;
+    }
+    .ba-col-item.on { border-color:var(--blue); background:var(--blue-dim); }
+    .ba-col-item-chk {
+      width:16px; height:16px; border-radius:4px; flex-shrink:0;
+      border:1.5px solid var(--border2); display:inline-flex; align-items:center;
+      justify-content:center; transition:all .12s; background:var(--surface);
+    }
+    .ba-col-item.on .ba-col-item-chk { background:var(--blue); border-color:var(--blue); }
+    .ba-col-item.on .ba-col-item-chk::after { content:''; display:block; width:4px; height:8px; border:2px solid #fff; border-top:none; border-left:none; transform:rotate(45deg) translate(-1px,-1px); }
+    .ba-col-item-lbl { font-size:12.5px; color:var(--t1); font-weight:500; flex:1; }
+    .ba-col-item.on .ba-col-item-lbl { color:var(--blue); font-weight:600; }
+    .ba-col-modal-actions { display:flex; gap:8px; }
+    .ba-col-sel-all { flex:1; padding:7px 0; border-radius:8px; border:1px solid var(--blue); background:var(--blue); color:#fff; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; transition:opacity .15s; }
+    .ba-col-sel-all:hover { opacity:.88; }
+    .ba-col-reset { flex:1; padding:7px 0; border-radius:8px; border:1px solid var(--border); background:var(--surface2); color:var(--t2); font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; }
+    .ba-col-reset:hover { border-color:var(--blue); color:var(--blue); }
+
     /* Summary bar */
     .ba-summary {
       display:flex; gap:12px; flex-wrap:wrap;
@@ -115,6 +195,93 @@ function _injectStyles() {
   document.head.appendChild(st);
 }
 
+// ── Multi-filter helper (ba-specific) ────────────────────────
+function _initBaMultiFilter(wrap, allLabel, items, onchange) {
+  wrap._mfItems    = items;
+  wrap._mfSelected = wrap._mfSelected || new Set();
+
+  const btn   = document.createElement('div');
+  btn.className = 'ba-mf-btn';
+  const panel = document.createElement('div');
+  panel.className = 'ba-mf-panel';
+  wrap.appendChild(btn);
+  wrap.appendChild(panel);
+
+  const renderBtn = () => {
+    const sel = wrap._mfSelected;
+    if (sel.size === 0) {
+      btn.className = 'ba-mf-btn';
+      btn.innerHTML = `<span class="mf-label">${allLabel}</span><span class="mf-caret">▾</span>`;
+    } else {
+      btn.className = 'ba-mf-btn active';
+      const lbl   = sel.size === 1 ? (items.find(i => i.val === [...sel][0])?.label || '') : `${sel.size} selected`;
+      const short = lbl.length > 20 ? lbl.slice(0,18)+'…' : lbl;
+      btn.innerHTML = `<span class="mf-label">${short}</span><span class="mf-badge">${sel.size}</span><span class="mf-caret">▾</span>`;
+    }
+  };
+
+  const renderList = (q = '') => {
+    const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()));
+    panel.innerHTML = `
+      <div class="ba-mf-search"><input placeholder="Search…" value="${q}" autocomplete="off"/></div>
+      <div class="ba-mf-list">
+        ${filtered.length ? filtered.map(i => `
+          <div class="ba-mf-item ${wrap._mfSelected.has(i.val)?'checked':''}" data-val="${i.val}">
+            <span class="ba-mf-chk"></span>
+            <span class="ba-mf-lbl">${i.label}</span>
+          </div>`).join('') : '<div style="padding:12px;font-size:12px;color:var(--t4);text-align:center">No results</div>'}
+      </div>
+      <div class="ba-mf-footer">
+        <span class="ba-mf-count">${wrap._mfSelected.size} selected</span>
+        <button class="ba-mf-clear">✕ Clear</button>
+      </div>`;
+
+    const inp = panel.querySelector('.ba-mf-search input');
+    inp.addEventListener('input', e => renderList(e.target.value));
+    setTimeout(() => inp.focus(), 0);
+
+    panel.querySelectorAll('.ba-mf-item').forEach(item => {
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        const val = item.dataset.val;
+        if (wrap._mfSelected.has(val)) wrap._mfSelected.delete(val);
+        else                           wrap._mfSelected.add(val);
+        item.classList.toggle('checked', wrap._mfSelected.has(val));
+        const cnt = panel.querySelector('.ba-mf-count');
+        if (cnt) cnt.textContent = `${wrap._mfSelected.size} selected`;
+        renderBtn();
+        onchange([...wrap._mfSelected]);
+      });
+    });
+
+    panel.querySelector('.ba-mf-clear').addEventListener('click', e => {
+      e.stopPropagation();
+      wrap._mfSelected.clear();
+      renderBtn();
+      renderList(inp ? inp.value : '');
+      onchange([]);
+    });
+  };
+
+  wrap._mfRenderList = renderList;
+  renderList();
+  renderBtn();
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    document.querySelectorAll('.ba-mf-panel.open').forEach(p => p.classList.remove('open'));
+    if (!isOpen) { panel.classList.add('open'); renderList(''); }
+  });
+}
+
+// ── Column selector definitions ───────────────────────────────
+const BA_COLS = [
+  { key: 'teacher', label: 'Teacher Column', def: true  },
+  { key: 'batches', label: 'Batch Columns',  def: true  },
+  { key: 'total',   label: 'Total Column',   def: true  },
+];
+
 // ── Main render ──────────────────────────────────────────────
 function renderBatchAllocation(el, state) {
   _injectStyles();
@@ -123,6 +290,10 @@ function renderBatchAllocation(el, state) {
   const teachers    = AppState.get('teachers')    || [];
   const subjects    = AppState.get('subjects')    || [];
   const allAssign   = AppState.get('lpAssignments') || {};
+
+  // Init state fields
+  if (!state.visibleCols)   state.visibleCols   = new Set(BA_COLS.map(c => c.key));
+  if (!state.teacherFilter) state.teacherFilter = [];
 
   // Only LP-assigned batches
   const assigned = allBatches.filter(b => allAssign[b.id]);
@@ -169,8 +340,13 @@ function renderBatchAllocation(el, state) {
       });
     });
 
+    // Apply teacher filter
+    const filteredTeacherNames = state.teacherFilter.length
+      ? Object.keys(byTeacher).filter(n => state.teacherFilter.includes(n))
+      : Object.keys(byTeacher);
+
     // Sort teachers: Ms first, then Sir, then others — alphabetically within group
-    const sortedTeachers = Object.keys(byTeacher).sort((a, b) => {
+    const sortedTeachers = filteredTeacherNames.sort((a, b) => {
       const rank = n => n.startsWith('Ms') ? 0 : n.startsWith('Sir') ? 1 : 2;
       return rank(a) - rank(b) || a.localeCompare(b);
     });
@@ -180,6 +356,18 @@ function renderBatchAllocation(el, state) {
 
     return { byTeacher, sortedTeachers, maxBatches, sessionBatches };
   };
+
+  // Teacher items for filter (from session batches if applied, else all assigned)
+  const teacherItems = (() => {
+    const pool = state.session ? assigned.filter(b => b.sessionPeriod === state.session) : assigned;
+    const names = new Set();
+    pool.forEach(b => {
+      const t = teachers.find(t => t.id === b.teacherId);
+      const name = t ? (t.fullName || t.name || `${t.firstName||''} ${t.lastName||''}`.trim()) : null;
+      if (name) names.add(name);
+    });
+    return [...names].sort((a,b) => a.localeCompare(b)).map(n => ({ val: n, label: n }));
+  })();
 
   // ── Render shell ─────────────────────────────────────────────
   el.innerHTML = `
@@ -203,13 +391,33 @@ function renderBatchAllocation(el, state) {
           </div>
         </div>
 
-        <!-- Apply + Export -->
-        <div style="display:flex;align-items:flex-end;gap:8px;padding-top:26px;flex-shrink:0">
+        <!-- Filters + Actions -->
+        <div style="display:flex;align-items:flex-end;gap:8px;padding-top:26px;flex-shrink:0;flex-wrap:wrap">
+
+          <!-- Teacher filter -->
+          <div class="ba-mf" id="baTeacherFilter"></div>
+
+          <!-- Apply -->
           <button class="ba-apply-btn" id="baApplyBtn" ${!state.session ? 'disabled' : ''}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             Apply
           </button>
+
+          ${state.teacherFilter.length ? `
+            <button id="baClearFilter" style="display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.06);color:var(--red,#ef4444);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Clear Filter
+            </button>` : ''}
+
           ${state.applied ? `
+            <!-- Column selector btn -->
+            <button class="ba-export-btn" id="baColsBtn" title="Choose Columns" style="width:auto;padding:0 10px;gap:6px;font-size:12px;font-weight:600;color:var(--t2)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+              Columns
+            </button>
             <button class="ba-export-btn" id="baExportCSV" title="Export CSV">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -242,13 +450,85 @@ function renderBatchAllocation(el, state) {
                </svg>
                <div style="font-size:13.5px;font-weight:600;color:var(--t2)">Select a session and click Apply</div>
              </div>`
-          : _tableHTML(buildTable(state.session))
+          : _tableHTML(buildTable(state.session), state.visibleCols)
         }
       </div>
     </div>
   `;
 
   // ── Events ───────────────────────────────────────────────────
+
+  // Init teacher multi-filter
+  const teacherWrap = el.querySelector('#baTeacherFilter');
+  if (teacherWrap) {
+    teacherWrap._mfSelected = new Set(state.teacherFilter);
+    _initBaMultiFilter(teacherWrap, 'All Teachers', teacherItems, vals => {
+      state.teacherFilter = vals;
+    });
+  }
+
+  // Clear teacher filter
+  el.querySelector('#baClearFilter')?.addEventListener('click', () => {
+    state.teacherFilter = [];
+    state.applied = false;
+    renderBatchAllocation(el, state);
+  });
+
+  // Column selector modal
+  el.querySelector('#baColsBtn')?.addEventListener('click', () => {
+    // Build modal
+    const backdrop = document.createElement('div');
+    backdrop.className = 'ba-col-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="ba-col-modal" id="baColModalInner">
+        <div class="ba-col-modal-title">
+          Choose Columns
+          <button class="ba-col-modal-close" id="baColModalClose">✕</button>
+        </div>
+        <div class="ba-col-list" id="baColList">
+          ${BA_COLS.map(c => `
+            <div class="ba-col-item ${state.visibleCols.has(c.key)?'on':''}" data-col="${c.key}">
+              <span class="ba-col-item-chk"></span>
+              <span class="ba-col-item-lbl">${c.label}</span>
+            </div>`).join('')}
+        </div>
+        <div class="ba-col-modal-actions">
+          <button class="ba-col-sel-all" id="baColSelAll">Select All</button>
+          <button class="ba-col-reset" id="baColReset">Reset Default</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+
+    const rerender = () => {
+      const content = el.querySelector('#baContent');
+      if (content && state.applied) content.innerHTML = _tableHTML(buildTable(state.session), state.visibleCols);
+    };
+
+    backdrop.querySelectorAll('.ba-col-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const key = item.dataset.col;
+        if (state.visibleCols.has(key)) state.visibleCols.delete(key);
+        else                            state.visibleCols.add(key);
+        item.classList.toggle('on', state.visibleCols.has(key));
+        rerender();
+      });
+    });
+    backdrop.querySelector('#baColSelAll')?.addEventListener('click', () => {
+      BA_COLS.forEach(c => state.visibleCols.add(c.key));
+      backdrop.querySelectorAll('.ba-col-item').forEach(i => i.classList.add('on'));
+      rerender();
+    });
+    backdrop.querySelector('#baColReset')?.addEventListener('click', () => {
+      state.visibleCols = new Set(BA_COLS.filter(c => c.def).map(c => c.key));
+      backdrop.querySelectorAll('.ba-col-item').forEach(i => {
+        i.classList.toggle('on', state.visibleCols.has(i.dataset.col));
+      });
+      rerender();
+    });
+    const closeModal = () => backdrop.remove();
+    backdrop.querySelector('#baColModalClose')?.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) closeModal(); });
+  });
 
   // Session pill click
   el.querySelector('#baSessionWrap')?.addEventListener('click', e => {
@@ -268,15 +548,33 @@ function renderBatchAllocation(el, state) {
     renderBatchAllocation(el, state);
   });
 
+  // Close teacher filter panel on outside click
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.ba-mf')) {
+      document.querySelectorAll('.ba-mf-panel.open').forEach(p => p.classList.remove('open'));
+    }
+  });
+
   // CSV export
   el.querySelector('#baExportCSV')?.addEventListener('click', () => {
     if (!state.applied || !state.session) return;
     const { byTeacher, sortedTeachers, maxBatches, sessionBatches } = buildTable(state.session);
-    const headers = ['Teacher', ...Array.from({ length: maxBatches }, (_, i) => `Batch ${i + 1}`), 'Total'];
+    const showTeacher = state.visibleCols.has('teacher');
+    const showBatches = state.visibleCols.has('batches');
+    const showTotal   = state.visibleCols.has('total');
+    const headers = [
+      ...(showTeacher ? ['Teacher'] : []),
+      ...(showBatches ? Array.from({ length: maxBatches }, (_, i) => `Batch ${i + 1}`) : []),
+      ...(showTotal   ? ['Total'] : []),
+    ];
     const dataRows = sortedTeachers.map(name => {
       const batches = byTeacher[name];
-      const cells   = Array.from({ length: maxBatches }, (_, i) => batches[i]?.tag || '—');
-      return [name, ...cells, batches.length];
+      const batchCells = Array.from({ length: maxBatches }, (_, i) => batches[i]?.tag || '—');
+      return [
+        ...(showTeacher ? [name] : []),
+        ...(showBatches ? batchCells : []),
+        ...(showTotal   ? [batches.length] : []),
+      ];
     });
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
@@ -378,10 +676,14 @@ function renderBatchAllocation(el, state) {
 }
 
 // ── Table HTML builder ───────────────────────────────────────
-function _tableHTML({ byTeacher, sortedTeachers, maxBatches, sessionBatches }) {
+function _tableHTML({ byTeacher, sortedTeachers, maxBatches, sessionBatches }, visibleCols) {
+  const showTeacher = !visibleCols || visibleCols.has('teacher');
+  const showBatches = !visibleCols || visibleCols.has('batches');
+  const showTotal   = !visibleCols || visibleCols.has('total');
+
   if (!sortedTeachers.length) {
     return `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">
-      No LP-assigned batches found for this session.
+      No LP-assigned batches found for this session${visibleCols && !'teacher' ? '' : ''}.
     </div>`;
   }
 
@@ -410,11 +712,9 @@ function _tableHTML({ byTeacher, sortedTeachers, maxBatches, sessionBatches }) {
       <table class="ba-table">
         <thead>
           <tr>
-            <th class="ba-th-teacher">Teacher</th>
-            ${Array.from({ length: maxBatches }, (_, i) =>
-              `<th class="ba-th-batch">${i + 1}</th>`
-            ).join('')}
-            <th class="ba-th-total">Total</th>
+            ${showTeacher ? `<th class="ba-th-teacher">Teacher</th>` : ''}
+            ${showBatches ? Array.from({ length: maxBatches }, (_, i) => `<th class="ba-th-batch">${i + 1}</th>`).join('') : ''}
+            ${showTotal   ? `<th class="ba-th-total">Total</th>` : ''}
           </tr>
         </thead>
         <tbody>
@@ -422,14 +722,14 @@ function _tableHTML({ byTeacher, sortedTeachers, maxBatches, sessionBatches }) {
             const batches = byTeacher[name];
             return `
               <tr>
-                <td class="ba-td-teacher">${name}</td>
-                ${Array.from({ length: maxBatches }, (_, i) => {
+                ${showTeacher ? `<td class="ba-td-teacher">${name}</td>` : ''}
+                ${showBatches ? Array.from({ length: maxBatches }, (_, i) => {
                   const b = batches[i];
                   return `<td class="ba-td-batch">
                     ${b ? `<span class="ba-batch-tag">${b.tag}</span>` : `<span class="ba-dash">—</span>`}
                   </td>`;
-                }).join('')}
-                <td class="ba-td-total">${batches.length}</td>
+                }).join('') : ''}
+                ${showTotal ? `<td class="ba-td-total">${batches.length}</td>` : ''}
               </tr>`;
           }).join('')}
         </tbody>
@@ -442,11 +742,15 @@ function _tableHTML({ byTeacher, sortedTeachers, maxBatches, sessionBatches }) {
 export const BatchAllocationReport = {
   mount(container) {
     if (!container) return;
-    // Fresh state every mount — session must be selected each time
-    this._state = {
-      session: null,
-      applied: false,
-    };
+    // Persist state across rerenders — only reset on first mount
+    if (!this._state) {
+      this._state = {
+        session:       null,
+        applied:       false,
+        teacherFilter: [],
+        visibleCols:   new Set(BA_COLS.map(c => c.key)),
+      };
+    }
     renderBatchAllocation(container, this._state);
   }
 };
