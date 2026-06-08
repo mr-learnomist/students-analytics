@@ -2110,10 +2110,14 @@ function _attachWeeklyEvents() {
   const wSidebar = _root.querySelector('#weeklySidebar');
   if (wWrap && wSidebar) {
     wWrap.addEventListener('mouseenter', () => {
+      wWrap.style.width = '260px';
+      wWrap.style.minWidth = '260px';
       wSidebar.style.opacity = '1';
       wSidebar.style.pointerEvents = 'auto';
     });
     wWrap.addEventListener('mouseleave', () => {
+      wWrap.style.width = '32px';
+      wWrap.style.minWidth = '32px';
       wSidebar.style.opacity = '0';
       wSidebar.style.pointerEvents = 'none';
     });
