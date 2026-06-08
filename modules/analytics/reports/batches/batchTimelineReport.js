@@ -810,15 +810,13 @@ function renderBatchTimeline(el, state) {
 export const BatchTimelineReport = {
   mount(container) {
     if (!container) return;
-    // Persistent filter state across re-renders
-    if (!this._state) {
-      this._state = {
-        sort: 'oldest', search: '',
-        campFilter: [], discFilter: [], levelFilter: [],
-        subjFilter: [], sessionFilter: [], _filteredRows: [],
-        applied: false,
-      };
-    }
+    // Reset state every time report is opened — filters clear, Apply required fresh
+    this._state = {
+      sort: 'oldest', search: '',
+      campFilter: [], discFilter: [], levelFilter: [],
+      subjFilter: [], sessionFilter: [], _filteredRows: [],
+      applied: false,
+    };
     renderBatchTimeline(container, this._state);
   }
 };
