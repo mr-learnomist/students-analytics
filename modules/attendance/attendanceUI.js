@@ -1572,10 +1572,14 @@ function _attachDailyEvents() {
   const sidebar = _root.querySelector('#dailySidebar');
   if (wrap && sidebar) {
     wrap.addEventListener('mouseenter', () => {
+      wrap.style.width = '260px';
+      wrap.style.minWidth = '260px';
       sidebar.style.opacity = '1';
       sidebar.style.pointerEvents = 'auto';
     });
     wrap.addEventListener('mouseleave', () => {
+      wrap.style.width = '32px';
+      wrap.style.minWidth = '32px';
       sidebar.style.opacity = '0';
       sidebar.style.pointerEvents = 'none';
     });
@@ -2218,7 +2222,7 @@ function _renderWeeklyAttendance() {
           </div>
 
           <!-- Batch list -->
-          <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0"></div>
+          <div id="weeklyBatchList" style="flex:1;overflow-y:auto;min-height:0;scrollbar-width:thin;scrollbar-color:var(--surface4) transparent"></div>
         </aside>
       </div>
 
