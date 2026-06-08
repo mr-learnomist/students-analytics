@@ -301,16 +301,54 @@ function renderBatchTimeline(el, state) {
             Clear Filters
           </button>` : ''}
 
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto">
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto;position:relative">
           <select id="btSort" style="padding:6px 10px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:12.5px;color:var(--t1);cursor:pointer;font-family:inherit">
             <option value="oldest" ${state.sort==='oldest'?'selected':''}>Oldest First</option>
             <option value="newest" ${state.sort==='newest'?'selected':''}>Newest First</option>
           </select>
         </div>
         <span style="font-size:12px;color:var(--t3);flex-shrink:0;white-space:nowrap">${rows.length} batch${rows.length!==1?'es':''}</span>
-        <button class="bt-export-btn" id="btExportCSV" title="Export CSV">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+        <!-- Columns toggle -->
+        <button class="bt-export-btn" id="btColsBtn" title="Choose Columns">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
         </button>
+        <!-- CSV export -->
+        <button class="bt-export-btn" id="btExportCSV" title="Export CSV">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>
+          </svg>
+        </button>
+        <!-- PDF export -->
+        <button class="bt-export-btn" id="btExportPDF" title="Export PDF">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+        </button>
+        <!-- Column selector panel -->
+        <div id="btColPanel" style="display:none;position:absolute;right:0;top:calc(100% + 6px);
+          z-index:999;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+          box-shadow:0 8px 24px rgba(0,0,0,.14);padding:14px 16px;min-width:220px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+                      color:var(--t3);margin-bottom:10px">Visible Columns</div>
+          <div id="btColList" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div style="margin-top:12px;display:flex;gap:6px">
+            <button id="btColSelAll" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+              background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
+              All
+            </button>
+            <button id="btColReset" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+              background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
+              Reset
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Table -->
@@ -319,22 +357,26 @@ function renderBatchTimeline(el, state) {
           <thead>
             <tr style="background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:3">
               <th rowspan="2" style="padding:9px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--t3);width:44px;border-right:1px solid var(--border)">#</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Campus</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Subject</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--t3);width:52px">Batch</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Teacher</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Start</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">End</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Duration</th>
-              <th colspan="4" style="padding:6px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--t1);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">Hours</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3);min-width:120px">Completion</th>
-              <th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3);min-width:160px">Remarks</th>
+              ${vis('campus')    ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Campus</th>` : ''}
+              ${vis('subject')   ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Subject</th>` : ''}
+              ${vis('batchNo')   ? `<th rowspan="2" style="padding:9px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--t3);width:52px">Batch</th>` : ''}
+              ${vis('teacher')   ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Teacher</th>` : ''}
+              ${vis('session')   ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Session</th>` : ''}
+              ${vis('startDate') ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Start</th>` : ''}
+              ${vis('endDate')   ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">End</th>` : ''}
+              ${vis('duration')  ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Duration</th>` : ''}
+              ${(vis('hTeaching')||vis('hTest')||vis('hMock')||vis('hRevision'))
+                ? `<th colspan="${[vis('hTeaching'),vis('hTest'),vis('hMock'),vis('hRevision')].filter(Boolean).length}"
+                       style="padding:6px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--t1);
+                              border-bottom:1px solid var(--border);border-left:1px solid var(--border)">Hours</th>` : ''}
+              ${vis('completion')? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3);min-width:120px">Completion</th>` : ''}
+              ${vis('remarks')   ? `<th rowspan="2" style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3);min-width:160px">Remarks</th>` : ''}
             </tr>
             <tr style="background:var(--surface2);border-bottom:2px solid var(--border);position:sticky;top:39px;z-index:3">
-              <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2);border-left:1px solid var(--border)">Teaching</th>
-              <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2)">Test</th>
-              <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2)">Mock</th>
-              <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2)">Revision</th>
+              ${vis('hTeaching') ? `<th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2);border-left:1px solid var(--border)">Teaching</th>` : ''}
+              ${vis('hTest')     ? `<th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2)">Test</th>` : ''}
+              ${vis('hMock')     ? `<th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2)">Mock</th>` : ''}
+              ${vis('hRevision') ? `<th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--t2)">Revision</th>` : ''}
             </tr>
           </thead>
           <tbody>
@@ -349,21 +391,19 @@ function renderBatchTimeline(el, state) {
                 <tr style="border-bottom:1px solid var(--border);transition:background .12s"
                     onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
                   <td style="padding:10px 12px;text-align:center;color:var(--t3);font-size:12px;border-right:1px solid var(--border)">${i+1}</td>
-                  <td style="padding:10px 12px;font-size:12.5px;color:var(--t1)">${r.campus}</td>
-                  <td style="padding:10px 12px;font-size:12.5px;font-weight:700;color:var(--blue)">${r.subject}</td>
-                  <td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:700;color:var(--t1)">${r.batchNo}</td>
-                  <td style="padding:10px 12px;font-size:12.5px;color:var(--t2)">${r.teacher}</td>
-                  <td style="padding:10px 12px;font-size:12.5px;color:var(--t2);white-space:nowrap">${fmt(r.startDate)}</td>
-                  <td style="padding:10px 12px;font-size:12.5px;color:var(--t2);white-space:nowrap">${fmt(r.endDate)}</td>
-                  <td style="padding:10px 12px;white-space:nowrap">${(() => {
-                    const dur = calcDuration(r.startDate, r.endDate);
-                    return dur ? `<span style="font-size:11.5px;font-weight:600;color:var(--blue);background:var(--blue-dim);padding:2px 8px;border-radius:8px">${dur}</span>` : '<span style="color:var(--t4)">—</span>';
-                  })()}</td>
-                  <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--blue);border-left:1px solid var(--border)">${r.hrs.teaching}</td>
-                  <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--yellow)">${r.hrs.test}</td>
-                  <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--violet)">${r.hrs.mock}</td>
-                  <td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--cyan)">${r.hrs.revision||0}</td>
-                  <td style="padding:10px 12px">${pctBar(r.completion)}</td>
+                  ${vis('campus')    ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t1)">${r.campus}</td>` : ''}
+                  ${vis('subject')   ? `<td style="padding:10px 12px;font-size:12.5px;font-weight:700;color:var(--blue)">${r.subject}</td>` : ''}
+                  ${vis('batchNo')   ? `<td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:700;color:var(--t1)">${r.batchNo}</td>` : ''}
+                  ${vis('teacher')   ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t2)">${r.teacher}</td>` : ''}
+                  ${vis('session')   ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t2);white-space:nowrap">${r.sessionPeriod||'—'}</td>` : ''}
+                  ${vis('startDate') ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t2);white-space:nowrap">${fmt(r.startDate)}</td>` : ''}
+                  ${vis('endDate')   ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t2);white-space:nowrap">${fmt(r.endDate)}</td>` : ''}
+                  ${vis('duration')  ? `<td style="padding:10px 12px;white-space:nowrap">${(() => { const dur = calcDuration(r.startDate, r.endDate); return dur ? \`<span style="font-size:11.5px;font-weight:600;color:var(--blue);background:var(--blue-dim);padding:2px 8px;border-radius:8px">\${dur}</span>\` : '<span style="color:var(--t4)">—</span>'; })()}</td>` : ''}
+                  ${vis('hTeaching') ? `<td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--blue);border-left:1px solid var(--border)">${r.hrs.teaching}</td>` : ''}
+                  ${vis('hTest')     ? `<td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--yellow)">${r.hrs.test}</td>` : ''}
+                  ${vis('hMock')     ? `<td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--violet)">${r.hrs.mock}</td>` : ''}
+                  ${vis('hRevision') ? `<td style="padding:10px 12px;text-align:center;font-size:12px;font-weight:600;color:var(--cyan)">${r.hrs.revision||0}</td>` : ''}
+                  ${vis('completion')? `<td style="padding:10px 12px">${pctBar(r.completion)}</td>` : ''}
                   <td style="padding:10px 12px">
                     <div style="display:flex;align-items:center;gap:6px">
                       <span class="bt-rem-text" data-bid="${r.batchId}"
@@ -388,6 +428,29 @@ function renderBatchTimeline(el, state) {
     </div>`;
 
   // ── Init filters ─────────────────────────────────────────────
+
+  // ── All available columns ────────────────────────────────────
+  const ALL_COLS = [
+    { key:'campus',     label:'Campus',      def:true  },
+    { key:'subject',    label:'Subject',     def:true  },
+    { key:'batchNo',    label:'Batch #',     def:true  },
+    { key:'teacher',    label:'Teacher',     def:true  },
+    { key:'session',    label:'Session',     def:true  },
+    { key:'startDate',  label:'Start Date',  def:true  },
+    { key:'endDate',    label:'End Date',    def:true  },
+    { key:'duration',   label:'Duration',    def:true  },
+    { key:'hTeaching',  label:'Teaching h',  def:true  },
+    { key:'hTest',      label:'Test h',      def:true  },
+    { key:'hMock',      label:'Mock h',      def:true  },
+    { key:'hRevision',  label:'Revision h',  def:false },
+    { key:'completion', label:'Completion',  def:true  },
+    { key:'remarks',    label:'Remarks',     def:true  },
+  ];
+  if (!state.visibleCols) {
+    state.visibleCols = new Set(ALL_COLS.filter(c => c.def).map(c => c.key));
+  }
+  const vis = (key) => state.visibleCols.has(key);
+
   const rerender = () => renderBatchTimeline(el, state);
 
   const campWrap  = el.querySelector('#btCampFilter');
@@ -483,34 +546,171 @@ function renderBatchTimeline(el, state) {
     });
   });
 
-  // Export CSV
-  el.querySelector('#btExportCSV')?.addEventListener('click', () => {
+  // ── Column panel ────────────────────────────────────────────
+  const colPanel  = el.querySelector('#btColPanel');
+  const colList   = el.querySelector('#btColList');
+  const colsBtn   = el.querySelector('#btColsBtn');
+
+  const renderColList = () => {
+    colList.innerHTML = ALL_COLS.map(c => `
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;
+                    font-size:12.5px;color:var(--t1);padding:3px 0;user-select:none">
+        <input type="checkbox" value="${c.key}"
+          style="width:14px;height:14px;cursor:pointer;accent-color:var(--blue)"
+          ${state.visibleCols.has(c.key) ? 'checked' : ''}>
+        ${c.label}
+      </label>`).join('');
+    colList.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) state.visibleCols.add(cb.value);
+        else            state.visibleCols.delete(cb.value);
+        rerender();
+      });
+    });
+  };
+  renderColList();
+
+  colsBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = colPanel.style.display !== 'none';
+    colPanel.style.display = open ? 'none' : 'block';
+    if (!open) renderColList();
+  });
+
+  el.querySelector('#btColSelAll')?.addEventListener('click', () => {
+    ALL_COLS.forEach(c => state.visibleCols.add(c.key));
+    rerender();
+  });
+  el.querySelector('#btColReset')?.addEventListener('click', () => {
+    state.visibleCols = new Set(ALL_COLS.filter(c => c.def).map(c => c.key));
+    rerender();
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#btColPanel') && !e.target.closest('#btColsBtn')) {
+      if (colPanel) colPanel.style.display = 'none';
+    }
+  });
+
+  // ── Helper: get export data for selected columns ──────────
+  const getExportData = () => {
     const exportRows = state._filteredRows || [];
-    if (!exportRows.length) return;
     const remarksExp = getRemarks();
+    const COL_MAP = {
+      campus:     r => r.campus,
+      subject:    r => r.subject,
+      batchNo:    r => r.batchNo || '—',
+      teacher:    r => r.teacher,
+      session:    r => r.sessionPeriod || '—',
+      startDate:  r => r.startDate || '—',
+      endDate:    r => r.endDate   || '—',
+      duration:   r => calcDuration(r.startDate, r.endDate) || '—',
+      hTeaching:  r => (r.hrs || calcHours(r.rows||[])).teaching,
+      hTest:      r => (r.hrs || calcHours(r.rows||[])).test,
+      hMock:      r => (r.hrs || calcHours(r.rows||[])).mock,
+      hRevision:  r => (r.hrs || calcHours(r.rows||[])).revision || 0,
+      completion: r => `${r.completion}%`,
+      remarks:    r => remarksExp[r.batchId] || '',
+    };
+    const activeCols = ALL_COLS.filter(c => state.visibleCols.has(c.key));
+    const headers    = activeCols.map(c => c.label);
+    const dataRows   = exportRows.map(r => activeCols.map(c => String(COL_MAP[c.key](r) ?? '—')));
+    return { headers, dataRows, exportRows };
+  };
+
+  // ── CSV Export ───────────────────────────────────────────────
+  el.querySelector('#btExportCSV')?.addEventListener('click', () => {
+    const { headers, dataRows, exportRows } = getExportData();
+    if (!exportRows.length) return;
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-    const headers = ['Campus','Discipline','Subject','Batch #','Teacher','Session','Start Date','End Date','Duration','Teaching h','Test h','Mock h','Revision h','Completion %','Remarks'];
-    const dataRows = exportRows.map(r => {
-      const discLabel = r._disc ? r._disc.abbreviation : '—';
-      const rem = remarksExp[r.batchId] || '';
-      const h   = r.hrs || calcHours(r.rows||[]);
-      return [r.campus, discLabel, r.subject, r.batchNo||'—', r.teacher, r.sessionPeriod||'—',
-              r.startDate||'—', r.endDate||'—', calcDuration(r.startDate, r.endDate)||'—',
-              h.teaching, h.test, h.mock, h.revision||0, `${r.completion}%`, rem];
-    });
     const csv = [
       `Batch Timeline Report — Generated: ${dateStr}`,
       `Total Batches: ${exportRows.length}`,
       '',
       headers.join(','),
-      ...dataRows.map(row => row.map(cell => `"${(cell||'').toString().replace(/"/g,'""')}"`).join(','))
+      ...dataRows.map(row => row.map(cell => `"${cell.replace(/"/g,'""')}"`).join(','))
     ].join('\n');
     const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `batch-timeline-${dateStr.replace(/ /g,'-')}.csv`; a.click();
     URL.revokeObjectURL(url);
+  });
+
+  // ── PDF Export ───────────────────────────────────────────────
+  el.querySelector('#btExportPDF')?.addEventListener('click', () => {
+    const { headers, dataRows, exportRows } = getExportData();
+    if (!exportRows.length) return;
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+    const thCells = headers.map(h =>
+      `<th style="background:#1e40af;color:#fff;font-size:10px;font-weight:700;
+                  text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;
+                  white-space:nowrap;text-align:left">${h}</th>`
+    ).join('');
+
+    const tdRows = dataRows.map((row, idx) =>
+      `<tr>${row.map((cell, ci) => {
+        const isFirst = ci === 0;
+        const bg = idx % 2 === 0 ? '#f8faff' : '#fff';
+        return `<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;
+                            font-size:11px;color:#334155;background:${bg};
+                            ${isFirst ? 'font-weight:600;color:#1e293b;' : ''}">${cell}</td>`;
+      }).join('')}</tr>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<title>Batch Timeline Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1e293b;background:#fff;padding:20px 24px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;
+          border-bottom:2.5px solid #2563eb;padding-bottom:12px;margin-bottom:14px}
+  .title{font-size:20px;font-weight:700;color:#1e40af}
+  .subtitle{font-size:11px;color:#64748b;margin-top:2px}
+  .meta{text-align:right;font-size:10.5px;color:#64748b;line-height:1.6}
+  .meta strong{color:#1e293b;font-size:11px}
+  .stat-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  .stat{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:6px 14px;text-align:center}
+  .stat-n{font-size:18px;font-weight:700;color:#2563eb}
+  .stat-l{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px}
+  table{width:100%;border-collapse:collapse}
+  .footer{margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;
+          display:flex;justify-content:space-between;font-size:9.5px;color:#94a3b8}
+  @media print{body{padding:12px 14px}@page{size:A4 landscape;margin:10mm}.no-print{display:none}}
+</style></head><body>
+  <div class="header">
+    <div>
+      <div class="title">Batch Timeline Report</div>
+      <div class="subtitle">Columns: ${headers.join(' · ')}</div>
+    </div>
+    <div class="meta"><strong>${dateStr}</strong><br>${timeStr}</div>
+  </div>
+  <div class="stat-row">
+    <div class="stat"><div class="stat-n">${exportRows.length}</div><div class="stat-l">Total Batches</div></div>
+  </div>
+  <table>
+    <thead><tr>${thCells}</tr></thead>
+    <tbody>${tdRows}</tbody>
+  </table>
+  <div class="footer">
+    <span>Batch Timeline Report &nbsp;|&nbsp; ${dateStr} at ${timeStr}</span>
+    <span>${exportRows.length} batch${exportRows.length !== 1 ? 'es' : ''}</span>
+  </div>
+  <div class="no-print" style="margin-top:18px;text-align:center">
+    <button onclick="window.print()"
+      style="padding:9px 28px;background:#2563eb;color:#fff;border:none;border-radius:8px;
+             font-size:13px;font-weight:600;cursor:pointer">Print / Save as PDF</button>
+  </div>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
   });
 }
 
