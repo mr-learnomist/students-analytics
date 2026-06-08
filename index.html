@@ -212,7 +212,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
     </div>
     <div class="login-field">
       <label class="login-label">Password</label>
-      <input id="loginPass" class="login-input" type="password" placeholder="Enter password" autocomplete="new-password"/>
+      <input id="loginPass" class="login-input" type="password" placeholder="Enter password"  autocomplete="new-password" data-lpignore="true" data-form-type="other" readonly onfocus="this.removeAttribute('readonly')"/>
       <div id="loginErr" class="login-err"></div>
     </div>
     <button id="loginBtn" class="login-btn">Sign In</button>
