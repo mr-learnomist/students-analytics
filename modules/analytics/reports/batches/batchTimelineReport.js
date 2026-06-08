@@ -632,7 +632,7 @@ function renderBatchTimeline(el, state) {
                   padding:24px 24px 20px;min-width:320px;max-width:420px;width:90vw">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <div style="font-size:15px;font-weight:700;color:var(--t1)">
-            ${type === 'csv' ? '📄' : '🖨️'} ${type.toUpperCase()} — Columns Select Karein
+            ${type === 'csv' ? '📄' : '🖨️'} ${type.toUpperCase()} — Select Columns
           </div>
           <button id="expModalClose" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;
             border:none;background:var(--surface2);border-radius:6px;cursor:pointer;color:var(--t3);font-size:16px">✕</button>
@@ -641,11 +641,11 @@ function renderBatchTimeline(el, state) {
         <div style="display:flex;gap:8px;margin-bottom:12px">
           <button id="expSelAll" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
             background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
-            ✔ Sab Select
+            ✔ Select All
           </button>
           <button id="expSelNone" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
             background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
-            ✕ Sab Hatao
+            ✕ Deselect All
           </button>
         </div>
 
@@ -669,7 +669,7 @@ function renderBatchTimeline(el, state) {
           </button>
           <button id="expModalConfirm" style="flex:2;padding:9px 0;border-radius:8px;border:none;
             background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
-            ${type === 'csv' ? '⬇ CSV Export Karo' : '🖨 PDF Export Karo'}
+            ${type === 'csv' ? '⬇ Export CSV' : '🖨 Export PDF'}
           </button>
         </div>
       </div>`;
@@ -699,7 +699,7 @@ function renderBatchTimeline(el, state) {
     });
 
     overlay.querySelector('#expModalConfirm').addEventListener('click', () => {
-      if (!picked.size) { alert('Kam az kam ek column select karein!'); return; }
+      if (!picked.size) { alert('Please select at least one column!'); return; }
       close();
       onConfirm([...picked]);
     });
