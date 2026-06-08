@@ -97,7 +97,7 @@ function showLogin() {
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appShell').style.display    = 'none';
   document.title = 'EduTrack — Login';
-  setTimeout(() => document.getElementById('loginUser')?.focus(), 100);
+  // setTimeout(() => document.getElementById('loginUser')?.focus(), 100);
 }
 
 function wireLogin() {
