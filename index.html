@@ -206,6 +206,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
     </div>
     <h1 class="login-title">Welcome to EduTrack</h1>
     <p class="login-sub">Sign in to access your institution dashboard.</p>
+    <form autocomplete="off" onsubmit="return false;">
     <div class="login-field">
       <label class="login-label">Username</label>
       <input id="loginUser" class="login-input" type="text" placeholder="Enter username" autocomplete="off"/>
@@ -216,6 +217,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
       <div id="loginErr" class="login-err"></div>
     </div>
     <button id="loginBtn" class="login-btn">Sign In</button>
+    </form>
     <div id="resetWrap" style="display:none;margin-top:10px;text-align:center">
       <span style="font-size:12px;color:var(--t3)">Data issue? </span>
       <button id="resetDataBtn" style="font-size:12px;color:var(--blue);font-weight:600;background:none;border:none;cursor:pointer;padding:0">Reset & reload demo data</button>
