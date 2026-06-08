@@ -4,7 +4,8 @@
 // Each card mounts one report from reports/teachers/
 // ============================================================
 
-import { TeacherListReport } from '../reports/teachers/teacherListReport.js';
+import { TeacherListReport }      from '../reports/teachers/teacherListReport.js';
+import { BatchAllocationReport }  from '../reports/teachers/batchAllocationReport.js';
 
 // Teacher report card registry
 // Naya report add karna ho to yahan push karo — bas
@@ -21,6 +22,20 @@ const TEACHER_REPORTS = [
     color:    'var(--blue)',
     colorDim: 'var(--blue-dim)',
     module:   TeacherListReport,
+  },
+  {
+    id:       'batchAllocation',
+    title:    'Batch Allocation',
+    subtitle: 'Session-wise teacher batch load',
+    icon:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                 <rect x="3" y="3" width="18" height="18" rx="2"/>
+                 <line x1="3" y1="9" x2="21" y2="9"/>
+                 <line x1="3" y1="15" x2="21" y2="15"/>
+                 <line x1="9" y1="9" x2="9" y2="21"/>
+               </svg>`,
+    color:    'var(--blue)',
+    colorDim: 'var(--blue-dim)',
+    module:   BatchAllocationReport,
   },
   // Naya report add karna ho to yahan push karo — bas
   // {
