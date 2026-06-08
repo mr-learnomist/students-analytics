@@ -592,8 +592,8 @@ function renderBatchTimeline(el, state) {
     }
   });
 
-  // ── Helper: get export data for selected columns ──────────
-  const getExportData = () => {
+  // ── Helper: get export data for given column keys ────────────
+  const getExportData = (selectedKeys) => {
     const exportRows = state._filteredRows || [];
     const remarksExp = getRemarks();
     const COL_MAP = {
@@ -612,35 +612,126 @@ function renderBatchTimeline(el, state) {
       completion: r => `${r.completion}%`,
       remarks:    r => remarksExp[r.batchId] || '',
     };
-    const activeCols = ALL_COLS.filter(c => state.visibleCols.has(c.key));
+    const activeCols = ALL_COLS.filter(c => selectedKeys.includes(c.key));
     const headers    = activeCols.map(c => c.label);
     const dataRows   = exportRows.map(r => activeCols.map(c => String(COL_MAP[c.key](r) ?? '—')));
     return { headers, dataRows, exportRows };
   };
 
+  // ── Column picker modal (shown before any export) ─────────────
+  const showExportColModal = (type, onConfirm) => {
+    // Default: currently visible cols, else all
+    const defaultKeys = ALL_COLS.filter(c => state.visibleCols.has(c.key)).map(c => c.key);
+    let picked = new Set(defaultKeys);
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center`;
+
+    overlay.innerHTML = `
+      <div style="background:var(--surface,#fff);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.22);
+                  padding:24px 24px 20px;min-width:320px;max-width:420px;width:90vw">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div style="font-size:15px;font-weight:700;color:var(--t1)">
+            ${type === 'csv' ? '📄' : '🖨️'} ${type.toUpperCase()} — Columns Select Karein
+          </div>
+          <button id="expModalClose" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+            border:none;background:var(--surface2);border-radius:6px;cursor:pointer;color:var(--t3);font-size:16px">✕</button>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button id="expSelAll" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+            background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
+            ✔ Sab Select
+          </button>
+          <button id="expSelNone" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+            background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
+            ✕ Sab Hatao
+          </button>
+        </div>
+
+        <div id="expColList" style="display:flex;flex-direction:column;gap:5px;margin-bottom:18px;
+          max-height:300px;overflow-y:auto;padding-right:4px">
+          ${ALL_COLS.map(c => `
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:7px 10px;
+                          border-radius:8px;border:1px solid var(--border);background:var(--surface2);
+                          font-size:13px;color:var(--t1);user-select:none;transition:background .1s"
+                   onmouseover="this.style.background='var(--blue-dim)'" onmouseout="this.style.background='var(--surface2)'">
+              <input type="checkbox" value="${c.key}" ${picked.has(c.key) ? 'checked' : ''}
+                     style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue);flex-shrink:0"/>
+              <span>${c.label}</span>
+            </label>`).join('')}
+        </div>
+
+        <div style="display:flex;gap:10px">
+          <button id="expModalCancel" style="flex:1;padding:9px 0;border-radius:8px;border:1px solid var(--border);
+            background:var(--surface2);color:var(--t2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+            Cancel
+          </button>
+          <button id="expModalConfirm" style="flex:2;padding:9px 0;border-radius:8px;border:none;
+            background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
+            ${type === 'csv' ? '⬇ CSV Export Karo' : '🖨 PDF Export Karo'}
+          </button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    // Sync picked set with checkboxes
+    overlay.querySelectorAll('#expColList input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        cb.checked ? picked.add(cb.value) : picked.delete(cb.value);
+      });
+    });
+
+    const close = () => document.body.removeChild(overlay);
+
+    overlay.querySelector('#expModalClose').addEventListener('click', close);
+    overlay.querySelector('#expModalCancel').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#expSelAll').addEventListener('click', () => {
+      picked = new Set(ALL_COLS.map(c => c.key));
+      overlay.querySelectorAll('#expColList input[type=checkbox]').forEach(cb => cb.checked = true);
+    });
+    overlay.querySelector('#expSelNone').addEventListener('click', () => {
+      picked.clear();
+      overlay.querySelectorAll('#expColList input[type=checkbox]').forEach(cb => cb.checked = false);
+    });
+
+    overlay.querySelector('#expModalConfirm').addEventListener('click', () => {
+      if (!picked.size) { alert('Kam az kam ek column select karein!'); return; }
+      close();
+      onConfirm([...picked]);
+    });
+  };
+
   // ── CSV Export ───────────────────────────────────────────────
   el.querySelector('#btExportCSV')?.addEventListener('click', () => {
-    const { headers, dataRows, exportRows } = getExportData();
-    if (!exportRows.length) return;
-    const now     = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-    const csv = [
-      `Batch Timeline Report — Generated: ${dateStr}`,
-      `Total Batches: ${exportRows.length}`,
-      '',
-      headers.join(','),
-      ...dataRows.map(row => row.map(cell => `"${cell.replace(/"/g,'""')}"`).join(','))
-    ].join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = `batch-timeline-${dateStr.replace(/ /g,'-')}.csv`; a.click();
-    URL.revokeObjectURL(url);
+    if (!(state._filteredRows||[]).length) return;
+    showExportColModal('csv', (selectedKeys) => {
+      const { headers, dataRows, exportRows } = getExportData(selectedKeys);
+      const now     = new Date();
+      const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+      const csv = [
+        `Batch Timeline Report — Generated: ${dateStr}`,
+        `Total Batches: ${exportRows.length}`,
+        '',
+        headers.join(','),
+        ...dataRows.map(row => row.map(cell => `"${cell.replace(/"/g,'""')}"`).join(','))
+      ].join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `batch-timeline-${dateStr.replace(/ /g,'-')}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    });
   });
 
   // ── PDF Export ───────────────────────────────────────────────
   el.querySelector('#btExportPDF')?.addEventListener('click', () => {
-    const { headers, dataRows, exportRows } = getExportData();
+    if (!(state._filteredRows||[]).length) return;
+    showExportColModal('pdf', (selectedKeys) => {
+      const { headers, dataRows, exportRows } = getExportData(selectedKeys);
     if (!exportRows.length) return;
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
@@ -711,7 +802,8 @@ function renderBatchTimeline(el, state) {
     w.document.write(html);
     w.document.close();
     setTimeout(() => w.print(), 500);
-  });
+    }); // end showExportColModal callback
+  }); // end btExportPDF click
 }
 
 // ── Export ────────────────────────────────────────────────────
