@@ -645,23 +645,10 @@ export const ConversionTracking = {
   _bfBatches:  [],
   _bfActive:   false,
 
-  // ── Has any filter been set? ──────────────────────────────
-  _hasAnyFilter() {
-    return this._bfActive ||
-      this._activeTrack !== 'fa' ||
-      Object.values(this._subjectFilters).some(f =>
-        (f.sessions && f.sessions.length) || (f.batches && f.batches.length)
-      );
-  },
-
-  // ── Report is shown only after user clicks "Generate" ────
-  _reportGenerated: false,
-
   mount(container) {
     if (!container) return;
     injectStyles();
     this._container = container;
-    this._reportGenerated = false;
     this._render();
   },
 
@@ -679,7 +666,6 @@ export const ConversionTracking = {
           <div id="ctBfNavBtn" style="padding:0 12px"></div>
         </div>
         <div id="ctBatchFilter"></div>
-        <div id="ctGenerateBar"></div>
         <div id="ctFilterBar"></div>
         <div id="ctBody"></div>
       </div>
@@ -699,7 +685,6 @@ export const ConversionTracking = {
       this._bfSessions = [];
       this._bfBatches  = [];
       this._bfActive   = false;
-      this._reportGenerated = false;
       c.querySelectorAll('.ct-track-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.track === this._activeTrack)
       );
@@ -707,55 +692,27 @@ export const ConversionTracking = {
     });
 
     this._renderBody();
-
-    // Wire placeholder generate button (rendered inside body before report)
-    const wirePlaceholderBtn = () => {
-      const btn = this._container.querySelector('#ctPlaceholderGenBtn');
-      btn?.addEventListener('click', () => {
-        this._reportGenerated = true;
-        this._renderBody();
-      });
-    };
-    wirePlaceholderBtn();
   },
 
   _renderBody() {
     const track    = TRACKS.find(t => t.id === this._activeTrack);
+    const allData  = this._buildData(track.chain);          // full unfiltered data
     const navBtnEl = this._container.querySelector('#ctBfNavBtn');
     const bfEl     = this._container.querySelector('#ctBatchFilter');
-    const genBar   = this._container.querySelector('#ctGenerateBar');
     const filterEl = this._container.querySelector('#ctFilterBar');
     const body     = this._container.querySelector('#ctBody');
 
     // ── Render batch filter nav button ────────────────────────
     this._renderBfNavButton(navBtnEl, track);
 
-    // ── Render batch filter panel (needs allData for options) ─
-    // Only build allData if filter panel is open (cheap check)
-    const allData = this._bfOpen || this._reportGenerated
-      ? this._buildData(track.chain)
-      : this._buildDataLite(track.chain);
-
+    // ── Render batch filter panel ─────────────────────────────
     this._renderBatchFilter(bfEl, allData, track);
 
-    // ── Generate bar (always visible) ─────────────────────────
-    this._renderGenerateBar(genBar, track);
-
-    // ── If not yet generated, show placeholder ────────────────
-    if (!this._reportGenerated) {
-      filterEl.innerHTML = '';
-      body.innerHTML = this._placeholderHTML(track);
-      return;
-    }
-
-    // ── Report is generated — build full data & render ────────
-    const fullData = this._bfOpen ? allData : this._buildData(track.chain);
-
     // ── Render filter bar ────────────────────────────────────
-    this._renderFilterBar(filterEl, fullData, track.chain);
+    this._renderFilterBar(filterEl, allData, track.chain);
 
     // ── No data at all ───────────────────────────────────────
-    if (!fullData.students.length) {
+    if (!allData.students.length) {
       body.innerHTML = `
         <div class="ct-empty">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
@@ -771,13 +728,14 @@ export const ConversionTracking = {
     }
 
     // ── Apply filters ────────────────────────────────────────
+    // If batch filter is active, it takes priority and drives the table
     let data;
-    let visibleChain = track.chain;
+    let visibleChain = track.chain; // which subject columns to show
     if (this._bfActive) {
-      data         = this._applyBatchFilter(fullData, track.chain);
+      data         = this._applyBatchFilter(allData, track.chain);
       visibleChain = this._bfVisibleChain(track.chain);
     } else {
-      data = this._applyFilters(fullData, track.chain);
+      data = this._applyFilters(allData, track.chain);
     }
 
     if (!data.students.length) {
@@ -801,7 +759,7 @@ export const ConversionTracking = {
     `;
 
     // Attach clickable popover logic to group headers (only when bf not active)
-    if (!this._bfActive) this._attachHeaderPopovers(fullData, track.chain);
+    if (!this._bfActive) this._attachHeaderPopovers(allData, track.chain);
 
     // Animate progress bars
     requestAnimationFrame(() => {
@@ -809,112 +767,6 @@ export const ConversionTracking = {
         setTimeout(() => { b.style.width = b.dataset.w; }, 120)
       );
     });
-  },
-
-  // ── Placeholder: shown before "Generate" is clicked ───────
-  _placeholderHTML(track) {
-    const chain = track.chain;
-    return `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-                  gap:18px;padding:60px 24px;text-align:center">
-        <div style="width:64px;height:64px;border-radius:18px;background:var(--blue-dim);
-                    display:flex;align-items:center;justify-content:center">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--blue)"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-        </div>
-        <div>
-          <div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:6px">
-            ${track.label} — Conversion Report
-          </div>
-          <div style="font-size:13px;color:var(--t3);max-width:360px;line-height:1.6">
-            Apply filters above (optional), then click
-            <strong style="color:var(--blue)">Generate Report</strong>
-            to load student data.
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:4px;
-                    background:var(--surface2);border:1px solid var(--border);
-                    border-radius:12px;padding:14px 20px;font-size:12.5px;color:var(--t3)">
-          ${chain.map((code, i) => `
-            <span style="font-weight:700;color:var(--blue)">${code}</span>
-            ${i < chain.length - 1 ? `<span style="color:var(--t4)">→</span>` : ''}
-          `).join('')}
-          <span style="color:var(--t4)">·</span>
-          <span>Conversion funnel</span>
-        </div>
-        <button id="ctPlaceholderGenBtn"
-          style="display:inline-flex;align-items:center;gap:8px;padding:10px 24px;
-                 background:var(--blue);color:#fff;border:none;border-radius:10px;
-                 font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;
-                 box-shadow:0 2px 8px rgba(59,130,246,.25);transition:opacity .15s">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          Generate Report
-        </button>
-      </div>`;
-  },
-
-  // ── Generate bar (always shown below filters) ──────────────
-  _renderGenerateBar(el, track) {
-    if (!el) return;
-    // If report not generated yet — show prominent generate button
-    // If already generated — show a subtle "Refresh" button
-    if (!this._reportGenerated) {
-      el.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 0 4px">
-          <button id="ctGenerateBtn"
-            style="display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 20px;
-                   background:var(--blue);color:#fff;border:none;border-radius:8px;
-                   font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
-                   box-shadow:0 2px 8px rgba(59,130,246,.2);transition:opacity .15s">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            Generate Report
-          </button>
-          <span style="font-size:12px;color:var(--t3)">
-            Set filters first (optional), then generate
-          </span>
-        </div>`;
-    } else {
-      // Compact refresh row when report is already showing
-      const track = TRACKS.find(t => t.id === this._activeTrack);
-      const anyFilter = this._bfActive ||
-        Object.values(this._subjectFilters).some(f => (f.sessions||[]).length || (f.batches||[]).length);
-      el.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 2px">
-          <button id="ctGenerateBtn"
-            style="display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 14px;
-                   background:var(--surface2);color:var(--blue);border:1px solid var(--blue);
-                   border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;
-                   font-family:inherit;transition:all .15s">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-          ${anyFilter ? `<span style="font-size:11.5px;color:var(--t3)">Filters active — click Refresh to update results</span>` : ''}
-        </div>`;
-    }
-
-    // Wire both Generate and Refresh buttons
-    el.querySelector('#ctGenerateBtn')?.addEventListener('click', () => {
-      this._reportGenerated = true;
-      this._renderBody();
-    });
-  },
-
-  // ── Lightweight data build (just counts, no full student map) ─
-  // Used when filter panel is closed and report not shown yet
-  _buildDataLite(chain) {
-    return { students: [], counts: Object.fromEntries(chain.map(c => [c, 0])) };
   },
 
   // ── Batch Filter nav button (sits in track nav row) ────────
@@ -1249,7 +1101,6 @@ export const ConversionTracking = {
                          this._bfBatches.length > 0  || !!this._bfSubject;
       this._bfOpen     = false;
       this._subjectFilters = {};
-      this._reportGenerated = true;  // auto-generate on Apply
       this._renderBody();
     });
 
