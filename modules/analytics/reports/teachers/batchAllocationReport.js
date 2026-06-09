@@ -287,10 +287,7 @@ function renderBatchAllocation(el, state) {
     .map(c => ({ val: c.id, label: c.campusName.replace(/\s*campus$/i, '').trim() }));
   const discItems    = disciplines.filter(d => assigned.some(b => b.disciplineId === d.id))
     .map(d => ({ val: d.id, label: d.abbreviation }));
-  const levelItems   = levels.filter(l => assigned.some(b => {
-    const lid = subjects.find(s => s.id === b.subjectId)?.levelId || b.levelId;
-    return lid === l.id;
-  })).map(l => ({ val: l.id, label: l.levelName || l.name || l.id }));
+
   const subjItems    = subjects.filter(s => assigned.some(b => b.subjectId === s.id))
     .map(s => ({ val: s.id, label: `${s.subjectCode} — ${s.subjectName}` }));
   const sessionItems = uniqueSessions.map(s => ({ val: s, label: s }));
