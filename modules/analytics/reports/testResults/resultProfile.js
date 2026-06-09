@@ -555,7 +555,7 @@ export const ResultProfile = {
   // ── Attach all filter events ──────────────────────────────────
   _attachFilterEvents(c) {
     // Toggle open/close
-    c.querySelector('#rpFilterToggle')?.addEventListener('click', () => {
+    const onFilterToggleClick = () => {
       this._filterOpen = !this._filterOpen;
       const body  = c.querySelector('#rpFilterBody');
       const arrow = c.querySelector('.rp-filter-arrow');
@@ -565,8 +565,9 @@ export const ResultProfile = {
       const toggle = c.querySelector('#rpFilterToggle');
       if (toggle) toggle.outerHTML = this._filterToggleHTML();
       // Re-bind toggle click (outerHTML replaces node)
-      c.querySelector('#rpFilterToggle')?.addEventListener('click', arguments.callee);
-    });
+      c.querySelector('#rpFilterToggle')?.addEventListener('click', onFilterToggleClick);
+    };
+    c.querySelector('#rpFilterToggle')?.addEventListener('click', onFilterToggleClick);
 
     this._bindCascadeSelects(c);
 
