@@ -1308,6 +1308,7 @@ function _initLPAsgMF(wrap, label, items, selectedVals, onChange, multiSelect = 
 // ═══════════════════════════════════════════════════
 function renderAssignTab(container) {
   const el       = container.querySelector('#lp-panel-assign');
+  if (!el) return;
   const allBatch = Auth.filterByCampus(AppState.get('batches') || [], 'campusId');
   const allMeta  = getLPMeta();
   const discs    = AppState.get('disciplines') || [];
