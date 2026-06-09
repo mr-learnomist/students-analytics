@@ -41,7 +41,6 @@ export const BatchReportsTab = {
   mount(container) {
     container.innerHTML = this._html();
     this._bindEvents(container);
-    this._mountPreviews(container);
   },
 
   _html() {
