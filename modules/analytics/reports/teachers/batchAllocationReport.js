@@ -593,6 +593,7 @@ function renderBatchAllocation(el, state) {
     <div>
       <div class="title">Batch Allocation Report</div>
       <div class="subtitle">${sessions.join(' · ')}</div>
+      ${pdfFilterLines.length ? `<div style="margin-top:5px;font-size:10.5px;color:#475569;line-height:1.7">${pdfFilterLines.map(f => `<span style="display:inline-block;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:1px 7px;margin-right:5px;margin-top:3px">${f}</span>`).join('')}</div>` : ''}
     </div>
     <div class="meta"><strong>${dateStr}</strong><br>${timeStr}</div>
   </div>
