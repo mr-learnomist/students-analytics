@@ -467,8 +467,25 @@ function renderBatchAllocation(el, state) {
       allRows.push([]);
     });
 
+    // Build filter summary
+    const filterLines = [];
+    if (state.campFilter?.length) {
+      const names = state.campFilter.map(id => campuses.find(c => c.id === id)?.campusName || id);
+      filterLines.push(`Campus: ${names.join(', ')}`);
+    }
+    if (state.discFilter?.length) {
+      const names = state.discFilter.map(id => disciplines.find(d => d.id === id)?.abbreviation || id);
+      filterLines.push(`Discipline: ${names.join(', ')}`);
+    }
+    if (state.subjFilter?.length) {
+      const names = state.subjFilter.map(id => subjects.find(s => s.id === id)?.subjectCode || id);
+      filterLines.push(`Subject: ${names.join(', ')}`);
+    }
+    if (state.sessionFilter?.length) filterLines.push(`Session: ${state.sessionFilter.join(', ')}`);
+
     const csv = [
       `Batch Allocation Report — Generated: ${dateStr}`,
+      filterLines.length ? `Filters: ${filterLines.join(' | ')}` : 'Filters: None',
       '',
       ...allRows.map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
     ].join('\n');
@@ -486,6 +503,22 @@ function renderBatchAllocation(el, state) {
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+    // Build filter summary for PDF
+    const pdfFilterLines = [];
+    if (state.campFilter?.length) {
+      const names = state.campFilter.map(id => campuses.find(c => c.id === id)?.campusName || id);
+      pdfFilterLines.push(`Campus: ${names.join(', ')}`);
+    }
+    if (state.discFilter?.length) {
+      const names = state.discFilter.map(id => disciplines.find(d => d.id === id)?.abbreviation || id);
+      pdfFilterLines.push(`Discipline: ${names.join(', ')}`);
+    }
+    if (state.subjFilter?.length) {
+      const names = state.subjFilter.map(id => subjects.find(s => s.id === id)?.subjectCode || id);
+      pdfFilterLines.push(`Subject: ${names.join(', ')}`);
+    }
+    if (state.sessionFilter?.length) pdfFilterLines.push(`Session: ${state.sessionFilter.join(', ')}`);
 
     const sessions = state.sessionFilter.length
       ? uniqueSessions.filter(s => state.sessionFilter.includes(s))
@@ -734,6 +767,14 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
   }
 
   return `
+    <!-- Session badge (single session) -->
+    ${sessionsToShow.length === 1 ? `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">Session:</span>
+        <span style="font-size:13px;font-weight:700;color:var(--blue);background:var(--blue-dim);padding:3px 12px;border-radius:20px">${sessionsToShow[0]}</span>
+      </div>
+    ` : ''}
+
     <!-- Summary -->
     <div class="ba-summary" style="margin-bottom:14px">
       <div class="ba-stat"><span class="ba-stat-n">${totalTeachers}</span><span class="ba-stat-l">Teachers</span></div>
