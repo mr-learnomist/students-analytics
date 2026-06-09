@@ -1602,8 +1602,11 @@ export const BatchModule = {
     };
 
     // ── Batch number smart refresh ─────────────────────────────
+    let _userEditedBatchNo = false; // true = user manually typed a number
+
     const refreshBatchNo = () => {
-      if (existing) return; // don't auto-change on edit
+      if (existing) return;          // don't auto-change on edit
+      if (_userEditedBatchNo) return; // user manually set — respect it
       const session = sessionHidden.value;
       const subjectId = subjectSel?.value || null;
       if (!session) return;
@@ -1759,7 +1762,17 @@ export const BatchModule = {
     endModeLP?.addEventListener('change',     switchEndMode);
     endModeManual?.addEventListener('change', switchEndMode);
 
-    batchNoInp?.addEventListener('input', updateName);
+    batchNoInp?.addEventListener('input', () => {
+      const val = parseInt(batchNoInp.value);
+      if (!isNaN(val) && val > 0) {
+        _userEditedBatchNo = true;
+        if (batchNoHint) batchNoHint.textContent = `Manual: Batch #${String(val).padStart(2,'0')} — system will validate for duplicates.`;
+      } else {
+        _userEditedBatchNo = false;
+        refreshBatchNo();
+      }
+      updateName();
+    });
 
     // ── Session manual override toggle ─────────────────────────
     sessionManualToggle?.addEventListener('click', (e) => {
