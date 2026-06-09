@@ -165,10 +165,32 @@ body.light {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 8px 8px 0;
+  min-height: 0;           /* flex children ko shrink hone do */
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-border) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--sb-border);
+  border-radius: 4px;
+}
+
+/* Collapsed state mein scrollbar hide karo */
+.sidebar.collapsed .sidebar-nav {
   scrollbar-width: none;
 }
 
-.sidebar-nav::-webkit-scrollbar { display: none; }
+.sidebar.collapsed .sidebar-nav::-webkit-scrollbar {
+  display: none;
+}
 
 /* Group label */
 .nav-group {
@@ -432,5 +454,65 @@ body.light {
 
   .main-content {
     margin-left: var(--sb-width-closed);
+  }
+}
+
+/* ── Small height screens (e.g. 600-720px laptops) ── */
+@media (max-height: 720px) {
+  .sidebar-brand {
+    min-height: 52px;
+    padding: 12px 14px 10px;
+  }
+
+  .nav-group-label {
+    padding: 8px 8px 3px;
+    font-size: 10px;
+  }
+
+  .nav-item {
+    padding: 7px 8px;
+    font-size: 13px;
+  }
+
+  .sidebar-footer {
+    padding: 6px 8px 10px;
+  }
+
+  .sidebar-avatar {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    font-size: 11px;
+  }
+}
+
+/* ── Very small height screens (< 580px) ── */
+@media (max-height: 580px) {
+  :root {
+    --sb-width-closed: 56px;
+  }
+
+  .sidebar-brand {
+    min-height: 46px;
+    padding: 10px 10px 8px;
+  }
+
+  .sidebar-logo {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+
+  .nav-group-label {
+    padding: 6px 8px 2px;
+  }
+
+  .nav-item {
+    padding: 6px 8px;
+    font-size: 12.5px;
+  }
+
+  .nav-group {
+    margin-bottom: 2px;
   }
 }
