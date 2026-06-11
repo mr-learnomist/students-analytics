@@ -4,7 +4,8 @@
 // Each card mounts one report from reports/testResults/
 // ============================================================
 
-import { ResultProfile } from '../reports/testResults/resultProfile.js';
+import { ResultProfile }     from '../reports/testResults/resultProfile.js';
+import { FinalResultReport } from '../reports/testResults/finalResultReport.js';
 
 // Test & Results report card registry
 // Naya report add karna ho to yahan push karo — bas
@@ -17,6 +18,15 @@ const TEST_RESULTS_REPORTS = [
     color:    'var(--purple)',
     colorDim: 'var(--purple-dim)',
     module:   ResultProfile,
+  },
+  {
+    id:       'finalResult',
+    title:    'Final Result',
+    subtitle: '',
+    icon:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    color:    'var(--green)',
+    colorDim: 'var(--green-dim)',
+    module:   FinalResultReport,
   },
   // Naye reports yahan add hote jayenge:
   // { id: 'examSchedule',  title: 'Exam Schedule',  ... module: ExamSchedule  },
