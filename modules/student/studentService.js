@@ -252,12 +252,20 @@ export const StudentService = {
 
     const studentId = generateStudentId(discCode, data.dateOfAdmission, data.gender);
 
+    // Campus snapshot — freeze name at time of enrollment so renames don't corrupt records
+    const campusRecord = data.campusId ? (AppState.findById('campuses', data.campusId) || null) : null;
+    const campusSnapshot = campusRecord
+      ? { id: campusRecord.id, name: campusRecord.campusName }
+      : null;
+
     const student = {
       id:              generateID('stu'),
       studentId,
       cnic,
       studentName:     data.studentName.trim(),
       gender:          data.gender,
+      campusId:        campusRecord ? campusRecord.id : '',
+      campusSnapshot,
       disciplineId:    data.disciplineId,
       dateOfAdmission: data.dateOfAdmission,
       session:         sessionFromDate(data.dateOfAdmission),
@@ -304,11 +312,22 @@ export const StudentService = {
       studentId = generateStudentId(discCode, dateOfAdmission, gender);
     }
 
+    // Campus snapshot
+    let campusId       = existing.campusId       || '';
+    let campusSnapshot = existing.campusSnapshot || null;
+    if (data.campusId !== undefined) {
+      const campusRecord = data.campusId ? (AppState.findById('campuses', data.campusId) || null) : null;
+      campusId       = campusRecord ? campusRecord.id : '';
+      campusSnapshot = campusRecord ? { id: campusRecord.id, name: campusRecord.campusName } : null;
+    }
+
     const patch = {
       cnic,
       studentId,
       studentName:     (data.studentName || existing.studentName).trim(),
       gender,
+      campusId,
+      campusSnapshot,
       disciplineId,
       dateOfAdmission,
       session:         sessionFromDate(dateOfAdmission),
@@ -334,7 +353,7 @@ export const StudentService = {
     const students = rows || AppState.get(KEY) || [];
     if (!students.length) return;
 
-    const headers  = ['studentId', 'cnic', 'studentName', 'gender', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
+    const headers  = ['studentId', 'cnic', 'studentName', 'gender', 'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
     const now      = new Date();
     const dateStr  = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr  = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
@@ -357,6 +376,7 @@ export const StudentService = {
         safeCNIC,
         s.studentName      || '',
         s.gender           ? (s.gender.charAt(0).toUpperCase() + s.gender.slice(1)) : '',
+        s.campus           || s.campusSnapshot?.name || '',
         disc?.abbreviation || '',
         safeDate,
         s.session          || '',
@@ -365,7 +385,7 @@ export const StudentService = {
         s.exemptedPapers?.count != null ? String(s.exemptedPapers.count) : '',
         s.exemptedPapers?.codes?.length ? s.exemptedPapers.codes.join(' | ') : '',
       ].map(function(v, i) {
-        if (i === 1 || i === 5) return v;
+        if (i === 1 || i === 6) return v;
         return '"' + String(v).replace(/"/g, '""') + '"';
       }).join(',');
     });
@@ -394,7 +414,7 @@ export const StudentService = {
       // ── Sheet 1: Student Import ──────────────────────────────
       // We build rows as arrays; column order matches the table exactly
       const HEADERS = [
-        'studentId', 'cnic', 'studentName', 'discipline',
+        'studentId', 'cnic', 'studentName', 'campus', 'discipline',
         'dateOfAdmission', 'session', 'admissionBatch',
       ];
 
@@ -402,6 +422,7 @@ export const StudentService = {
         'Auto-generated — leave BLANK',
         '13 digits  e.g. 35202-1234567-8',
         'Full name of the student',
+        'e.g. Main Campus, North Campus',
         'Abbreviation  e.g. ' + (discEx || 'ACCA'),
         'Format: YYYY-MM-DD  e.g. 2025-09-01',
         'Auto-detected — leave BLANK',
@@ -410,13 +431,13 @@ export const StudentService = {
 
       // Sample rows — studentId & session blank (auto)
       const SAMPLES = [
-        ['', '35202-1234567-8', 'Muhammad Ali', discEx, '2025-09-01', '', 'Batch-1'],
-        ['', '35202-9876543-2', 'Sara Khan',    discEx, '2026-03-15', '', 'Batch-2'],
-        ['', '35202-1111111-9', 'Ahmed Raza',   discEx, '2025-11-20', '', 'Batch-1'],
+        ['', '35202-1234567-8', 'Muhammad Ali', 'Main Campus',  discEx, '2025-09-01', '', 'Batch-1'],
+        ['', '35202-9876543-2', 'Sara Khan',    'North Campus', discEx, '2026-03-15', '', 'Batch-2'],
+        ['', '35202-1111111-9', 'Ahmed Raza',   'Main Campus',  discEx, '2025-11-20', '', 'Batch-1'],
       ];
 
       // 100 empty data rows after samples
-      const EMPTY_ROWS = Array.from({ length: 97 }, function() { return ['', '', '', '', '', '', '']; });
+      const EMPTY_ROWS = Array.from({ length: 97 }, function() { return ['', '', '', '', '', '', '', '']; });
 
       const wsData = [HEADERS, HINTS, ...SAMPLES, ...EMPTY_ROWS];
       const ws     = XLSX.utils.aoa_to_sheet(wsData);
@@ -426,15 +447,16 @@ export const StudentService = {
         { wch: 22 }, // studentId
         { wch: 22 }, // cnic
         { wch: 26 }, // studentName
+        { wch: 20 }, // campus
         { wch: 18 }, // discipline
         { wch: 20 }, // dateOfAdmission
         { wch: 16 }, // session
         { wch: 20 }, // admissionBatch
       ];
 
-      // Force ALL cells in CNIC (col B) and dateOfAdmission (col E)
+      // Force ALL cells in CNIC (col B) and dateOfAdmission (col F)
       // to number format "text" (@) so Excel never converts them
-      const textCols = [1, 4]; // 0-based: B=1, E=4
+      const textCols = [1, 5]; // 0-based: B=1, F=5
       const totalRows = wsData.length;
       textCols.forEach(function(colIdx) {
         for (let r = 0; r < totalRows; r++) {
@@ -454,6 +476,7 @@ export const StudentService = {
         ['studentId',       'Leave BLANK — auto-generated on import'],
         ['cnic',            '13 digits with dashes: 35202-1234567-8\n(without dashes also accepted: 3520212345678)'],
         ['studentName',     'Full name  e.g. Muhammad Ali'],
+        ['campus',          'Campus name  e.g. Main Campus, North Campus, Rawalpindi Campus'],
         ['discipline',      'Use exact abbreviation from system\nAvailable: ' + discList],
         ['dateOfAdmission', 'YYYY-MM-DD format only  e.g. 2025-09-01\nColumn is TEXT — do not change format'],
         ['session',         'Leave BLANK — auto-detected from dateOfAdmission\nJul–Dec → Dec-YY  |  Jan–Jun → June-YY'],
@@ -482,10 +505,10 @@ export const StudentService = {
     script.onerror = function() {
       // Fallback to plain CSV if CDN fails
       const csv = [
-        'studentId,cnic,studentName,discipline,dateOfAdmission,session,admissionBatch',
-        ',"35202-1234567-8",Muhammad Ali,' + discEx + ',"2025-09-01",,Batch-1',
-        ',"35202-9876543-2",Sara Khan,'    + discEx + ',"2026-03-15",,Batch-2',
-        ',"35202-1111111-9",Ahmed Raza,'   + discEx + ',"2025-11-20",,Batch-1',
+        'studentId,cnic,studentName,campus,discipline,dateOfAdmission,session,admissionBatch',
+        ',"35202-1234567-8",Muhammad Ali,Main Campus,'  + discEx + ',"2025-09-01",,Batch-1',
+        ',"35202-9876543-2",Sara Khan,North Campus,'    + discEx + ',"2026-03-15",,Batch-2',
+        ',"35202-1111111-9",Ahmed Raza,Main Campus,'    + discEx + ',"2025-11-20",,Batch-1',
       ].join('\n');
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
       const url  = URL.createObjectURL(blob);
@@ -538,6 +561,7 @@ export const StudentService = {
       cnic:            findCol(['cnic', 'uniqueid', 'nationalid', 'cnid']),
       studentName:     findCol(['studentname', 'name', 'fullname', 'studentfullname']),
       gender:          findCol(['gender', 'sex']),
+      campus:          findCol(['campus', 'campusname', 'branch']),
       discipline:      findCol(['discipline', 'disc', 'program', 'dept']),
       dateOfAdmission: findCol(['dateofadmission', 'admissiondate', 'doa', 'admissiondateyyyy-mm-dd']),
       session:         findCol(['session', 'sess']),
@@ -594,6 +618,14 @@ export const StudentService = {
       const dateStr       = get(colIdx.dateOfAdmission);
       const genderRaw     = colIdx.gender !== -1 ? get(colIdx.gender).toLowerCase() : '';
       const gender        = genderRaw === 'female' || genderRaw === 'f' ? 'female' : 'male';
+      const campusRaw     = colIdx.campus !== -1 ? get(colIdx.campus) : '';
+      // Resolve campus name → campusId + snapshot
+      const campuses      = AppState.get('campuses') || [];
+      const campusRecord  = campusRaw
+        ? campuses.find(function(c) { return c.campusName.toLowerCase() === campusRaw.toLowerCase(); })
+        : null;
+      const campusId       = campusRecord ? campusRecord.id : '';
+      const campusSnapshot = campusRecord ? { id: campusRecord.id, name: campusRecord.campusName } : null;
       const rowErrors     = [];
 
       // ── Name ──
@@ -663,6 +695,8 @@ export const StudentService = {
         cnic:            formattedCNIC,
         studentName,
         gender,
+        campusId,
+        campusSnapshot,
         disciplineId:    disc.id,
         dateOfAdmission: dateStr,
         session:         sessionFromDate(dateStr),
