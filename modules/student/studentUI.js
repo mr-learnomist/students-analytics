@@ -698,7 +698,13 @@ function _wireForm(modalEl, existing) {
     const count = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : 1;
 
     function buildSelects() {
-      const currentCount = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : count;
+      // Always read the live input from the DOM. The count input gets
+      // replaced (cloneNode/replaceChild) below to re-wire its listener,
+      // so the original `countInput` reference becomes a detached node
+      // whose .value never updates again — using it here would freeze
+      // currentCount at its initial value forever.
+      const liveCountInput = modalEl.querySelector('#frmExemptCount');
+      const currentCount = liveCountInput ? Math.max(1, Math.min(20, parseInt(liveCountInput.value) || 1)) : count;
       const savedPapers  = existing?.exemptedPapers?.papers || [];
 
       if (!pickPool.length) {
