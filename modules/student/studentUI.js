@@ -1,1286 +1,723 @@
 // ============================================================
-// modules/student/studentUI.js — Student Module UI
-// Simplified: Student ID · CNIC · Name · Discipline ·
-//             Date of Admission · Session (auto)
+// modules/student/studentService.js — Student Business Logic
+// Simplified: Student ID (auto), CNIC, Name, Discipline,
+//             Date of Admission, Session (auto-detected)
 // ============================================================
 
-import { AppState }                     from '../../utils/state.js';
-import { Modal, Table, injectUIStyles } from '../../utils/ui.js';
-import { Toast }                        from '../../utils/helpers.js';
-import { Auth }                         from '../../utils/auth.js';
-import {
-  StudentService,
-  sessionFromDate,
-  sessionLabel,
-  formatCNIC,
-  validateCNIC,
-  cnicDigitsOnly,
-  migrateStudentIds,
-  ROUTE_OPTIONS,
-  getDiscRoutes,
-} from './studentService.js';
+import { AppState, generateID } from '../../utils/state.js';
 
 const KEY = 'students';
 
-// ── Icons ─────────────────────────────────────────────────────
-const ICONS = {
-  add:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-  edit:   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
-  trash:  `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`,
-  csv:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
-  upload: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
-  dl:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
-  pdf:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
-};
+// ── CNIC Utilities ────────────────────────────────────────────
 
-// ── CSS ───────────────────────────────────────────────────────
-function injectStudentStyles() {
-  const existing = document.getElementById('student-module-css');
-  if (existing) existing.remove();
-  const s = document.createElement('style');
-  s.id = 'student-module-css';
-  s.textContent = `
-    /* ── Toolbar ── */
-    .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px}
-    .stu-search{flex:1;min-width:180px;max-width:300px;height:36px;padding:0 12px 0 36px;
-      background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
-      color:var(--t1);font-size:13px;outline:none;transition:border .15s}
-    .stu-search:focus{border-color:var(--blue)}
-    .stu-search-wrap{position:relative}
-    .stu-search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);
-      color:var(--t4);pointer-events:none}
-    .stu-filter{height:36px;padding:0 10px;background:var(--surface2);
-      border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t1);
-      font-size:12.5px;outline:none;cursor:pointer}
-    .stu-btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;
-      border-radius:var(--r-sm);font-size:12.5px;font-weight:600;border:none;
-      cursor:pointer;transition:opacity .15s,transform .1s;white-space:nowrap}
-    .stu-btn:active{transform:scale(.97)}
-    .stu-btn--primary{background:var(--blue);color:#fff}
-    .stu-btn--primary:hover{opacity:.9}
-    .stu-btn--ghost{background:var(--surface2);color:var(--t2);border:1px solid var(--border)}
-    .stu-btn--ghost:hover{color:var(--t1);background:var(--surface3)}
-    .stu-btn--icon{width:36px;padding:0;justify-content:center}
-    .stu-count{font-size:12px;color:var(--t3);white-space:nowrap}
-
-    /* ── Form ── */
-    .stu-form .form-group{margin-bottom:16px}
-    .stu-form .form-label{display:block;font-size:11.5px;font-weight:600;
-      color:var(--t2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-    .stu-form .req{color:#ef4444}
-    .stu-form .form-input,.stu-form .form-select{
-      width:100%;height:38px;padding:0 12px;box-sizing:border-box;
-      background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
-      color:var(--t1);font-size:13px;outline:none;transition:border .15s}
-    .stu-form .form-input:focus,.stu-form .form-select:focus{border-color:var(--blue)}
-    .stu-form .form-input.inp-err{border-color:#ef4444!important}
-    .stu-form .form-hint{font-size:11.5px;color:var(--t3);margin-top:4px;display:block}
-    .stu-form .form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    .stu-form .form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
-    .stu-form .readonly-field{height:38px;padding:0 12px;background:var(--surface3);
-      border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t2);
-      font-size:13px;display:flex;align-items:center;gap:6px}
-    .stu-form .session-badge{display:inline-block;padding:2px 10px;border-radius:10px;
-      background:var(--blue-dim);color:var(--blue);font-weight:700;font-size:12px;
-      font-family:'Inter','Segoe UI',system-ui,sans-serif}
-    .stu-form .err-msg{font-size:12px;color:#ef4444;margin-top:4px;display:block}
-
-    /* ── CNIC field ── */
-    .cnic-wrap{position:relative}
-    .cnic-wrap .form-input{font-family:'Inter','Segoe UI',system-ui,sans-serif;letter-spacing:.06em;padding-right:108px}
-    .cnic-preview{position:absolute;right:10px;top:50%;transform:translateY(-50%);
-      font-size:10.5px;font-family:'Inter','Segoe UI',system-ui,sans-serif;font-weight:700;
-      padding:2px 8px;border-radius:10px;pointer-events:none;transition:all .2s}
-    .cnic-preview.ok {background:rgba(16,185,129,.12);color:#10b981}
-    .cnic-preview.bad{background:rgba(239,68,68,.10);color:#ef4444}
-    .cnic-hint{font-size:11px;color:var(--t3);margin-top:4px;display:block;
-      font-family:'Inter','Segoe UI',system-ui,sans-serif}
-
-    /* ── Table badges ── */
-    .stu-id-badge{font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:11px;font-weight:700;
-      color:var(--t1);background:none;letter-spacing:.03em}
-    .cnic-badge{font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:11.5px;font-weight:700;
-      color:var(--t1);letter-spacing:.04em;background:var(--surface3);
-      padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
-
-    /* ── Empty state ── */
-    .stu-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
-      min-height:260px;gap:12px;color:var(--t3);border:1px dashed var(--border2);border-radius:var(--r-lg)}
-    .stu-empty svg{opacity:.4}
-    .stu-empty p{font-size:14px;font-weight:600;color:var(--t2);margin:0}
-    .stu-empty span{font-size:12.5px;color:var(--t3);margin:0}
-
-    /* ── Import ── */
-    .import-drop{padding:28px 20px;border:2px dashed var(--border2);border-radius:var(--r-sm);
-      text-align:center;cursor:pointer;transition:all .15s;background:var(--surface)}
-    .import-drop:hover,.import-drop.drag-over{border-color:var(--blue);background:var(--blue-dim)}
-    .import-preview{border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:12px}
-    .import-preview table{width:100%;border-collapse:collapse;font-size:12px}
-    .import-preview th{background:var(--surface3);color:var(--t2);font-size:10.5px;
-      font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:8px 12px;
-      border-bottom:1px solid var(--border);text-align:left}
-    .import-preview td{padding:7px 12px;border-bottom:1px solid var(--border);color:var(--t1)}
-    .import-preview tr:last-child td{border-bottom:none}
-    .import-preview tr:hover td{background:var(--surface2)}
-    .import-err-list{margin-top:10px;padding:12px 14px;background:rgba(239,68,68,.06);
-      border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm)}
-    .import-err-list li{font-size:12px;color:#ef4444;margin-bottom:3px;line-height:1.5}
-    .import-summary-bar{display:flex;align-items:center;gap:12px;padding:8px 12px;
-      background:var(--surface2);border-radius:var(--r-sm);margin-bottom:10px;font-size:12.5px}
-    .import-ok{color:#10b981;font-weight:700}
-    .import-bad{color:#ef4444;font-weight:700}
-  `;
-  document.head.appendChild(s);
+export function cnicDigitsOnly(raw) {
+  return (raw || '').replace(/\D/g, '');
 }
 
-// ── Page skeleton ─────────────────────────────────────────────
-function _pageTemplate() {
-  const disciplines = AppState.get('disciplines') || [];
-  // Build unique session list from existing students
-  const sessions = [...new Set(
-    (AppState.get(KEY) || []).map(function(s) { return s.session; }).filter(Boolean)
-  )].sort(function(a, b) {
-    // Sort chronologically
-    const parse = function(v) {
-      const [n, yy] = v.split('-');
-      return parseInt(yy) * 2 + (n === 'June' ? 1 : 0);
+export function formatCNIC(raw) {
+  const digits = cnicDigitsOnly(raw);
+  if (digits.length !== 13) return null;
+  return digits.slice(0, 5) + '-' + digits.slice(5, 12) + '-' + digits.slice(12);
+}
+
+export function validateCNIC(raw) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return { valid: false, message: 'CNIC is required.' };
+  const digits = cnicDigitsOnly(trimmed);
+  if (digits.length !== 13) {
+    return {
+      valid: false,
+      message: 'CNIC must be 13 digits. You entered ' + digits.length +
+               ' digit' + (digits.length !== 1 ? 's' : '') + '. Format: XXXXX-XXXXXXX-X',
     };
-    return parse(b) - parse(a);
-  });
-
-  // Build campus list from AppState campuses store
-  const campuses = AppState.get('campuses') || [];
-
-  return `
-    <div class="stu-toolbar">
-      <div class="stu-search-wrap">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input class="stu-search" id="stuSearch" placeholder="Search by name, CNIC or Student ID…" autocomplete="off"/>
-      </div>
-
-      <select class="stu-filter" id="stuFilterDisc">
-        <option value="">All Disciplines</option>
-        ${disciplines.map(function(d) {
-          return '<option value="' + d.id + '">' + d.abbreviation + ' — ' + d.fullName + '</option>';
-        }).join('')}
-      </select>
-
-      <select class="stu-filter" id="stuFilterCampus">
-        <option value="">All Campuses</option>
-        ${campuses.map(function(c) {
-          return '<option value="' + c.id + '">' + c.campusName + '</option>';
-        }).join('')}
-      </select>
-
-      <select class="stu-filter" id="stuFilterSession">
-        <option value="">All Sessions</option>
-        ${sessions.map(function(sv) {
-          return '<option value="' + sv + '">' + sv + '  (' + sessionLabel(sv) + ')</option>';
-        }).join('')}
-      </select>
-
-      <button class="stu-btn stu-btn--ghost" id="stuImportBtn">${ICONS.upload} Import CSV</button>
-      <button class="stu-btn stu-btn--ghost" id="stuExportCSVBtn">${ICONS.dl} Export CSV</button>
-      <button class="stu-btn stu-btn--ghost" id="stuExportPDFBtn">${ICONS.pdf} Export PDF</button>
-      <button class="stu-btn stu-btn--ghost" id="stuTemplateBtn">${ICONS.csv} Template</button>
-      <button class="stu-btn stu-btn--primary" id="stuAddBtn">${ICONS.add} Add Student</button>
-      <span class="stu-count" id="stuCount"></span>
-    </div>
-    <div id="stuTableWrap"></div>`;
+  }
+  if (trimmed.includes('-') && !/^\d{5}-\d{7}-\d$/.test(trimmed)) {
+    return { valid: false, message: 'CNIC format must be: XXXXX-XXXXXXX-X  (5 – 7 – 1 digits)' };
+  }
+  return { valid: true, formatted: formatCNIC(trimmed) };
 }
 
-// ── Table render ──────────────────────────────────────────────
-function _render(container, search, discFilter, sessionFilter, campusFilter) {
-  search        = (search        || '').toLowerCase();
-  discFilter    = discFilter    || '';
-  sessionFilter = sessionFilter || '';
-  campusFilter  = campusFilter  || '';
+// ── Session auto-detect from admission date ───────────────────
+// Jul–Dec of year Y → Dec-YY   (e.g. 2025-09-15 → Dec-25)
+// Jan–Jun of year Y → June-YY  (e.g. 2026-04-01 → June-26)
+export function sessionFromDate(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  const y = parseInt(parts[0]);
+  const m = parseInt(parts[1]);
+  if (!y || !m) return '';
+  if (m >= 7) return 'Dec-'  + String(y).slice(2);
+  return 'June-' + String(y).slice(2);
+}
 
-  let rows = AppState.get(KEY) || [];
-  if (discFilter)    rows = rows.filter(function(s) { return s.disciplineId === discFilter; });
-  if (sessionFilter) rows = rows.filter(function(s) { return s.session      === sessionFilter; });
-  if (campusFilter)  rows = rows.filter(function(s) { return (s.campusId || '') === campusFilter; });
+export function sessionLabel(value) {
+  if (!value) return '';
+  const parts = value.split('-');
+  const name  = parts[0];
+  const yy    = parseInt(parts[1]);
+  const y     = 2000 + yy;
+  if (name === 'Dec')  return 'Jul ' + y + ' — Dec ' + y;
+  if (name === 'June') return 'Jan ' + y + ' — Jun ' + y;
+  return value;
+}
 
-  if (search) {
-    rows = rows.filter(function(s) {
-      const disc = AppState.findById('disciplines', s.disciplineId);
-      const cnicPlain = (s.cnic || '').replace(/-/g, '');
-      return (
-        (s.studentName    || '').toLowerCase().includes(search) ||
-        (s.cnic           || '').toLowerCase().includes(search) ||
-        cnicPlain.includes(search.replace(/-/g, ''))            ||
-        (s.studentId      || '').toLowerCase().includes(search) ||
-        (s.campusSnapshot?.name || '').toLowerCase().includes(search) ||
-        (s.session        || '').toLowerCase().includes(search) ||
-        (s.admissionBatch || '').toLowerCase().includes(search) ||
-        (disc?.abbreviation || '').toLowerCase().includes(search) ||
-        (disc?.fullName     || '').toLowerCase().includes(search)
-      );
-    });
+// ── Generate Student ID ───────────────────────────────────────
+// Format: [D][MM][YY][SSSS][G]  — 10 digits total
+//   D     : 1 = ACCA,  2 = CA
+//   MM    : admission month (1–12, no leading zero for Jan–Sep)
+//   YY    : 2-digit year (e.g. 26 for 2026)
+//   SSSS  : 4-digit unique sequence (0000–9999)
+//   G     : gender digit — odd (1,3,5,7,9) = Male, even (0,2,4,6,8) = Female
+//
+// disciplineCode : 'ACCA' | 'CA'
+// admissionDate  : 'YYYY-MM-DD'
+// gender         : 'male' | 'female'
+export function generateStudentId(disciplineCode, admissionDate, gender) {
+  return _generateStudentIdExcluding(disciplineCode, admissionDate, gender, new Set());
+}
+
+// ── Migrate existing student IDs to new format ────────────────
+// Call once at app startup to replace any old-format IDs.
+export function migrateStudentIds() {
+  // Run-once guard: after first successful migration, never run again
+  if (AppState.get('_studentIdsMigrated')) return 0;
+
+  const students = AppState.get('students') || [];
+  if (!students.length) {
+    AppState.set('_studentIdsMigrated', true);
+    return 0;
   }
 
-  // Store for export
-  container._filteredRows = rows;
-
-  const countEl = container.querySelector('#stuCount');
-  if (countEl) countEl.textContent = rows.length + ' student' + (rows.length !== 1 ? 's' : '');
-
-  const wrap = container.querySelector('#stuTableWrap');
-  if (!wrap) return;
-
-  if (!rows.length) {
-    wrap.innerHTML = `
-      <div class="stu-empty">
-        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-          <circle cx="9" cy="7" r="4"/>
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-        </svg>
-        <p>${(search || discFilter || sessionFilter) ? 'No students match your filters.' : 'No students yet.'}</p>
-        <span>Click "Add Student" to enroll the first student.</span>
-      </div>`;
-    return;
+  // Check if migration is even needed — new IDs are exactly 10 digits
+  const needsMigration = students.some(function(s) {
+    return !s.studentId || String(s.studentId).length !== 10;
+  });
+  if (!needsMigration) {
+    AppState.set('_studentIdsMigrated', true);
+    return 0;
   }
 
-  const canEdit   = Auth.can('students:edit')   !== false;
-  const canDelete = Auth.can('students:delete') !== false;
-  const actions   = [];
-  if (canEdit)   actions.push({ label: 'Edit',   icon: ICONS.edit,  handler: function(row) { _openForm(row, container); } });
-  if (canDelete) actions.push({ label: 'Delete', danger: true, icon: ICONS.trash, handler: function(row) { _delete(row, container); } });
-
-  Table.render(wrap, {
-    columns: [
-      {
-        key: 'studentId', label: 'Student ID', width: '170px',
-        render: function(v) {
-          return v
-            ? '<span style="font-family:Inter,\'Segoe UI\',system-ui,sans-serif;font-size:11px;font-weight:700;color:var(--t1);letter-spacing:.03em">' + v + '</span>'
-            : '<span style="color:var(--t4);font-size:11px">—</span>';
-        },
-      },
-      {
-        key: 'cnic', label: 'CNIC', width: '160px',
-        render: function(v) {
-          if (!v) return '<span style="font-size:10.5px;color:var(--t4);font-style:italic;' +
-            'background:var(--surface3);padding:2px 8px;border-radius:5px;border:1px dashed var(--border2)">Not provided</span>';
-          return '<span class="cnic-badge">' + v + '</span>';
-        },
-      },
-      {
-        key: 'studentName', label: 'Student Name',
-        render: function(v) {
-          return '<span style="font-weight:600;color:var(--t1)">' + (v || '—') + '</span>';
-        },
-      },
-      {
-        key: 'gender', label: 'Gender', width: '100px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
-            (v === 'male' ? 'Male' : 'Female') + '</span>';
-        },
-      },
-      {
-        key: 'campusSnapshot', label: 'Campus', width: '140px',
-        render: function(v, row) {
-          const name = v?.name || row.campus || '';
-          if (!name) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
-          return '<span style="font-size:12px;font-weight:600;color:var(--t1);' +
-            'background:var(--surface3);padding:2px 8px;border-radius:6px;' +
-            'border:1px solid var(--border)">' + name + '</span>';
-        },
-      },
-      {
-        key: 'disciplineId', label: 'Discipline', width: '120px',
-        render: function(id) {
-          const d = AppState.findById('disciplines', id);
-          if (!d) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;font-weight:700;color:var(--t1)">' + d.abbreviation + '</span>';
-        },
-      },
-      {
-        key: 'route', label: 'Route', width: '170px',
-        render: function(v, row) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          let html = '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
-          if (row.exemptedPapers?.count) {
-            const papers = row.exemptedPapers.papers || [];
-            const codeList = papers.length
-              ? papers.map(function(p) { return p.subjectCode; }).join(', ')
-              : (row.exemptedPapers.codes || []).join(', ');
-            html += '<br><span style="font-size:10.5px;color:var(--t3);margin-top:2px;display:block">' +
-              row.exemptedPapers.count + ' exempt: ' + codeList +
-              '</span>';
-          }
-          return html;
-        },
-      },
-      {
-        key: 'dateOfAdmission', label: 'Date of Admission', width: '148px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          const [y, m, d] = v.split('-');
-          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          const label  = parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y;
-          return '<span style="font-size:12.5px;color:var(--t1)">' + label + '</span>';
-        },
-      },
-      {
-        key: 'session', label: 'Session', width: '105px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
-        },
-      },
-      {
-        key: 'admissionBatch', label: 'Admission Batch', width: '130px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
-        },
-      },
-    ],
-    rows:    rows,
-    actions: actions,
-    rowKey:  'id',
-  });
-
-}
-
-// ── CNIC live-format helper ───────────────────────────────────
-function _wireCNICInput(input, previewEl, hintEl) {
-  input.addEventListener('input', function() {
-    const raw    = input.value;
-    const digits = cnicDigitsOnly(raw);
-    const result = validateCNIC(raw);
-
-    if (!raw.includes('-') && digits.length >= 5) {
-      let f = digits.slice(0, 5);
-      if (digits.length > 5)  f += '-' + digits.slice(5, 12);
-      if (digits.length > 12) f += '-' + digits.slice(12, 13);
-      if (f !== raw) input.value = f;
-    }
-
-    if (!digits.length) {
-      previewEl.textContent = ''; previewEl.className = 'cnic-preview';
-      hintEl.textContent = 'Format: XXXXX-XXXXXXX-X  (13 digits)';
-    } else if (result.valid) {
-      previewEl.textContent = '✓ ' + result.formatted;
-      previewEl.className   = 'cnic-preview ok';
-      hintEl.textContent    = '';
-      input.value           = result.formatted;
-      input.classList.remove('inp-err');
-    } else {
-      previewEl.textContent = digits.length + '/13';
-      previewEl.className   = 'cnic-preview bad';
-      hintEl.textContent    = digits.length < 13 ? 'Keep typing…' : result.message;
-    }
-  });
-
-  input.addEventListener('blur', function() {
-    const raw = input.value.trim();
-    if (!raw) { input.classList.remove('inp-err'); return; }
-    const result = validateCNIC(raw);
-    if (result.valid) {
-      input.value = result.formatted;
-      input.classList.remove('inp-err');
-      previewEl.textContent = '✓ ' + result.formatted;
-      previewEl.className   = 'cnic-preview ok';
-      hintEl.textContent    = '';
-    } else {
-      input.classList.add('inp-err');
-      previewEl.textContent = '✗ Invalid';
-      previewEl.className   = 'cnic-preview bad';
-      hintEl.textContent    = result.message;
-    }
-  });
-}
-
-// ── Form HTML ─────────────────────────────────────────────────
-function _buildFormHTML(existing) {
-  existing = existing || null;
+  // Hoist discipline lookup outside loop (one read, not N reads)
   const disciplines = AppState.get('disciplines') || [];
-  const cnicVal     = existing?.cnic || '';
-  const admDate     = existing?.dateOfAdmission || '';
-  const session     = existing ? existing.session : (admDate ? sessionFromDate(admDate) : '');
+  const discMap = {};
+  disciplines.forEach(function(d) { discMap[d.id] = d.abbreviation; });
 
-  return `
-  <div class="stu-form">
+  // Build assigned-IDs set once (not inside each iteration)
+  const assignedIds = new Set(
+    students.map(function(s) { return s.studentId; }).filter(Boolean)
+  );
 
-    <!-- Student ID (read-only, auto-generated) -->
-    ${existing ? `
-    <div class="form-group">
-      <label class="form-label">Student ID
-        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(system-generated)</span>
-      </label>
-      <div class="readonly-field">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--violet)" stroke-width="2.5">
-          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-        </svg>
-        <span style="font-family:'Inter','Segoe UI',system-ui,sans-serif;font-weight:700;color:var(--violet);letter-spacing:.03em">${existing.studentId || '—'}</span>
-      </div>
-    </div>` : `
-    <div class="form-group" style="padding:8px 12px;background:var(--blue-dim);border-radius:var(--r-sm);
-         font-size:12px;color:var(--blue);display:flex;align-items:center;gap:8px">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      Student ID will be auto-generated on save (10-digit: Discipline + Month + Year + Sequence + Gender)
-    </div>`}
+  // Compute all patches in memory first — no AppState writes yet
+  const patches = [];
+  students.forEach(function(student) {
+    if (student.studentId && String(student.studentId).length === 10) return;
+    if (student.studentId) assignedIds.delete(student.studentId);
+    const discCode = discMap[student.disciplineId] || '';
+    const gender   = student.gender || 'male';
+    const newId    = _generateStudentIdExcluding(discCode, student.dateOfAdmission, gender, assignedIds);
+    assignedIds.add(newId);
+    patches.push({ id: student.id, studentId: newId });
+  });
 
-    <!-- CNIC -->
-    <div class="form-group">
-      <label class="form-label">CNIC
-        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional — can be added later)</span>
-      </label>
-      <div class="cnic-wrap">
-        <input name="cnicRaw" id="frmCNIC" class="form-input"
-               placeholder="3520212345678  or  35202-1234567-8"
-               value="${cnicVal}" autocomplete="off" maxlength="15"/>
-        <span class="cnic-preview" id="cnicPreview">${cnicVal ? '✓ ' + cnicVal : ''}</span>
-      </div>
-      <span class="cnic-hint" id="cnicHint">Format: XXXXX-XXXXXXX-X &nbsp;(dashes auto-added)</span>
-    </div>
+  // Batch write — one operation instead of N individual updates
+  if (patches.length) {
+    if (AppState.batchUpdate) {
+      AppState.batchUpdate('students', patches);
+    } else {
+      patches.forEach(function(p) {
+        AppState.update('students', p.id, { studentId: p.studentId });
+      });
+    }
+  }
 
-    <!-- Name -->
-    <div class="form-group">
-      <label class="form-label">Full Name <span class="req">*</span></label>
-      <input name="studentName" class="form-input" placeholder="e.g. Muhammad Ali"
-             value="${existing?.studentName || ''}"/>
-    </div>
-
-    <!-- Gender + Discipline (side by side) -->
-    <div class="form-row-2">
-      <div class="form-group">
-        <label class="form-label">Gender <span class="req">*</span></label>
-        <select name="gender" class="form-select">
-          <option value="">Select gender…</option>
-          <option value="male"   ${(existing?.gender || '') === 'male'   ? 'selected' : ''}>Male</option>
-          <option value="female" ${(existing?.gender || '') === 'female' ? 'selected' : ''}>Female</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Discipline <span class="req">*</span></label>
-        <select name="disciplineId" class="form-select">
-          <option value="">Select discipline…</option>
-          ${disciplines.map(function(d) {
-            return '<option value="' + d.id + '"' + (d.id === existing?.disciplineId ? ' selected' : '') + '>' +
-                   d.abbreviation + ' — ' + d.fullName + '</option>';
-          }).join('')}
-        </select>
-      </div>
-    </div>
-
-    <!-- Date of Admission + Session (auto) -->
-    <div class="form-row-2">
-      <div class="form-group">
-        <label class="form-label">Date of Admission <span class="req">*</span></label>
-        <input type="date" name="dateOfAdmission" id="frmAdmDate" class="form-input"
-               value="${admDate}"/>
-        <span class="form-hint">Session is auto-detected from this date</span>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Session
-          <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(auto)</span>
-        </label>
-        <div class="readonly-field" id="frmSession">
-          ${session
-            ? '<span class="session-badge">' + session + '</span><span style="font-size:11px;color:var(--t3);margin-left:6px">' + sessionLabel(session) + '</span>'
-            : '<span style="color:var(--t4);font-style:italic">Fill admission date</span>'}
-        </div>
-      </div>
-    </div>
-
-    <!-- Admission Batch -->
-    <div class="form-group">
-      <label class="form-label">Admission Batch
-        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional)</span>
-      </label>
-      <input name="admissionBatch" class="form-input" placeholder="e.g. Batch-1, Fall-2025, Morning"
-             value="${existing?.admissionBatch || ''}"/>
-      <span class="form-hint">Group students by batch for easy filtering and reporting</span>
-    </div>
-
-    <!-- Campus -->
-    <div class="form-group">
-      <label class="form-label">Campus
-        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional)</span>
-      </label>
-      <select name="campusId" class="form-select">
-        <option value="">Select campus…</option>
-        ${(AppState.get('campuses') || []).map(function(c) {
-          return '<option value="' + c.id + '"' + (c.id === (existing?.campusId || '') ? ' selected' : '') + '>' + c.campusName + '</option>';
-        }).join('')}
-      </select>
-      <span class="form-hint">Campus snapshot save hoga — naam change hone par purana record safe rahega</span>
-    </div>
-
-    <!-- Route (shown only when discipline has routes) -->
-    <div class="form-group" id="frmRouteGroup" style="display:none">
-      <label class="form-label">Route <span class="req">*</span></label>
-      <select name="route" id="frmRoute" class="form-select">
-        <option value="">Select route…</option>
-      </select>
-      <span class="form-hint" id="frmRouteHint">Routes are defined in the discipline settings.</span>
-    </div>
-
-    <!-- Exemption checkbox (shown after route is selected) -->
-    <div class="form-group" id="frmExemptChkGroup" style="display:none">
-      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="frmExemptChk"
-               style="width:14px;height:14px;accent-color:#4f85f7"/>
-        <span class="form-label" style="margin:0">Has Exemption</span>
-      </label>
-      <span class="form-hint" style="margin-top:4px;display:block">
-        Tick if this student has subject exemptions based on their route.
-      </span>
-    </div>
-
-    <!-- Exemption paper selects (one per exemption type, shown when checkbox ticked) -->
-    <div class="form-group" id="frmExemptGroup" style="display:none">
-      <label class="form-label">Exempted Subjects
-        <span id="frmExemptCountBadge" style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none;margin-left:4px"></span>
-      </label>
-      <!-- Exemption count input -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <label style="font-size:12px;color:var(--t2);font-weight:600;white-space:nowrap">Number of Exemptions:</label>
-        <input type="number" id="frmExemptCount" min="1" max="20"
-               value="${existing?.exemptedPapers?.count || 1}"
-               style="width:70px;height:34px;padding:0 10px;background:var(--surface2);
-                      border:1px solid var(--border);border-radius:var(--r-sm);
-                      color:var(--t1);font-size:13px;font-weight:700;outline:none;
-                      text-align:center"/>
-        <span style="font-size:11.5px;color:var(--t3)">Type karein aur selects update ho jayenge</span>
-      </div>
-      <div id="frmExemptSelects" style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-        <!-- Dynamically populated: one <select> per exemption count -->
-      </div>
-      <span class="form-hint" style="margin-top:6px;display:block">
-        Har row ek exempt subject slot hai. Count type karein — selects automatically ban jayenge.
-      </span>
-      <div id="frmExemptSelected" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
-    </div>
-
-    <span id="frmErrMsg" class="err-msg" style="display:none"></span>
-  </div>`;
+  AppState.set('_studentIdsMigrated', true);
+  return patches.length;
 }
 
-// Wire date → session auto-fill + discipline → route options + route → exemption paper picker
-function _wireForm(modalEl, existing) {
-  const cnicInput    = modalEl.querySelector('#frmCNIC');
-  const cnicPrev     = modalEl.querySelector('#cnicPreview');
-  const cnicHint     = modalEl.querySelector('#cnicHint');
-  const admDate      = modalEl.querySelector('#frmAdmDate');
-  const sessionDiv   = modalEl.querySelector('#frmSession');
-  const discSel      = modalEl.querySelector('[name="disciplineId"]');
-  const routeGroup   = modalEl.querySelector('#frmRouteGroup');
-  const routeSel     = modalEl.querySelector('#frmRoute');
-  const routeHint    = modalEl.querySelector('#frmRouteHint');
-  const exemptGrp    = modalEl.querySelector('#frmExemptGroup');
-  const selectedWrap = modalEl.querySelector('#frmExemptSelected');
+// ── Internal: generate ID excluding a custom Set of used IDs ──
+function _generateStudentIdExcluding(disciplineCode, admissionDate, gender, excludeSet) {
+  const disciplineDigit = (disciplineCode || '').toUpperCase() === 'CA' ? '2' : '1';
 
-  // Currently selected paper snapshots
-  let selectedPapers = (existing?.exemptedPapers?.papers || []).slice();
-
-  // ── CNIC ──
-  if (cnicInput && cnicPrev && cnicHint) {
-    _wireCNICInput(cnicInput, cnicPrev, cnicHint);
-    if (cnicInput.value) cnicInput.dispatchEvent(new Event('input'));
+  let monthStr = '', yearStr = '';
+  if (admissionDate) {
+    const parts = admissionDate.split('-');
+    const yr    = parseInt(parts[0]);
+    const mo    = parseInt(parts[1]);
+    monthStr = isNaN(mo) ? '01' : String(mo);
+    yearStr  = isNaN(yr) ? '00' : String(yr).slice(2);
+  } else {
+    const now = new Date();
+    monthStr  = String(now.getMonth() + 1);
+    yearStr   = String(now.getFullYear()).slice(2);
   }
 
-  // ── Session auto-detect ──
-  if (admDate && sessionDiv) {
-    admDate.addEventListener('change', function() {
-      const s = sessionFromDate(admDate.value);
-      sessionDiv.innerHTML = s
-        ? '<span class="session-badge">' + s + '</span><span style="font-size:11px;color:var(--t3);margin-left:6px">' + sessionLabel(s) + '</span>'
-        : '<span style="color:var(--t4);font-style:italic">Fill admission date</span>';
-    });
-  }
+  const genderPool = (gender || '').toLowerCase() === 'female'
+    ? [0, 2, 4, 6, 8]
+    : [1, 3, 5, 7, 9];
 
+  const paddedMonth = monthStr.padStart(2, '0');
+  const fixedPrefix = disciplineDigit + paddedMonth + yearStr; // 5 chars
 
-    function renderSelectedTags() {
-    if (!selectedWrap) return;
-    if (!selectedPapers.length) {
-      selectedWrap.innerHTML = '<span style="font-size:11.5px;color:var(--t4);font-style:italic">No papers selected yet</span>';
-      return;
+  // excludeSet already contains all used IDs passed by caller.
+  // For direct calls (generateStudentId), we merge with stored IDs.
+  const mergedExclude = excludeSet.size > 0
+    ? excludeSet
+    : new Set((AppState.get('students') || []).map(function(s) { return s.studentId; }));
+
+  for (let seq = 0; seq <= 9999; seq++) {
+    const seqStr = String(seq).padStart(4, '0');
+    for (let gi = 0; gi < genderPool.length; gi++) {
+      const candidate = fixedPrefix + seqStr + String(genderPool[gi]);
+      if (!mergedExclude.has(candidate)) return candidate;
     }
-    selectedWrap.innerHTML = selectedPapers.map(function(p) {
-      return '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;' +
-        'background:var(--blue-dim);border:1px solid var(--blue);border-radius:12px;' +
-        'font-size:11.5px;font-weight:700;color:var(--blue)">' +
-        p.subjectCode +
-        '<button type="button" data-id="' + p.id + '" style="background:none;border:none;' +
-          'cursor:pointer;color:var(--blue);padding:0;line-height:1;font-size:13px" title="Remove">×</button>' +
-        '</span>';
-    }).join('');
-    // Wire remove buttons
-    selectedWrap.querySelectorAll('button[data-id]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        selectedPapers = selectedPapers.filter(function(p) { return p.id !== btn.dataset.id; });
-        renderSelectedTags();
-        const discId = discSel?.value;
-        if (discId) renderPicker(discId);
+  }
+
+  // Fallback (extremely unlikely)
+  const seqFallback = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  const gFallback   = String(genderPool[Math.floor(Math.random() * genderPool.length)]);
+  return fixedPrefix + seqFallback + gFallback;
+}
+
+// ── Uniqueness checks ─────────────────────────────────────────
+export function isDuplicateCNIC(formattedCNIC, excludeId) {
+  return (AppState.get(KEY) || []).some(function(s) {
+    return s.cnic === formattedCNIC && s.id !== excludeId;
+  });
+}
+
+export function isDuplicateStudentId(studentId, excludeId) {
+  return (AppState.get(KEY) || []).some(function(s) {
+    return s.studentId === studentId && s.id !== excludeId;
+  });
+}
+
+// ── Route options per discipline ──────────────────────────────
+export const ROUTE_OPTIONS = {}; // kept for backward-compat
+
+export function getDiscRoutes(disciplineId) {
+  const disc = AppState.findById('disciplines', disciplineId);
+  if (!disc || !disc.hasRoutes || !disc.routes || !disc.routes.length) return [];
+  return disc.routes;
+}
+
+// Normalize exempted papers — preserve full snapshot { id, subjectCode, subjectName }
+// so that future edits to subjects.js never corrupt historical student records.
+function _sanitizeExemptedPapers(raw) {
+  if (!raw) return { count: 0, codes: [], papers: [] };
+  const papers = (Array.isArray(raw.papers) ? raw.papers : [])
+    .map(function(p) {
+      return {
+        id:          p.id          || '',
+        subjectCode: (p.subjectCode || '').toUpperCase().trim(),
+        subjectName: (p.subjectName || '').trim(),
+      };
+    })
+    .filter(function(p) { return p.subjectCode; });
+  // codes array kept in sync for CSV export / legacy display
+  const codes = papers.map(function(p) { return p.subjectCode; });
+  return { count: papers.length, codes, papers };
+}
+
+// ── CRUD ──────────────────────────────────────────────────────
+export const StudentService = {
+
+  getStudents(opts) {
+    opts = opts || {};
+    let list = AppState.get(KEY) || [];
+    if (opts.disciplineId) list = list.filter(function(s) { return s.disciplineId === opts.disciplineId; });
+    if (opts.session)      list = list.filter(function(s) { return s.session      === opts.session; });
+    return list;
+  },
+
+  addStudent(data) {
+    if (!data.studentName?.trim()) return { success: false, message: 'Student name is required.' };
+    if (!data.disciplineId)        return { success: false, message: 'Discipline is required.' };
+    if (!data.dateOfAdmission)     return { success: false, message: 'Date of admission is required.' };
+    if (!data.gender)              return { success: false, message: 'Gender is required.' };
+
+    // CNIC is optional — old data may not have it
+    let cnic = '';
+    if (data.cnicRaw && data.cnicRaw.trim()) {
+      const cnicResult = validateCNIC(data.cnicRaw);
+      if (!cnicResult.valid) return { success: false, message: cnicResult.message };
+      cnic = cnicResult.formatted;
+      if (isDuplicateCNIC(cnic)) {
+        return { success: false, message: 'CNIC ' + cnic + ' is already registered.' };
+      }
+    }
+
+    // Resolve discipline code (abbreviation) for ID generation
+    const discRecord = (AppState.get('disciplines') || []).find(function(d) { return d.id === data.disciplineId; });
+    const discCode   = discRecord?.abbreviation || '';
+
+    const studentId = generateStudentId(discCode, data.dateOfAdmission, data.gender);
+
+    // Campus snapshot — freeze name at time of enrollment so renames don't corrupt records
+    const campusRecord = data.campusId ? (AppState.findById('campuses', data.campusId) || null) : null;
+    const campusSnapshot = campusRecord
+      ? { id: campusRecord.id, name: campusRecord.campusName }
+      : null;
+
+    const student = {
+      id:              generateID('stu'),
+      studentId,
+      cnic,
+      studentName:     data.studentName.trim(),
+      gender:          data.gender,
+      campusId:        campusRecord ? campusRecord.id : '',
+      campusSnapshot,
+      disciplineId:    data.disciplineId,
+      dateOfAdmission: data.dateOfAdmission,
+      session:         sessionFromDate(data.dateOfAdmission),
+      admissionBatch:  (data.admissionBatch || '').trim(),
+      route:           (data.route || '').trim(),
+      exemptedPapers:  data.route === 'Exemption' ? _sanitizeExemptedPapers(data.exemptedPapers) : null,
+      createdAt:       new Date().toISOString(),
+    };
+    AppState.add(KEY, student);
+    return { success: true, student };
+  },
+
+  updateStudent(id, data) {
+    const existing = AppState.findById(KEY, id);
+    if (!existing) return { success: false, message: 'Student not found.' };
+
+    let cnic = existing.cnic;
+    if (data.cnicRaw && data.cnicRaw.trim()) {
+      const r = validateCNIC(data.cnicRaw);
+      if (!r.valid) return { success: false, message: r.message };
+      cnic = r.formatted;
+      if (isDuplicateCNIC(cnic, id)) {
+        return { success: false, message: 'CNIC ' + cnic + ' is already registered to another student.' };
+      }
+    }
+
+    const dateOfAdmission = data.dateOfAdmission || existing.dateOfAdmission;
+    const gender          = data.gender          || existing.gender || 'male';
+    const disciplineId    = data.disciplineId    || existing.disciplineId;
+
+    // Regenerate student ID if any ID-determining field changed
+    const discRecord = (AppState.get('disciplines') || []).find(function(d) { return d.id === disciplineId; });
+    const discCode   = discRecord?.abbreviation || '';
+
+    const idFieldChanged =
+      disciplineId    !== existing.disciplineId    ||
+      dateOfAdmission !== existing.dateOfAdmission ||
+      gender          !== existing.gender;
+
+    // Temporarily clear the old ID so it doesn't block the uniqueness check
+    let studentId = existing.studentId;
+    if (idFieldChanged) {
+      AppState.update(KEY, id, { studentId: null });
+      studentId = generateStudentId(discCode, dateOfAdmission, gender);
+    }
+
+    // Campus snapshot
+    let campusId       = existing.campusId       || '';
+    let campusSnapshot = existing.campusSnapshot || null;
+    if (data.campusId !== undefined) {
+      const campusRecord = data.campusId ? (AppState.findById('campuses', data.campusId) || null) : null;
+      campusId       = campusRecord ? campusRecord.id : '';
+      campusSnapshot = campusRecord ? { id: campusRecord.id, name: campusRecord.campusName } : null;
+    }
+
+    const patch = {
+      cnic,
+      studentId,
+      studentName:     (data.studentName || existing.studentName).trim(),
+      gender,
+      campusId,
+      campusSnapshot,
+      disciplineId,
+      dateOfAdmission,
+      session:         sessionFromDate(dateOfAdmission),
+      admissionBatch:  data.admissionBatch !== undefined ? data.admissionBatch.trim() : (existing.admissionBatch || ''),
+      route:           data.route !== undefined ? (data.route || '').trim() : (existing.route || ''),
+      exemptedPapers:  (data.route !== undefined ? data.route : existing.route) === 'Exemption'
+                         ? _sanitizeExemptedPapers(data.exemptedPapers !== undefined ? data.exemptedPapers : existing.exemptedPapers)
+                         : null,
+      updatedAt:       new Date().toISOString(),
+    };
+
+    const updated = AppState.update(KEY, id, patch);
+    return { success: true, student: updated };
+  },
+
+  deleteStudent(id) {
+    AppState.remove(KEY, id);
+    return { success: true };
+  },
+
+  // ── CSV Export ───────────────────────────────────────────────
+  exportCSV(rows) {
+    const students = rows || AppState.get(KEY) || [];
+    if (!students.length) return;
+
+    const headers  = ['studentId', 'cnic', 'studentName', 'gender', 'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
+    const now      = new Date();
+    const dateStr  = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr  = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+    const meta = [
+      'Student Report',
+      'Generated: ' + dateStr + ' ' + timeStr,
+      'Total Students: ' + students.length,
+      '',
+    ].join('\n');
+
+    const csvRows = students.map(function(s) {
+      const disc = AppState.findById('disciplines', s.disciplineId);
+      // Use ="value" formula syntax for CNIC and date so Excel treats them as
+      // text — prevents CNIC scientific notation and date auto-reformatting
+      const safeCNIC = s.cnic ? '="' + s.cnic + '"' : '';
+      const safeDate = s.dateOfAdmission ? '="' + s.dateOfAdmission + '"' : '';
+      return [
+        s.studentId        || '',
+        safeCNIC,
+        s.studentName      || '',
+        s.gender           ? (s.gender.charAt(0).toUpperCase() + s.gender.slice(1)) : '',
+        s.campus           || s.campusSnapshot?.name || '',
+        disc?.abbreviation || '',
+        safeDate,
+        s.session          || '',
+        s.admissionBatch   || '',
+        s.route            || '',
+        s.exemptedPapers?.count != null ? String(s.exemptedPapers.count) : '',
+        s.exemptedPapers?.codes?.length ? s.exemptedPapers.codes.join(' | ') : '',
+      ].map(function(v, i) {
+        if (i === 1 || i === 6) return v;
+        return '"' + String(v).replace(/"/g, '""') + '"';
+      }).join(',');
+    });
+
+    // \uFEFF = UTF-8 BOM — fixes encoding in Excel (prevents garbled chars)
+    const csv  = '\uFEFF' + meta + headers.join(',') + '\n' + csvRows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href: url, download: 'Students-' + dateStr.replace(/ /g, '-') + '.csv',
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // ── Import Template (XLSX) ────────────────────────────────────
+  downloadTemplate() {
+    const disciplines = AppState.get('disciplines') || [];
+    const discList    = disciplines.map(function(d) { return d.abbreviation; }).join(' | ') || 'CS | IT | BBA';
+    const discEx      = disciplines[0]?.abbreviation || 'CS';
+
+    // Load SheetJS from CDN then build the XLSX
+    function buildAndDownload(XLSX) {
+      const wb = XLSX.utils.book_new();
+
+      // ── Sheet 1: Student Import ──────────────────────────────
+      // We build rows as arrays; column order matches the table exactly
+      const HEADERS = [
+        'studentId', 'cnic', 'studentName', 'campus', 'discipline',
+        'dateOfAdmission', 'session', 'admissionBatch',
+      ];
+
+      const HINTS = [
+        'Auto-generated — leave BLANK',
+        '13 digits  e.g. 35202-1234567-8',
+        'Full name of the student',
+        'e.g. Main Campus, North Campus',
+        'Abbreviation  e.g. ' + (discEx || 'ACCA'),
+        'Format: YYYY-MM-DD  e.g. 2025-09-01',
+        'Auto-detected — leave BLANK',
+        'Optional  e.g. Batch-1, Fall-2025',
+      ];
+
+      // Sample rows — studentId & session blank (auto)
+      const SAMPLES = [
+        ['', '35202-1234567-8', 'Muhammad Ali', 'Main Campus',  discEx, '2025-09-01', '', 'Batch-1'],
+        ['', '35202-9876543-2', 'Sara Khan',    'North Campus', discEx, '2026-03-15', '', 'Batch-2'],
+        ['', '35202-1111111-9', 'Ahmed Raza',   'Main Campus',  discEx, '2025-11-20', '', 'Batch-1'],
+      ];
+
+      // 100 empty data rows after samples
+      const EMPTY_ROWS = Array.from({ length: 97 }, function() { return ['', '', '', '', '', '', '', '']; });
+
+      const wsData = [HEADERS, HINTS, ...SAMPLES, ...EMPTY_ROWS];
+      const ws     = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Column widths (chars)
+      ws['!cols'] = [
+        { wch: 22 }, // studentId
+        { wch: 22 }, // cnic
+        { wch: 26 }, // studentName
+        { wch: 20 }, // campus
+        { wch: 18 }, // discipline
+        { wch: 20 }, // dateOfAdmission
+        { wch: 16 }, // session
+        { wch: 20 }, // admissionBatch
+      ];
+
+      // Force ALL cells in CNIC (col B) and dateOfAdmission (col F)
+      // to number format "text" (@) so Excel never converts them
+      const textCols = [1, 5]; // 0-based: B=1, F=5
+      const totalRows = wsData.length;
+      textCols.forEach(function(colIdx) {
+        for (let r = 0; r < totalRows; r++) {
+          const addr = XLSX.utils.encode_cell({ r: r, c: colIdx });
+          if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+          ws[addr].t = 's'; // force string type — no auto-conversion
+          ws[addr].z = '@'; // text number format
+        }
       });
-    });
-  }
 
-  // ── Route options (dynamic from discipline.routes[]) ──
-  function updateRouteOptions(discId) {
-    if (!routeGroup || !routeSel) return;
-    const routes = getDiscRoutes(discId);
-    if (!routes.length) {
-      routeGroup.style.display = 'none';
-      routeSel.innerHTML = '<option value="">Select route…</option>';
-      _hideExemptChk();
-      _hideExemptGroup();
+      XLSX.utils.book_append_sheet(wb, ws, 'Student Import');
+
+      // ── Sheet 2: Instructions ────────────────────────────────
+      const instrData = [
+        ['How to use this template', ''],
+        ['Column', 'Instructions'],
+        ['studentId',       'Leave BLANK — auto-generated on import'],
+        ['cnic',            '13 digits with dashes: 35202-1234567-8\n(without dashes also accepted: 3520212345678)'],
+        ['studentName',     'Full name  e.g. Muhammad Ali'],
+        ['campus',          'Campus name  e.g. Main Campus, North Campus, Rawalpindi Campus'],
+        ['discipline',      'Use exact abbreviation from system\nAvailable: ' + discList],
+        ['dateOfAdmission', 'YYYY-MM-DD format only  e.g. 2025-09-01\nColumn is TEXT — do not change format'],
+        ['session',         'Leave BLANK — auto-detected from dateOfAdmission\nJul–Dec → Dec-YY  |  Jan–Jun → June-YY'],
+        ['admissionBatch',  'Optional — e.g. Batch-1, Fall-2025, Morning'],
+        ['', ''],
+        ['Important Notes', '• Delete the 3 blue sample rows before importing\n• Do not add or remove columns\n• Save as .csv (UTF-8) when importing into system'],
+      ];
+      const ws2 = XLSX.utils.aoa_to_sheet(instrData);
+      ws2['!cols'] = [{ wch: 22 }, { wch: 60 }];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Instructions');
+
+      // ── Download ─────────────────────────────────────────────
+      XLSX.writeFile(wb, 'students_import_template.xlsx');
+    }
+
+    // Check if SheetJS already loaded
+    if (window.XLSX) {
+      buildAndDownload(window.XLSX);
       return;
     }
-    routeGroup.style.display = '';
-    // Snapshot: on edit use saved route value, but rebuild options from live discipline
-    const savedRoute = existing?.route || '';
-    routeSel.innerHTML = '<option value="">Select route…</option>' +
-      routes.map(function(r) {
-        return '<option value="' + r + '"' + (r === savedRoute ? ' selected' : '') + '>' + r + '</option>';
-      }).join('');
-    // Restore exemption state if editing
-    _onRouteChange(routeSel.value, discId);
-  }
 
-  function _hideExemptChk() {
-    const chkGrp = modalEl.querySelector('#frmExemptChkGroup');
-    if (chkGrp) chkGrp.style.display = 'none';
-    const chk = modalEl.querySelector('#frmExemptChk');
-    if (chk) chk.checked = false;
-  }
+    // Dynamically load SheetJS from CDN
+    const script  = document.createElement('script');
+    script.src    = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    script.onload = function() { buildAndDownload(window.XLSX); };
+    script.onerror = function() {
+      // Fallback to plain CSV if CDN fails
+      const csv = [
+        'studentId,cnic,studentName,campus,discipline,dateOfAdmission,session,admissionBatch',
+        ',"35202-1234567-8",Muhammad Ali,Main Campus,'  + discEx + ',"2025-09-01",,Batch-1',
+        ',"35202-9876543-2",Sara Khan,North Campus,'    + discEx + ',"2026-03-15",,Batch-2',
+        ',"35202-1111111-9",Ahmed Raza,Main Campus,'    + discEx + ',"2025-11-20",,Batch-1',
+      ].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      Object.assign(document.createElement('a'), { href: url, download: 'students_import_template.csv' }).click();
+      URL.revokeObjectURL(url);
+    };
+    document.head.appendChild(script);
+  },
 
-  function _hideExemptGroup() {
-    if (exemptGrp) exemptGrp.style.display = 'none';
-    selectedPapers = [];
-  }
+  // ── CSV Import ────────────────────────────────────────────────
+  parseCSV(text) {
+    const allLines  = text.trim().split(/\r?\n/);
+    const dataLines = allLines.filter(function(l) { return !l.trim().startsWith('#') && l.trim() !== ''; });
 
-  // Build <select>s — count driven by frmExemptCount input
-  function _buildExemptSelects(discId, routeName) {
-    const selectsWrap  = modalEl.querySelector('#frmExemptSelects');
-    const countInput   = modalEl.querySelector('#frmExemptCount');
-    if (!selectsWrap) return;
+    if (dataLines.length < 2) return { valid: [], errors: ['No data rows found. Check the file is not empty and has a header row.'] };
 
-    // Get subjects that belong to this discipline AND have this route assigned
-    const levels = AppState.get('levels') || [];
-    const discLevelIds = levels
-      .filter(function(l) { return l.disciplineId === discId; })
-      .map(function(l) { return l.id; });
-    const allSubjects = (AppState.get('subjects') || [])
-      .filter(function(s) { return discLevelIds.includes(s.levelId); });
-
-    // Filter: subjects whose routes[] includes the selected route
-    const routeSubjects = allSubjects.filter(function(s) {
-      return Array.isArray(s.routes) && s.routes.includes(routeName);
+    // Normalize headers
+    const rawHeaders = dataLines[0].split(',').map(function(h) {
+      return h.replace(/"/g, '').trim().toLowerCase().replace(/[\s_-]+/g, '');
     });
 
-    // Determine how many selects to show
-    const count = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : 1;
+    // ── Skip hints/description row ──────────────────────────────
+    // The XLSX template has a row 2 with column hints like
+    // "Auto-generated — leave BLANK", "13 digits e.g. ...", etc.
+    // Detect it: if the row after the header has no valid CNIC-like
+    // value in the cnic column AND contains hint keywords → skip it.
+    const HINT_KEYWORDS = [
+      'auto-generated', 'leave blank', 'digits', 'full name',
+      'abbreviation', 'yyyy-mm-dd', 'auto-detected', 'optional',
+      'format:', 'e.g.', 'example',
+    ];
+    function isHintRow(line) {
+      const lower = line.toLowerCase();
+      return HINT_KEYWORDS.some(function(kw) { return lower.includes(kw); });
+    }
+    // dataLines[0] = header, dataLines[1] = possible hints row
+    const startIdx = (dataLines.length > 1 && isHintRow(dataLines[1])) ? 2 : 1;
 
-    function buildSelects() {
-      const currentCount = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : count;
-      const savedPapers  = existing?.exemptedPapers?.papers || [];
+    // Flexible column aliases
+    function findCol(aliases) {
+      for (let i = 0; i < aliases.length; i++) {
+        const idx = rawHeaders.indexOf(aliases[i]);
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    }
 
-      if (!routeSubjects.length) {
-        selectsWrap.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:4px 0;display:block">' +
-          'No subjects found for route "' + routeName + '". Assign subjects to this route first.</span>';
+    const colIdx = {
+      studentId:       findCol(['studentid', 'stuid', 'id']),
+      cnic:            findCol(['cnic', 'uniqueid', 'nationalid', 'cnid']),
+      studentName:     findCol(['studentname', 'name', 'fullname', 'studentfullname']),
+      gender:          findCol(['gender', 'sex']),
+      campus:          findCol(['campus', 'campusname', 'branch']),
+      discipline:      findCol(['discipline', 'disc', 'program', 'dept']),
+      dateOfAdmission: findCol(['dateofadmission', 'admissiondate', 'doa', 'admissiondateyyyy-mm-dd']),
+      session:         findCol(['session', 'sess']),
+      admissionBatch:  findCol(['admissionbatch', 'batch', 'batchno', 'batchname']),
+      route:           findCol(['route']),
+      exemptedCodes:   findCol(['exemptedpapercodes', 'exemptcodes', 'papercodes', 'exemptedcodes']),
+    };
+
+    const requiredCols = ['cnic', 'studentName', 'discipline', 'dateOfAdmission'];
+    const missingCols = requiredCols
+      .filter(function(k) { return colIdx[k] === -1; });
+
+    if (missingCols.length) {
+      return {
+        valid:  [],
+        errors: [
+          'Missing required columns: ' + missingCols.join(', ') + '.',
+          'Your file has these headers: ' + rawHeaders.join(', '),
+          'Required: cnic, studentName, discipline, dateOfAdmission',
+        ],
+      };
+    }
+
+    // CSV row parser — handles quoted fields and embedded commas
+    function parseRow(line) {
+      const vals = [];
+      let cur = '', inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+          else inQ = !inQ;
+        } else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+        else cur += ch;
+      }
+      vals.push(cur.trim());
+      return vals;
+    }
+
+    const disciplines = AppState.get('disciplines') || [];
+    const valid  = [];
+    const errors = [];
+
+    dataLines.slice(startIdx).forEach(function(line, i) {
+      const rowNum = startIdx + i + 1;
+      if (!line.trim()) return;
+
+      const vals          = parseRow(line);
+      // Strip quotes and leading = (Excel formula prefix ="value" used to force text)
+      const get           = function(idx) { return (vals[idx] || '').replace(/"/g,'').replace(/^=/, '').trim(); };
+      const rawCNIC       = get(colIdx.cnic);
+      const studentName   = get(colIdx.studentName);
+      const disciplineStr = get(colIdx.discipline);
+      const dateStr       = get(colIdx.dateOfAdmission);
+      const genderRaw     = colIdx.gender !== -1 ? get(colIdx.gender).toLowerCase() : '';
+      const gender        = genderRaw === 'female' || genderRaw === 'f' ? 'female' : 'male';
+      const campusRaw     = colIdx.campus !== -1 ? get(colIdx.campus) : '';
+      // Resolve campus name → campusId + snapshot
+      const campuses      = AppState.get('campuses') || [];
+      const campusRecord  = campusRaw
+        ? campuses.find(function(c) { return c.campusName.toLowerCase() === campusRaw.toLowerCase(); })
+        : null;
+      const campusId       = campusRecord ? campusRecord.id : '';
+      const campusSnapshot = campusRecord ? { id: campusRecord.id, name: campusRecord.campusName } : null;
+      const rowErrors     = [];
+
+      // ── Name ──
+      if (!studentName) rowErrors.push('studentName is required');
+
+      // ── CNIC (optional — old data may not have it) ──
+      let formattedCNIC = '';
+      if (rawCNIC) {
+        const cr = validateCNIC(rawCNIC);
+        if (!cr.valid) {
+          rowErrors.push(cr.message);
+        } else {
+          formattedCNIC = cr.formatted;
+          if (isDuplicateCNIC(formattedCNIC)) {
+            rowErrors.push('CNIC ' + formattedCNIC + ' is already registered in the system');
+          } else if (valid.some(function(v) { return v.cnic === formattedCNIC; })) {
+            rowErrors.push('CNIC ' + formattedCNIC + ' appears more than once in this file');
+          }
+        }
+      }
+
+      // ── Discipline ──
+      let disc = null;
+      if (!disciplineStr) {
+        rowErrors.push('discipline is required');
+      } else {
+        disc = disciplines.find(function(d) {
+          return d.abbreviation.toLowerCase() === disciplineStr.toLowerCase() ||
+                 d.fullName.toLowerCase()     === disciplineStr.toLowerCase();
+        });
+        if (!disc) {
+          const avail = disciplines.map(function(d) { return d.abbreviation; }).join(', ');
+          rowErrors.push('Discipline "' + disciplineStr + '" not found. Available: ' + (avail || 'none configured'));
+        }
+      }
+
+      // ── Date of Admission ──
+      if (!dateStr) {
+        rowErrors.push('dateOfAdmission is required (format: YYYY-MM-DD)');
+      } else if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        rowErrors.push('dateOfAdmission must be YYYY-MM-DD, got "' + dateStr + '"');
+      } else if (isNaN(Date.parse(dateStr))) {
+        rowErrors.push('"' + dateStr + '" is not a valid date');
+      }
+
+      if (rowErrors.length) {
+        errors.push('Row ' + rowNum + (studentName ? ' (' + studentName + ')' : '') + ': ' + rowErrors.join('; '));
         return;
       }
 
-      // Build N selects based on count
-      selectsWrap.innerHTML = Array.from({ length: currentCount }, function(_, i) {
-        const savedForSlot = savedPapers[i];
-        const selectedId   = savedForSlot ? savedForSlot.id : '';
-        return '<div style="display:flex;align-items:center;gap:8px">' +
-          '<span style="font-size:11px;color:var(--t3);min-width:22px;text-align:right">' + (i + 1) + '.</span>' +
-          '<select data-slot="' + i + '" class="frm-exempt-sel form-select" ' +
-            'style="flex:1;height:36px;background:var(--surface2);border:1px solid var(--border);' +
-            'border-radius:var(--r-sm);color:var(--t1);font-size:12.5px;outline:none">' +
-            '<option value="">— select subject —</option>' +
-            routeSubjects.map(function(s) {
-              return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
-                s.subjectCode + ' — ' + s.subjectName + '</option>';
-            }).join('') +
-          '</select>' +
-        '</div>';
-      }).join('');
+      // Auto-generate unique studentId using new structured format
+      const discCode  = disc ? disc.abbreviation : '';
+      const studentId = generateStudentId(discCode, dateStr, gender);
 
-      // Rebuild selectedPapers from current selects
-      _syncSelectedFromSelects(routeSubjects);
-
-      // Wire change on each select
-      selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
-        sel.addEventListener('change', function() {
-          _syncSelectedFromSelects(routeSubjects);
-          renderSelectedTags();
-        });
-      });
-
-      renderSelectedTags();
-    }
-
-    // Initial render
-    buildSelects();
-
-    // Wire count input to rebuild selects dynamically
-    if (countInput) {
-      // Remove old listeners by cloning
-      const newCountInput = countInput.cloneNode(true);
-      countInput.parentNode.replaceChild(newCountInput, countInput);
-      newCountInput.addEventListener('input', function() {
-        buildSelects();
-      });
-    }
-  }
-
-  function _syncSelectedFromSelects(routeSubjects) {
-    selectedPapers = [];
-    const selectsWrap = modalEl.querySelector('#frmExemptSelects');
-    if (!selectsWrap) return;
-    selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
-      const subId = sel.value;
-      if (!subId) return;
-      const sub  = routeSubjects.find(function(s) { return s.id === subId; });
-      const live = AppState.findById('subjects', subId);
-      if (sub && !selectedPapers.some(function(p) { return p.id === subId; })) {
-        selectedPapers.push({
-          id:          subId,
-          subjectCode: (live?.subjectCode || sub.subjectCode || '').toUpperCase(),
-          subjectName:  live?.subjectName  || sub.subjectName || '',
-        });
+      const admissionBatch = colIdx.admissionBatch !== -1 ? get(colIdx.admissionBatch) : '';
+      const route          = colIdx.route          !== -1 ? get(colIdx.route).trim()   : '';
+      let exemptedPapers   = null;
+      if (route === 'Exemption' && colIdx.exemptedCodes !== -1) {
+        const codesRaw = get(colIdx.exemptedCodes);
+        const codes = codesRaw.split(/[|,;]+/).map(function(c) { return c.trim().toUpperCase(); }).filter(Boolean);
+        exemptedPapers = { count: codes.length, codes };
       }
+
+      valid.push({
+        _rowNum:         rowNum,
+        studentId,
+        cnic:            formattedCNIC,
+        studentName,
+        gender,
+        campusId,
+        campusSnapshot,
+        disciplineId:    disc.id,
+        dateOfAdmission: dateStr,
+        session:         sessionFromDate(dateStr),
+        admissionBatch,
+        route,
+        exemptedPapers,
+        createdAt:       new Date().toISOString(),
+      });
     });
-  }
 
-  function _onRouteChange(routeName, discId) {
-    const chkGrp = modalEl.querySelector('#frmExemptChkGroup');
-    const chk    = modalEl.querySelector('#frmExemptChk');
-    if (!routeName || !discId) {
-      _hideExemptChk();
-      _hideExemptGroup();
-      return;
-    }
-    // Show exemption checkbox for any route
-    if (chkGrp) chkGrp.style.display = '';
-    // Restore checked state on edit
-    const hadExemption = !!(existing?.exemptedPapers?.count);
-    if (chk && hadExemption && existing?.route === routeName) {
-      chk.checked = true;
-      if (exemptGrp) exemptGrp.style.display = '';
-      _buildExemptSelects(discId, routeName);
-    } else if (chk && !hadExemption) {
-      chk.checked = false;
-      _hideExemptGroup();
-    }
-    if (chk) {
-      // Re-wire checkbox (remove old listener first by cloning)
-      const newChk = chk.cloneNode(true);
-      chk.parentNode.replaceChild(newChk, chk);
-      newChk.addEventListener('change', function() {
-        if (newChk.checked) {
-          if (exemptGrp) exemptGrp.style.display = '';
-          _buildExemptSelects(discId, routeName);
-        } else {
-          _hideExemptGroup();
-        }
-      });
-    }
-  }
+    return { valid, errors };
+  },
 
-  if (discSel) {
-    discSel.addEventListener('change', function() {
-      selectedPapers = [];
-      updateRouteOptions(discSel.value);
+  importStudents(rows) {
+    let added = 0;
+    rows.forEach(function(row) {
+      const data = Object.assign({}, row);
+      delete data._rowNum;
+      AppState.add(KEY, Object.assign(data, { id: generateID('stu') }));
+      added++;
     });
-    if (discSel.value) updateRouteOptions(discSel.value);
-  }
-
-  if (routeSel) {
-    routeSel.addEventListener('change', function() {
-      _onRouteChange(routeSel.value, discSel?.value);
-    });
-  }
-
-  // Expose selectedPapers to _collectForm via the DOM
-  modalEl._getSelectedPapers = function() { return selectedPapers; };
-}
-
-function _collectForm(modalEl) {
-  const g = function(name) {
-    const el = modalEl.querySelector('[name="' + name + '"]');
-    return el ? el.value.trim() : '';
-  };
-  const route = g('route');
-  let exemptedPapers = null;
-  const exemptChk = modalEl.querySelector('#frmExemptChk');
-  const hasExemption = !!(exemptChk && exemptChk.checked);
-  if (hasExemption) {
-    const papers = modalEl._getSelectedPapers ? modalEl._getSelectedPapers() : [];
-    // Save as snapshot: { id, subjectCode, subjectName } so future subject edits don't corrupt data
-    const snapshots = papers.map(function(p) {
-      const live = AppState.findById('subjects', p.id);
-      return {
-        id:          p.id,
-        subjectCode: (live?.subjectCode || p.subjectCode || '').toUpperCase(),
-        subjectName:  live?.subjectName  || p.subjectName  || '',
-      };
-    }).filter(function(p) { return p.id; });
-    exemptedPapers = {
-      count:  snapshots.length,
-      codes:  snapshots.map(function(p) { return p.subjectCode; }),
-      papers: snapshots,
-    };
-  }
-  return {
-    cnicRaw:         g('cnicRaw'),
-    studentName:     g('studentName'),
-    gender:          g('gender'),
-    campusId:        g('campusId'),
-    disciplineId:    g('disciplineId'),
-    dateOfAdmission: g('dateOfAdmission'),
-    admissionBatch:  g('admissionBatch'),
-    route,
-    exemptedPapers,
-  };
-}
-
-function _showFormErr(modalEl, msg) {
-  const el = modalEl.querySelector('#frmErrMsg');
-  if (!el) return;
-  el.textContent   = msg;
-  el.style.display = 'block';
-}
-
-// ── Open Add / Edit modal ─────────────────────────────────────
-function _openForm(existing, container) {
-  existing = existing || null;
-  const isEdit = !!existing;
-  let _mid;
-
-  _mid = Modal.open({
-    title:   isEdit ? 'Edit Student — ' + existing.studentName : 'Add New Student',
-    size:    'md',
-    body:    _buildFormHTML(existing),
-    actions: [
-      { label: 'Cancel', variant: 'ghost', close: true },
-      {
-        label:   isEdit ? 'Save Changes' : 'Add Student',
-        variant: 'primary',
-        close:   false,
-        handler: function(modalEl) {
-          const errEl = modalEl.querySelector('#frmErrMsg');
-          if (errEl) errEl.style.display = 'none';
-
-          const data   = _collectForm(modalEl);
-          const result = isEdit
-            ? StudentService.updateStudent(existing.id, data)
-            : StudentService.addStudent(data);
-
-          if (!result.success) { _showFormErr(modalEl, result.message); return; }
-          Modal.close(_mid);
-          _rerender(container);
-          Toast.success(isEdit ? 'Student updated.' : 'Student added successfully.');
-        },
-      },
-    ],
-    onOpen: function(modalEl) { _wireForm(modalEl, existing); },
-  });
-}
-
-// ── Delete ────────────────────────────────────────────────────
-function _delete(student, container) {
-  Modal.confirm({
-    title:        'Delete Student',
-    message:      'Delete <strong>' + student.studentName + '</strong>' +
-                  ' (CNIC: ' + (student.cnic || '—') + ')? This cannot be undone.',
-    confirmLabel: 'Delete',
-    danger:       true,
-  }).then(function(confirmed) {
-    if (!confirmed) return;
-    StudentService.deleteStudent(student.id);
-    _rerender(container);
-    Toast.success('Student deleted.');
-  });
-}
-
-// ── CSV Import modal ──────────────────────────────────────────
-function _openImportModal(container) {
-  let parsedData = null;
-  let _mid;
-
-  const bodyHTML = `
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div class="import-drop" id="dropZone">
-        ${ICONS.upload}
-        <p style="margin:10px 0 4px;font-size:13.5px;font-weight:600;color:var(--t1)">
-          Drop CSV file here or click to browse
-        </p>
-        <span style="font-size:12px;color:var(--t3)">
-          Required columns: cnic, studentName, discipline, dateOfAdmission &nbsp;|&nbsp; Optional: admissionBatch
-        </span>
-        <input type="file" id="csvFileInput" accept=".csv" style="display:none"/>
-      </div>
-      <div id="importResult"></div>
-    </div>`;
-
-  _mid = Modal.open({
-    title:   'Import Students from CSV',
-    size:    'lg',
-    body:    bodyHTML,
-    actions: [
-      { label: 'Cancel', variant: 'ghost', close: true },
-      {
-        label:   'Import Students',
-        variant: 'primary',
-        close:   false,
-        handler: function() {
-          if (!parsedData?.valid?.length) { Toast.error('No valid rows to import.'); return; }
-          const count = StudentService.importStudents(parsedData.valid);
-          Modal.close(_mid);
-          _rerender(container);
-          Toast.success(count + ' student' + (count !== 1 ? 's' : '') + ' imported successfully.');
-        },
-      },
-    ],
-    onOpen: function(modalEl) {
-      const dropZone  = modalEl.querySelector('#dropZone');
-      const csvInput  = modalEl.querySelector('#csvFileInput');
-      const resultDiv = modalEl.querySelector('#importResult');
-
-      dropZone.addEventListener('click', function() { csvInput.click(); });
-      dropZone.addEventListener('dragover', function(e) {
-        e.preventDefault(); dropZone.classList.add('drag-over');
-      });
-      dropZone.addEventListener('dragleave', function() {
-        dropZone.classList.remove('drag-over');
-      });
-      dropZone.addEventListener('drop', function(e) {
-        e.preventDefault(); dropZone.classList.remove('drag-over');
-        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
-      });
-      csvInput.addEventListener('change', function() {
-        if (csvInput.files[0]) processFile(csvInput.files[0]);
-      });
-
-      function processFile(file) {
-        if (!file.name.endsWith('.csv')) { Toast.error('Please select a .csv file.'); return; }
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          parsedData = StudentService.parseCSV(e.target.result);
-          _renderImportPreview(resultDiv, parsedData, file.name);
-        };
-        reader.readAsText(file);
-      }
-    },
-  });
-}
-
-function _renderImportPreview(el, data, fileName) {
-  const valid  = data.valid  || [];
-  const errors = data.errors || [];
-  let html = '';
-
-  if (!valid.length && !errors.length) {
-    html = '<p style="color:var(--t3);font-size:13px;padding:12px 0">No data found in file.</p>';
-    el.innerHTML = html;
-    return;
-  }
-
-  // ── File info card ──
-  html += `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;
-      background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-      <polyline points="14 2 14 8 20 8"/>
-      <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-    </svg>
-    <div>
-      <div style="font-size:13px;font-weight:700;color:var(--t1)">${fileName || 'File selected'}</div>
-      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">File loaded and ready to import</div>
-    </div>
-  </div>`;
-
-  // ── Summary counts ──
-  html += `<div style="display:flex;gap:10px;margin-bottom:${errors.length ? '10px' : '0'}">`;
-
-  if (valid.length) {
-    html += `<div style="flex:1;display:flex;align-items:center;gap:10px;padding:12px 16px;
-        background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:var(--r-sm)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
-        <polyline points="20 6 9 17 4 12"/>
-      </svg>
-      <div>
-        <div style="font-size:18px;font-weight:800;color:#059669;line-height:1">${valid.length}</div>
-        <div style="font-size:11px;color:#059669;margin-top:1px">student${valid.length !== 1 ? 's' : ''} ready to import</div>
-      </div>
-    </div>`;
-  }
-
-  if (errors.length) {
-    html += `<div style="flex:1;display:flex;align-items:center;gap:10px;padding:12px 16px;
-        background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      <div>
-        <div style="font-size:18px;font-weight:800;color:#ef4444;line-height:1">${errors.length}</div>
-        <div style="font-size:11px;color:#ef4444;margin-top:1px">row${errors.length !== 1 ? 's' : ''} with errors</div>
-      </div>
-    </div>`;
-  }
-
-  html += '</div>';
-
-  // ── Errors detail (collapsible) ──
-  if (errors.length) {
-    html += `<div class="import-err-list" style="margin-top:10px;max-height:140px;overflow-y:auto">
-      <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:6px">
-        Fix these rows and re-upload:
-      </div>
-      <ul style="margin:0;padding-left:16px">`;
-    errors.forEach(function(e) { html += '<li style="font-size:11.5px;margin-bottom:3px">' + e + '</li>'; });
-    html += '</ul></div>';
-  }
-
-  el.innerHTML = html;
-}
-
-// ── PDF Export ────────────────────────────────────────────────
-function _exportPDF(rows, filterLabels) {
-  if (!rows.length) { Toast.error('No students to export.'); return; }
-
-  const now     = new Date();
-  const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-  const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
-
-  const filterHTML = filterLabels.length
-    ? filterLabels.map(function(f) { return '<span class="chip">' + f + '</span>'; }).join('')
-    : '<span class="chip no-filter">No filters applied — showing all students</span>';
-
-  const tbody = rows.map(function(s, i) {
-    const disc   = AppState.findById('disciplines', s.disciplineId);
-    const [y, m, d] = (s.dateOfAdmission || '').split('-');
-    const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const admLabel  = (y && m && d) ? parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y : '—';
-
-    return '<tr class="' + (i % 2 === 0 ? 'even' : 'odd') + '">' +
-      '<td class="mono">' + (s.studentId || '—') + '</td>' +
-      '<td class="mono">' + (s.cnic      || '—') + '</td>' +
-      '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
-      '<td>' + (s.campusSnapshot?.name || s.campus || '—') + '</td>' +
-      '<td>' + (disc?.abbreviation || '—') + '</td>' +
-      '<td>' + (s.route || '—') +
-        (s.route === 'Exemption' && s.exemptedPapers?.count
-          ? '<br><small style="color:#64748b">' + s.exemptedPapers.count + ' exempt' +
-            (s.exemptedPapers.codes?.length ? ': ' + s.exemptedPapers.codes.join(', ') : '') + '</small>'
-          : '') +
-      '</td>' +
-      '<td>' + admLabel + '</td>' +
-      '<td><strong>' + (s.session || '—') + '</strong></td>' +
-      '<td>' + (s.admissionBatch || '—') + '</td>' +
-    '</tr>';
-  }).join('');
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8"/>
-<title>Student Report</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1e293b;background:#fff;padding:20px 24px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;
-    border-bottom:2.5px solid #2563eb;padding-bottom:12px;margin-bottom:14px}
-  .header-left .title{font-size:20px;font-weight:700;color:#1e40af}
-  .header-left .subtitle{font-size:11px;color:#64748b;margin-top:2px}
-  .header-right{text-align:right;font-size:10.5px;color:#64748b;line-height:1.6}
-  .header-right .date{font-weight:600;color:#1e293b;font-size:11px}
-  .stat-row{display:flex;gap:12px;margin-bottom:12px}
-  .stat{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:6px 16px;text-align:center}
-  .stat .num{font-size:18px;font-weight:700;color:#2563eb;font-family:'Segoe UI',Arial,sans-serif}
-  .stat .lbl{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
-  .filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;
-    background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px}
-  .filters-lbl{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;
-    letter-spacing:.5px;white-space:nowrap;margin-right:4px}
-  .chip{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:600;
-    padding:2px 9px;border-radius:10px}
-  .no-filter{background:#f1f5f9;color:#64748b}
-  table{width:100%;border-collapse:collapse;font-size:10.5px}
-  thead tr{background:#1e40af}
-  thead th{color:#fff;font-weight:600;padding:7px 9px;text-align:left;
-    font-size:10px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
-  tbody tr.even{background:#fff}
-  tbody tr.odd{background:#f8faff}
-  tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;color:#334155;vertical-align:middle}
-  td.mono{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.03em}
-  .footer{margin-top:16px;padding-top:10px;border-top:1px solid #e2e8f0;
-    display:flex;justify-content:space-between;font-size:9.5px;color:#94a3b8}
-  .brand{margin-top:10px;text-align:center;font-size:10px;color:#94a3b8}
-  @media print{body{padding:12px 14px} @page{size:A4 landscape;margin:10mm} .no-print{display:none}}
-</style>
-</head>
-<body>
-  <div class="header">
-    <div class="header-left">
-      <div class="title">Student Register</div>
-      <div class="subtitle">Academic Student Records</div>
-    </div>
-    <div class="header-right">
-      <div class="date">${dateStr}</div>
-      <div>${timeStr}</div>
-    </div>
-  </div>
-
-  <div class="stat-row">
-    <div class="stat">
-      <div class="num">${rows.length}</div>
-      <div class="lbl">Total Students</div>
-    </div>
-  </div>
-
-  <div class="filters">
-    <span class="filters-lbl">▾ Filters</span>
-    ${filterHTML}
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Student ID</th>
-        <th>CNIC</th>
-        <th>Student Name</th>
-        <th>Campus</th>
-        <th>Discipline</th>
-        <th>Route</th>
-        <th>Date of Admission</th>
-        <th>Session</th>
-        <th>Admission Batch</th>
-      </tr>
-    </thead>
-    <tbody>${tbody}</tbody>
-  </table>
-
-  <div class="footer">
-    <span>Learnomist — Exported on ${dateStr} at ${timeStr}</span>
-    <span>Total: ${rows.length} student${rows.length !== 1 ? 's' : ''}</span>
-  </div>
-  <div class="brand">Powered by <strong style="color:#2563eb">Learnomist</strong></div>
-
-  <div class="no-print" style="margin-top:18px;text-align:center">
-    <button onclick="window.print()"
-      style="padding:9px 28px;background:#2563eb;color:#fff;border:none;
-             border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
-      Print / Save as PDF
-    </button>
-  </div>
-</body>
-</html>`;
-
-  const w = window.open('', '_blank');
-  if (!w) { Toast.error('Allow pop-ups to export PDF.'); return; }
-  w.document.write(html);
-  w.document.close();
-  setTimeout(function() { w.print(); }, 600);
-}
-
-// ── Helpers ───────────────────────────────────────────────────
-function _getFilters(container) {
-  return {
-    search:  (container.querySelector('#stuSearch')?.value        || '').toLowerCase(),
-    disc:     container.querySelector('#stuFilterDisc')?.value    || '',
-    session:  container.querySelector('#stuFilterSession')?.value || '',
-    campus:   container.querySelector('#stuFilterCampus')?.value  || '',
-  };
-}
-
-function _rerender(container) {
-  const f = _getFilters(container);
-  _render(container, f.search, f.disc, f.session, f.campus);
-}
-
-// ── Toolbar wiring ────────────────────────────────────────────
-function _attachToolbar(container) {
-  const search    = container.querySelector('#stuSearch');
-  const discSel   = container.querySelector('#stuFilterDisc');
-  const sessSel   = container.querySelector('#stuFilterSession');
-  const campusSel = container.querySelector('#stuFilterCampus');
-
-  const rerender = function() { _rerender(container); };
-  search?.addEventListener('input',    rerender);
-  discSel?.addEventListener('change',  rerender);
-  sessSel?.addEventListener('change',  rerender);
-  campusSel?.addEventListener('change', rerender);
-
-  container.querySelector('#stuAddBtn')?.addEventListener('click', function() {
-    _openForm(null, container);
-  });
-
-  container.querySelector('#stuImportBtn')?.addEventListener('click', function() {
-    _openImportModal(container);
-  });
-
-  container.querySelector('#stuExportCSVBtn')?.addEventListener('click', function() {
-    const rows = container._filteredRows || AppState.get(KEY) || [];
-    if (!rows.length) { Toast.error('No students to export.'); return; }
-    StudentService.exportCSV(rows);
-    Toast.success('Exported ' + rows.length + ' student' + (rows.length !== 1 ? 's' : '') + '.');
-  });
-
-  container.querySelector('#stuExportPDFBtn')?.addEventListener('click', function() {
-    const rows   = container._filteredRows || AppState.get(KEY) || [];
-    const f      = _getFilters(container);
-    const labels = [];
-    if (f.disc) {
-      const d = AppState.findById('disciplines', f.disc);
-      if (d) labels.push('Discipline: ' + d.abbreviation);
-    }
-    if (f.campus) {
-      const c = AppState.findById('campuses', f.campus);
-      if (c) labels.push('Campus: ' + (c.campusName || c.name));
-    }
-    if (f.session) labels.push('Session: ' + f.session);
-    if (f.search)  labels.push('Search: "' + f.search + '"');
-    _exportPDF(rows, labels);
-  });
-
-  container.querySelector('#stuTemplateBtn')?.addEventListener('click', function() {
-    StudentService.downloadTemplate();
-  });
-
-  AppState.subscribe(KEY, rerender);
-}
-
-// ── Module entry point ────────────────────────────────────────
-export const StudentModule = {
-  mount: function(container) {
-    injectUIStyles();
-    injectStudentStyles();
-    const el = typeof container === 'string' ? document.querySelector(container) : container;
-    if (!el) { console.error('[StudentModule] Container not found'); return; }
-
-    // Render page immediately — do not block on migration
-    el.innerHTML = _pageTemplate();
-    _render(el, '', '', '');
-    _attachToolbar(el);
-
-    // Run migration after first paint (deferred) so UI opens instantly.
-    // migrateStudentIds() has a run-once guard — it is a no-op on
-    // subsequent mounts once the flag is set in AppState.
-    setTimeout(function() {
-      const migrated = migrateStudentIds();
-      if (migrated > 0) {
-        console.info('[StudentModule] Migrated ' + migrated + ' student ID(s) to new format.');
-        _render(el, '', '', '');   // re-render once with updated IDs
-      }
-    }, 0);
+    return added;
   },
 };
