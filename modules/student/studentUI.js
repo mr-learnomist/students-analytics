@@ -278,7 +278,7 @@ function _render(container, search, discFilter, sessionFilter) {
         },
       },
       {
-        key: 'route', label: 'Route', width: '140px',
+        key: 'route', label: 'Route', width: '170px',
         render: function(v, row) {
           if (!v) return '<span style="color:var(--t4)">—</span>';
           const isExemption = v === 'Exemption';
@@ -287,9 +287,12 @@ function _render(container, search, discFilter, sessionFilter) {
           let html = '<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:' + bg +
             ';color:' + color + ';font-size:11.5px;font-weight:700">' + v + '</span>';
           if (isExemption && row.exemptedPapers?.count) {
+            const papers = row.exemptedPapers.papers || [];
+            const codeList = papers.length
+              ? papers.map(function(p) { return p.subjectCode; }).join(', ')
+              : (row.exemptedPapers.codes || []).join(', ');
             html += '<br><span style="font-size:10.5px;color:var(--t3);margin-top:2px;display:block">' +
-              row.exemptedPapers.count + ' paper' + (row.exemptedPapers.count !== 1 ? 's' : '') + ' exempt' +
-              (row.exemptedPapers.codes?.length ? ': ' + row.exemptedPapers.codes.join(', ') : '') +
+              row.exemptedPapers.count + ' exempt: ' + codeList +
               '</span>';
           }
           return html;
@@ -493,29 +496,38 @@ function _buildFormHTML(existing) {
 
     <!-- Exemption details (only when Route = Exemption) -->
     <div class="form-group" id="frmExemptGroup" style="display:none">
-      <label class="form-label">Exempted Papers</label>
-      <div class="form-row-2" style="margin-bottom:8px">
-        <div>
-          <label class="form-label" style="font-size:10.5px">Number of Exempt Papers</label>
-          <input type="number" name="exemptCount" id="frmExemptCount" class="form-input"
-                 min="0" max="99" placeholder="e.g. 3"
-                 value="${(existing?.exemptedPapers?.count) || ''}"/>
-        </div>
-        <div>
-          <label class="form-label" style="font-size:10.5px">Paper Codes (comma separated)</label>
-          <input name="exemptCodes" id="frmExemptCodes" class="form-input"
-                 placeholder="e.g. F1, F2, F3"
-                 value="${(existing?.exemptedPapers?.codes || []).join(', ')}"/>
-        </div>
+      <label class="form-label">Exempted Papers
+        <span id="frmExemptCountBadge" style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none;margin-left:4px"></span>
+      </label>
+
+      <!-- Number of papers selector -->
+      <div style="margin-bottom:10px">
+        <label class="form-label" style="font-size:10.5px;margin-bottom:4px">How many papers exempt?</label>
+        <select id="frmExemptCount" name="exemptCount" class="form-select" style="max-width:160px">
+          <option value="">Select count…</option>
+        </select>
+        <span class="form-hint" style="margin-top:4px">Dropdown below will only allow this many selections</span>
       </div>
-      <span class="form-hint">Enter paper codes separated by commas — e.g. F1, F2, MA1</span>
+
+      <!-- Paper multi-select dropdown -->
+      <div id="frmPaperPickerWrap">
+        <label class="form-label" style="font-size:10.5px;margin-bottom:6px">Select Exempt Paper Codes</label>
+        <div id="frmPaperPicker" style="
+          border:1px solid var(--border);border-radius:var(--r-sm);
+          background:var(--surface2);max-height:200px;overflow-y:auto;padding:6px 4px">
+          <span style="font-size:12px;color:var(--t4);padding:6px 10px;display:block">
+            Select a discipline first
+          </span>
+        </div>
+        <div id="frmExemptSelected" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
+      </div>
     </div>
 
     <span id="frmErrMsg" class="err-msg" style="display:none"></span>
   </div>`;
 }
 
-// Wire date → session auto-fill + discipline → route options + route → exemption
+// Wire date → session auto-fill + discipline → route options + route → exemption paper picker
 function _wireForm(modalEl, existing) {
   const cnicInput  = modalEl.querySelector('#frmCNIC');
   const cnicPrev   = modalEl.querySelector('#cnicPreview');
@@ -527,12 +539,20 @@ function _wireForm(modalEl, existing) {
   const routeSel   = modalEl.querySelector('#frmRoute');
   const routeHint  = modalEl.querySelector('#frmRouteHint');
   const exemptGrp  = modalEl.querySelector('#frmExemptGroup');
+  const countSel   = modalEl.querySelector('#frmExemptCount');
+  const picker     = modalEl.querySelector('#frmPaperPicker');
+  const selectedWrap = modalEl.querySelector('#frmExemptSelected');
 
+  // Currently selected paper IDs (with snapshot data)
+  let selectedPapers = (existing?.exemptedPapers?.papers || []).slice();
+
+  // ── CNIC ──
   if (cnicInput && cnicPrev && cnicHint) {
     _wireCNICInput(cnicInput, cnicPrev, cnicHint);
     if (cnicInput.value) cnicInput.dispatchEvent(new Event('input'));
   }
 
+  // ── Session auto-detect ──
   if (admDate && sessionDiv) {
     admDate.addEventListener('change', function() {
       const s = sessionFromDate(admDate.value);
@@ -542,7 +562,107 @@ function _wireForm(modalEl, existing) {
     });
   }
 
-  // Populate route options based on discipline abbreviation
+  // ── Paper picker helpers ──
+
+  function renderCountOptions(discId) {
+    if (!countSel) return;
+    // Count options = number of subjects in this discipline
+    const levels = AppState.get('levels') || [];
+    const discLevelIds = levels
+      .filter(function(l) { return l.disciplineId === discId; })
+      .map(function(l) { return l.id; });
+    const subjects = (AppState.get('subjects') || [])
+      .filter(function(s) { return discLevelIds.includes(s.levelId); });
+    const max = subjects.length || 14;
+    const savedCount = existing?.exemptedPapers?.count || 0;
+    countSel.innerHTML = '<option value="">Select count…</option>' +
+      Array.from({ length: max }, function(_, i) {
+        const n = i + 1;
+        return '<option value="' + n + '"' + (n === savedCount ? ' selected' : '') + '>' + n + '</option>';
+      }).join('');
+  }
+
+  function renderPicker(discId) {
+    if (!picker) return;
+    const levels = AppState.get('levels') || [];
+    const discLevelIds = levels
+      .filter(function(l) { return l.disciplineId === discId; })
+      .map(function(l) { return l.id; });
+    const subjects = (AppState.get('subjects') || [])
+      .filter(function(s) { return discLevelIds.includes(s.levelId); });
+
+    if (!subjects.length) {
+      picker.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:8px 10px;display:block">No subjects found for this discipline</span>';
+      return;
+    }
+
+    const maxAllowed = parseInt(countSel?.value) || 0;
+    picker.innerHTML = subjects.map(function(sub) {
+      const isSelected = selectedPapers.some(function(p) { return p.id === sub.id; });
+      const isDisabled = !isSelected && maxAllowed > 0 && selectedPapers.length >= maxAllowed;
+      return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;' +
+        'cursor:' + (isDisabled ? 'not-allowed' : 'pointer') + ';' +
+        'border-radius:5px;transition:background .12s;' +
+        (isSelected ? 'background:var(--blue-dim)' : '') + '"' +
+        ' onmouseover="if(!this.querySelector(\'input\').disabled)this.style.background=\'var(--surface3)\'"' +
+        ' onmouseout="this.style.background=\'' + (isSelected ? 'var(--blue-dim)' : '') + '\'">' +
+        '<input type="checkbox" data-subject-id="' + sub.id + '"' +
+          ' data-code="' + sub.subjectCode + '"' +
+          ' data-name="' + sub.subjectName.replace(/"/g,'&quot;') + '"' +
+          (isSelected ? ' checked' : '') +
+          (isDisabled ? ' disabled' : '') +
+          ' style="accent-color:var(--blue);width:14px;height:14px;cursor:' + (isDisabled ? 'not-allowed' : 'pointer') + '">' +
+        '<code style="font-size:12px;font-weight:700;color:var(--cyan);min-width:50px">' + sub.subjectCode + '</code>' +
+        '<span style="font-size:12px;color:var(--t2)">' + sub.subjectName + '</span>' +
+        '</label>';
+    }).join('');
+
+    // Wire checkboxes
+    picker.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        const id   = cb.dataset.subjectId;
+        const code = cb.dataset.code;
+        const name = cb.dataset.name;
+        if (cb.checked) {
+          if (!selectedPapers.some(function(p) { return p.id === id; })) {
+            selectedPapers.push({ id: id, subjectCode: code, subjectName: name });
+          }
+        } else {
+          selectedPapers = selectedPapers.filter(function(p) { return p.id !== id; });
+        }
+        renderSelectedTags();
+        renderPicker(discId); // re-render to update disabled states
+      });
+    });
+  }
+
+  function renderSelectedTags() {
+    if (!selectedWrap) return;
+    if (!selectedPapers.length) {
+      selectedWrap.innerHTML = '<span style="font-size:11.5px;color:var(--t4);font-style:italic">No papers selected yet</span>';
+      return;
+    }
+    selectedWrap.innerHTML = selectedPapers.map(function(p) {
+      return '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;' +
+        'background:var(--blue-dim);border:1px solid var(--blue);border-radius:12px;' +
+        'font-size:11.5px;font-weight:700;color:var(--blue)">' +
+        p.subjectCode +
+        '<button type="button" data-id="' + p.id + '" style="background:none;border:none;' +
+          'cursor:pointer;color:var(--blue);padding:0;line-height:1;font-size:13px" title="Remove">×</button>' +
+        '</span>';
+    }).join('');
+    // Wire remove buttons
+    selectedWrap.querySelectorAll('button[data-id]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        selectedPapers = selectedPapers.filter(function(p) { return p.id !== btn.dataset.id; });
+        renderSelectedTags();
+        const discId = discSel?.value;
+        if (discId) renderPicker(discId);
+      });
+    });
+  }
+
+  // ── Route options ──
   function updateRouteOptions(discId) {
     if (!routeGroup || !routeSel) return;
     const disc = AppState.findById('disciplines', discId);
@@ -557,30 +677,54 @@ function _wireForm(modalEl, existing) {
     routeGroup.style.display = '';
     const hintMap = { ACCA: 'Foundation → ACCA papers → Exemption track', CA: 'PRC → CAF → Exemption track' };
     if (routeHint) routeHint.textContent = hintMap[abbr] || '';
-
     const savedRoute = existing?.route || '';
     routeSel.innerHTML = '<option value="">Select route…</option>' +
       opts.map(function(r) {
         return '<option value="' + r + '"' + (r === savedRoute ? ' selected' : '') + '>' + r + '</option>';
       }).join('');
-
-    toggleExemption(routeSel.value);
+    toggleExemption(routeSel.value, discId);
   }
 
-  function toggleExemption(route) {
+  function toggleExemption(route, discId) {
     if (!exemptGrp) return;
-    exemptGrp.style.display = route === 'Exemption' ? '' : 'none';
+    const show = route === 'Exemption';
+    exemptGrp.style.display = show ? '' : 'none';
+    if (show && discId) {
+      renderCountOptions(discId);
+      renderPicker(discId);
+      renderSelectedTags();
+    }
   }
 
   if (discSel) {
-    discSel.addEventListener('change', function() { updateRouteOptions(discSel.value); });
-    // Init on load
+    discSel.addEventListener('change', function() {
+      selectedPapers = []; // reset selections on discipline change
+      updateRouteOptions(discSel.value);
+    });
     if (discSel.value) updateRouteOptions(discSel.value);
   }
 
   if (routeSel) {
-    routeSel.addEventListener('change', function() { toggleExemption(routeSel.value); });
+    routeSel.addEventListener('change', function() {
+      toggleExemption(routeSel.value, discSel?.value);
+    });
   }
+
+  if (countSel) {
+    countSel.addEventListener('change', function() {
+      // If new count < current selected, trim selection
+      const max = parseInt(countSel.value) || 0;
+      if (max && selectedPapers.length > max) {
+        selectedPapers = selectedPapers.slice(0, max);
+        renderSelectedTags();
+      }
+      const discId = discSel?.value;
+      if (discId) renderPicker(discId);
+    });
+  }
+
+  // Expose selectedPapers to _collectForm via the DOM
+  modalEl._getSelectedPapers = function() { return selectedPapers; };
 }
 
 function _collectForm(modalEl) {
@@ -591,10 +735,22 @@ function _collectForm(modalEl) {
   const route = g('route');
   let exemptedPapers = null;
   if (route === 'Exemption') {
-    const codesRaw = g('exemptCodes');
-    const codes = codesRaw.split(/[,;]+/).map(function(c) { return c.trim().toUpperCase(); }).filter(Boolean);
-    const countInput = parseInt(g('exemptCount')) || codes.length;
-    exemptedPapers = { count: countInput, codes };
+    const papers = modalEl._getSelectedPapers ? modalEl._getSelectedPapers() : [];
+    // Save as snapshot: { id, subjectCode, subjectName } so future subject edits don't corrupt data
+    const snapshots = papers.map(function(p) {
+      // Freshen snapshot from live subjects, fallback to stored snapshot
+      const live = AppState.findById('subjects', p.id);
+      return {
+        id:          p.id,
+        subjectCode: (live?.subjectCode || p.subjectCode || '').toUpperCase(),
+        subjectName: live?.subjectName  || p.subjectName  || '',
+      };
+    });
+    exemptedPapers = {
+      count:   snapshots.length,
+      codes:   snapshots.map(function(p) { return p.subjectCode; }),
+      papers:  snapshots, // full snapshot for display & history
+    };
   }
   return {
     cnicRaw:         g('cnicRaw'),
