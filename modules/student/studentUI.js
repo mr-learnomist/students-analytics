@@ -16,6 +16,7 @@ import {
   validateCNIC,
   cnicDigitsOnly,
   migrateStudentIds,
+  ROUTE_OPTIONS,
 } from './studentService.js';
 
 const KEY = 'students';
@@ -277,6 +278,24 @@ function _render(container, search, discFilter, sessionFilter) {
         },
       },
       {
+        key: 'route', label: 'Route', width: '140px',
+        render: function(v, row) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          const isExemption = v === 'Exemption';
+          const color = isExemption ? '#d97706' : 'var(--blue)';
+          const bg    = isExemption ? 'rgba(217,119,6,.10)' : 'var(--blue-dim)';
+          let html = '<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:' + bg +
+            ';color:' + color + ';font-size:11.5px;font-weight:700">' + v + '</span>';
+          if (isExemption && row.exemptedPapers?.count) {
+            html += '<br><span style="font-size:10.5px;color:var(--t3);margin-top:2px;display:block">' +
+              row.exemptedPapers.count + ' paper' + (row.exemptedPapers.count !== 1 ? 's' : '') + ' exempt' +
+              (row.exemptedPapers.codes?.length ? ': ' + row.exemptedPapers.codes.join(', ') : '') +
+              '</span>';
+          }
+          return html;
+        },
+      },
+      {
         key: 'dateOfAdmission', label: 'Date of Admission', width: '148px',
         render: function(v) {
           if (!v) return '<span style="color:var(--t4)">—</span>';
@@ -463,17 +482,51 @@ function _buildFormHTML(existing) {
       <span class="form-hint">Group students by batch for easy filtering and reporting</span>
     </div>
 
+    <!-- Route -->
+    <div class="form-group" id="frmRouteGroup" style="display:none">
+      <label class="form-label">Route <span class="req">*</span></label>
+      <select name="route" id="frmRoute" class="form-select">
+        <option value="">Select route…</option>
+      </select>
+      <span class="form-hint" id="frmRouteHint"></span>
+    </div>
+
+    <!-- Exemption details (only when Route = Exemption) -->
+    <div class="form-group" id="frmExemptGroup" style="display:none">
+      <label class="form-label">Exempted Papers</label>
+      <div class="form-row-2" style="margin-bottom:8px">
+        <div>
+          <label class="form-label" style="font-size:10.5px">Number of Exempt Papers</label>
+          <input type="number" name="exemptCount" id="frmExemptCount" class="form-input"
+                 min="0" max="99" placeholder="e.g. 3"
+                 value="${(existing?.exemptedPapers?.count) || ''}"/>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:10.5px">Paper Codes (comma separated)</label>
+          <input name="exemptCodes" id="frmExemptCodes" class="form-input"
+                 placeholder="e.g. F1, F2, F3"
+                 value="${(existing?.exemptedPapers?.codes || []).join(', ')}"/>
+        </div>
+      </div>
+      <span class="form-hint">Enter paper codes separated by commas — e.g. F1, F2, MA1</span>
+    </div>
+
     <span id="frmErrMsg" class="err-msg" style="display:none"></span>
   </div>`;
 }
 
-// Wire date → session auto-fill
-function _wireForm(modalEl) {
+// Wire date → session auto-fill + discipline → route options + route → exemption
+function _wireForm(modalEl, existing) {
   const cnicInput  = modalEl.querySelector('#frmCNIC');
   const cnicPrev   = modalEl.querySelector('#cnicPreview');
   const cnicHint   = modalEl.querySelector('#cnicHint');
   const admDate    = modalEl.querySelector('#frmAdmDate');
   const sessionDiv = modalEl.querySelector('#frmSession');
+  const discSel    = modalEl.querySelector('[name="disciplineId"]');
+  const routeGroup = modalEl.querySelector('#frmRouteGroup');
+  const routeSel   = modalEl.querySelector('#frmRoute');
+  const routeHint  = modalEl.querySelector('#frmRouteHint');
+  const exemptGrp  = modalEl.querySelector('#frmExemptGroup');
 
   if (cnicInput && cnicPrev && cnicHint) {
     _wireCNICInput(cnicInput, cnicPrev, cnicHint);
@@ -488,6 +541,46 @@ function _wireForm(modalEl) {
         : '<span style="color:var(--t4);font-style:italic">Fill admission date</span>';
     });
   }
+
+  // Populate route options based on discipline abbreviation
+  function updateRouteOptions(discId) {
+    if (!routeGroup || !routeSel) return;
+    const disc = AppState.findById('disciplines', discId);
+    const abbr = (disc?.abbreviation || '').toUpperCase();
+    const opts = ROUTE_OPTIONS[abbr] || null;
+    if (!opts) {
+      routeGroup.style.display = 'none';
+      routeSel.innerHTML = '<option value="">Select route…</option>';
+      if (exemptGrp) exemptGrp.style.display = 'none';
+      return;
+    }
+    routeGroup.style.display = '';
+    const hintMap = { ACCA: 'Foundation → ACCA papers → Exemption track', CA: 'PRC → CAF → Exemption track' };
+    if (routeHint) routeHint.textContent = hintMap[abbr] || '';
+
+    const savedRoute = existing?.route || '';
+    routeSel.innerHTML = '<option value="">Select route…</option>' +
+      opts.map(function(r) {
+        return '<option value="' + r + '"' + (r === savedRoute ? ' selected' : '') + '>' + r + '</option>';
+      }).join('');
+
+    toggleExemption(routeSel.value);
+  }
+
+  function toggleExemption(route) {
+    if (!exemptGrp) return;
+    exemptGrp.style.display = route === 'Exemption' ? '' : 'none';
+  }
+
+  if (discSel) {
+    discSel.addEventListener('change', function() { updateRouteOptions(discSel.value); });
+    // Init on load
+    if (discSel.value) updateRouteOptions(discSel.value);
+  }
+
+  if (routeSel) {
+    routeSel.addEventListener('change', function() { toggleExemption(routeSel.value); });
+  }
 }
 
 function _collectForm(modalEl) {
@@ -495,6 +588,14 @@ function _collectForm(modalEl) {
     const el = modalEl.querySelector('[name="' + name + '"]');
     return el ? el.value.trim() : '';
   };
+  const route = g('route');
+  let exemptedPapers = null;
+  if (route === 'Exemption') {
+    const codesRaw = g('exemptCodes');
+    const codes = codesRaw.split(/[,;]+/).map(function(c) { return c.trim().toUpperCase(); }).filter(Boolean);
+    const countInput = parseInt(g('exemptCount')) || codes.length;
+    exemptedPapers = { count: countInput, codes };
+  }
   return {
     cnicRaw:         g('cnicRaw'),
     studentName:     g('studentName'),
@@ -502,6 +603,8 @@ function _collectForm(modalEl) {
     disciplineId:    g('disciplineId'),
     dateOfAdmission: g('dateOfAdmission'),
     admissionBatch:  g('admissionBatch'),
+    route,
+    exemptedPapers,
   };
 }
 
@@ -544,7 +647,7 @@ function _openForm(existing, container) {
         },
       },
     ],
-    onOpen: function(modalEl) { _wireForm(modalEl); },
+    onOpen: function(modalEl) { _wireForm(modalEl, existing); },
   });
 }
 
@@ -729,6 +832,12 @@ function _exportPDF(rows, filterLabels) {
       '<td class="mono">' + (s.cnic      || '—') + '</td>' +
       '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
       '<td>' + (disc?.abbreviation || '—') + '</td>' +
+      '<td>' + (s.route || '—') +
+        (s.route === 'Exemption' && s.exemptedPapers?.count
+          ? '<br><small style="color:#64748b">' + s.exemptedPapers.count + ' exempt' +
+            (s.exemptedPapers.codes?.length ? ': ' + s.exemptedPapers.codes.join(', ') : '') + '</small>'
+          : '') +
+      '</td>' +
       '<td>' + admLabel + '</td>' +
       '<td><strong>' + (s.session || '—') + '</strong></td>' +
       '<td>' + (s.admissionBatch || '—') + '</td>' +
@@ -805,6 +914,7 @@ function _exportPDF(rows, filterLabels) {
         <th>CNIC</th>
         <th>Student Name</th>
         <th>Discipline</th>
+        <th>Route</th>
         <th>Date of Admission</th>
         <th>Session</th>
         <th>Admission Batch</th>
