@@ -281,12 +281,8 @@ function _render(container, search, discFilter, sessionFilter) {
         key: 'route', label: 'Route', width: '170px',
         render: function(v, row) {
           if (!v) return '<span style="color:var(--t4)">—</span>';
-          const isExemption = v === 'Exemption';
-          const color = isExemption ? '#d97706' : 'var(--blue)';
-          const bg    = isExemption ? 'rgba(217,119,6,.10)' : 'var(--blue-dim)';
-          let html = '<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:' + bg +
-            ';color:' + color + ';font-size:11.5px;font-weight:700">' + v + '</span>';
-          if (isExemption && row.exemptedPapers?.count) {
+          let html = '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+          if (v === 'Exemption' && row.exemptedPapers?.count) {
             const papers = row.exemptedPapers.papers || [];
             const codeList = papers.length
               ? papers.map(function(p) { return p.subjectCode; }).join(', ')
