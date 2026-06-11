@@ -69,26 +69,25 @@ export const LevelsModule = {
 
     Table.render(el.querySelector('#levels-table'), {
       columns: [
-        { key: 'disciplineId', label: 'Discipline', width: '160px',
+        { key: 'disciplineId', label: 'Discipline', width: '130px',
           render: (id) => {
             const d = AppState.findById('disciplines', id);
             return d
-              ? `<span class="badge badge--blue" style="font-family:var(--font-mono)">${d.abbreviation}</span>
-                 <span style="color:var(--t2);font-size:12px;margin-left:6px">${d.fullName}</span>`
+              ? `<span class="badge badge--blue" style="font-family:var(--font-mono)">${d.abbreviation}</span>`
               : '<span style="color:var(--t4)">Unknown</span>';
           }
         },
         { key: 'levelName', label: 'Level Name' },
         { key: 'compulsoryPapers', label: 'Compulsory', width: '100px',
-          render: (val) => `<span class="badge badge--blue" style="font-family:var(--font-mono)">${val ?? 0} papers</span>`
+          render: (val) => `<span style="font-family:var(--font-mono);font-size:13px;color:var(--t1)">${val ?? 0}</span>`
         },
         { key: 'optionalPapers', label: 'Optional', width: '100px',
-          render: (val) => `<span class="badge badge--cyan" style="font-family:var(--font-mono)">${val ?? 0} papers</span>`
+          render: (val) => `<span style="font-family:var(--font-mono);font-size:13px;color:var(--t1)">${val ?? 0}</span>`
         },
         { key: 'id', label: 'Subjects', width: '100px',
           render: (id) => {
             const count = (AppState.get('subjects') || []).filter(s => s.levelId === id).length;
-            return `<span class="badge badge--cyan">${count} subject${count !== 1 ? 's' : ''}</span>`;
+            return `<span style="font-family:var(--font-mono);font-size:13px;color:var(--t1)">${count}</span>`;
           }
         },
       ],
