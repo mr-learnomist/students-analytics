@@ -99,6 +99,16 @@ export const DisciplineModule = {
             return `<span class="badge badge--grey">${count} level${count !== 1 ? 's' : ''}</span>`;
           }
         },
+        { key: 'hasRoutes', label: 'Routes', width: '120px',
+          render: (val, row) => {
+            if (!val) return `<span style="color:var(--t4)">—</span>`;
+            const routes = row.routes || [];
+            if (!routes.length) return `<span style="color:var(--t3);font-size:12px">No routes</span>`;
+            return routes.map(r =>
+              `<span class="badge badge--grey" style="margin-right:3px;margin-bottom:2px;font-size:11px">${r}</span>`
+            ).join('');
+          }
+        },
       ],
       rows,
       emptyMsg: 'No disciplines yet. Click "Add Discipline" to create one.',
@@ -168,6 +178,40 @@ export const DisciplineModule = {
           </div>
           <span class="form-hint">Select campuses where this discipline is offered.</span>
         </div>
+        <div class="form-group">
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="disc_hasRoutes" name="hasRoutes" value="true"
+                   ${existing?.hasRoutes ? 'checked' : ''}
+                   style="width:14px;height:14px;accent-color:#4f85f7"/>
+            <span class="form-label" style="margin:0">This discipline has routes</span>
+          </label>
+        </div>
+        <div id="disc_routesSection" style="display:${existing?.hasRoutes ? 'block' : 'none'}">
+          <div class="form-group">
+            <label class="form-label">Routes</label>
+            <div id="disc_routesList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+              ${(existing?.routes || []).map((r, i) => `
+                <div class="disc-route-row" style="display:flex;align-items:center;gap:6px">
+                  <input type="text" name="route_item" class="form-input" value="${r}"
+                         placeholder="e.g. Route A" style="flex:1"/>
+                  <button type="button" class="disc-route-remove"
+                          style="padding:4px 10px;border-radius:var(--r-sm);border:1px solid var(--border);
+                                 background:var(--surface2);color:var(--danger);cursor:pointer;font-size:12px">
+                    ✕
+                  </button>
+                </div>`).join('')}
+            </div>
+            <button type="button" id="disc_addRoute"
+                    style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
+                           border-radius:var(--r-sm);border:1px dashed var(--border);
+                           background:transparent;color:var(--t2);cursor:pointer;font-size:12.5px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Route
+            </button>
+          </div>
+        </div>
       `,
       onOpen: (modalEl) => {
         const instSel  = modalEl.querySelector('#disc_inst');
@@ -176,6 +220,40 @@ export const DisciplineModule = {
         instSel.addEventListener('change', () => {
           campsDiv.innerHTML = campCheckboxes(instSel.value);
         });
+
+        // Routes toggle
+        const hasRoutesChk   = modalEl.querySelector('#disc_hasRoutes');
+        const routesSection  = modalEl.querySelector('#disc_routesSection');
+        const routesList     = modalEl.querySelector('#disc_routesList');
+        const addRouteBtn    = modalEl.querySelector('#disc_addRoute');
+
+        const addRouteRow = (val = '') => {
+          const row = document.createElement('div');
+          row.className = 'disc-route-row';
+          row.style.cssText = 'display:flex;align-items:center;gap:6px';
+          row.innerHTML = `
+            <input type="text" name="route_item" class="form-input" value="${val}"
+                   placeholder="e.g. Route A" style="flex:1"/>
+            <button type="button" class="disc-route-remove"
+                    style="padding:4px 10px;border-radius:var(--r-sm);border:1px solid var(--border);
+                           background:var(--surface2);color:var(--danger);cursor:pointer;font-size:12px">
+              ✕
+            </button>`;
+          routesList.appendChild(row);
+          row.querySelector('.disc-route-remove').addEventListener('click', () => row.remove());
+        };
+
+        // Remove listeners for pre-filled rows
+        routesList.querySelectorAll('.disc-route-remove').forEach(btn => {
+          btn.addEventListener('click', () => btn.closest('.disc-route-row').remove());
+        });
+
+        hasRoutesChk.addEventListener('change', () => {
+          routesSection.style.display = hasRoutesChk.checked ? 'block' : 'none';
+          if (!hasRoutesChk.checked) routesList.innerHTML = '';
+        });
+
+        addRouteBtn.addEventListener('click', () => addRouteRow());
       },
       actions: [
         { label: 'Cancel', variant: 'ghost', close: true },
@@ -197,6 +275,17 @@ export const DisciplineModule = {
             const campIds = [...modalEl.querySelectorAll('input[name="campusIds"]:checked')]
                               .map(cb => cb.value);
             data.campusIds = campIds;
+
+            // Collect routes
+            const hasRoutes = modalEl.querySelector('#disc_hasRoutes')?.checked || false;
+            data.hasRoutes = hasRoutes;
+            if (hasRoutes) {
+              data.routes = [...modalEl.querySelectorAll('input[name="route_item"]')]
+                .map(i => i.value.trim())
+                .filter(Boolean);
+            } else {
+              data.routes = [];
+            }
 
             if (isEdit) {
               AppState.update(KEY, existing.id, data);
