@@ -9,9 +9,23 @@
 // ============================================================
 
 import { AppState } from '../../../../utils/state.js';
+import { Modal }    from '../../../../utils/ui.js';
 
 // ── AppState key (matches resultsTab.js) ───────────────────────
 const RESULTS_KEY = 'finalResults';
+
+// ── PDF export — selectable columns ─────────────────────────────
+const PDF_COLUMNS = [
+  { key: 'studentName', label: 'Student',   default: true },
+  { key: 'rollNo',      label: 'Roll No',   default: true },
+  { key: 'campusName',  label: 'Campus',    default: true },
+  { key: 'session',     label: 'Session',   default: true },
+  { key: 'subjectCode', label: 'Subject',   default: true },
+  { key: 'batchNo',     label: 'Batch',     default: true },
+  { key: 'examDate',    label: 'Exam Date', default: true },
+  { key: 'marks',       label: 'Marks',     default: true },
+  { key: 'status',      label: 'Status',    default: true },
+];
 
 // ── Styles ─────────────────────────────────────────────────────
 let _stylesInjected = false;
@@ -826,6 +840,58 @@ export const FinalResultReport = {
   _exportPDF(d) {
     if (!d.rows.length) { alert('No results to export.'); return; }
 
+    const checkboxesHTML = PDF_COLUMNS.map(col => `
+      <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+                     font-size:12.5px;color:var(--t2);cursor:pointer;transition:background .1s"
+             onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <input type="checkbox" class="frr-pdf-col-cb" value="${col.key}" ${col.default ? 'checked' : ''}
+               style="width:14px;height:14px;cursor:pointer;accent-color:var(--blue)"/>
+        ${col.label}
+      </label>`).join('');
+
+    Modal.open({
+      title: 'Export to PDF',
+      subtitle: 'Choose columns to include',
+      size: 'sm',
+      body: `
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:4px">
+            <button id="frrPdfSelectAll" style="font-size:11.5px;font-weight:600;color:var(--blue);
+                    background:none;border:none;cursor:pointer">Select All</button>
+            <button id="frrPdfSelectNone" style="font-size:11.5px;font-weight:600;color:var(--t3);
+                    background:none;border:none;cursor:pointer">Clear All</button>
+          </div>
+          <div id="frrPdfColList" style="display:flex;flex-direction:column;gap:2px">
+            ${checkboxesHTML}
+          </div>
+        </div>
+      `,
+      actions: [
+        { label: 'Cancel', variant: 'ghost', close: true },
+        {
+          label:   'Export PDF',
+          variant: 'primary',
+          close:   true,
+          handler: (modalEl) => {
+            const selected = [...modalEl.querySelectorAll('.frr-pdf-col-cb:checked')].map(cb => cb.value);
+            if (!selected.length) { alert('Select at least one column.'); return; }
+            this._generatePDF(d, selected);
+          },
+        },
+      ],
+      onOpen: (modalEl) => {
+        modalEl.querySelector('#frrPdfSelectAll')?.addEventListener('click', () => {
+          modalEl.querySelectorAll('.frr-pdf-col-cb').forEach(cb => cb.checked = true);
+        });
+        modalEl.querySelector('#frrPdfSelectNone')?.addEventListener('click', () => {
+          modalEl.querySelectorAll('.frr-pdf-col-cb').forEach(cb => cb.checked = false);
+        });
+      },
+    });
+  },
+
+  // ── PDF generation (print-based) ───────────────────────────────
+  _generatePDF(d, selectedKeys) {
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
@@ -837,20 +903,29 @@ export const FinalResultReport = {
     const sb = { pass:'#f0fdf4', fail:'#fef2f2', absent:'#fffbeb', pending:'#f8fafc' };
     const sl = { pass:'Pass', fail:'Fail', absent:'Absent', pending:'Pending' };
 
+    // Selected columns, in PDF_COLUMNS order
+    const cols = PDF_COLUMNS.filter(c => selectedKeys.includes(c.key));
+
+    const cellValue = (r, key) => {
+      switch (key) {
+        case 'studentName': return `<span style="font-weight:600">${r.studentName}</span>`;
+        case 'rollNo':      return r.rollNo;
+        case 'campusName':  return r.campusName;
+        case 'session':     return r.session;
+        case 'subjectCode': return r.subjectCode;
+        case 'batchNo':     return r.batchNo;
+        case 'examDate':    return r.examDate || '—';
+        case 'marks':       return r.marks != null ? `${r.marks} / ${r.totalMarks}` : '—';
+        case 'status':      return `<span style="color:${sc[r.status]};background:${sb[r.status]};padding:2px 8px;border-radius:6px;font-size:9px;font-weight:700">${sl[r.status]}</span>`;
+        default:            return '—';
+      }
+    };
+
+    const theadCells = `<th>#</th>` + cols.map(c => `<th>${c.label}</th>`).join('');
+
     const tdRows = d.rows.map((r, i) => {
-      const marks = r.marks != null ? `${r.marks} / ${r.totalMarks}` : '—';
-      return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
-        <td>${i + 1}</td>
-        <td style="font-weight:600">${r.studentName}</td>
-        <td>${r.rollNo}</td>
-        <td>${r.campusName}</td>
-        <td>${r.session}</td>
-        <td>${r.subjectCode}</td>
-        <td>${r.batchNo}</td>
-        <td>${r.examDate || '—'}</td>
-        <td>${marks}</td>
-        <td><span style="color:${sc[r.status]};background:${sb[r.status]};padding:2px 8px;border-radius:6px;font-size:9px;font-weight:700">${sl[r.status]}</span></td>
-      </tr>`;
+      const cells = cols.map(c => `<td>${cellValue(r, c.key)}</td>`).join('');
+      return `<tr class="${i % 2 === 0 ? 'even' : 'odd'}"><td>${i + 1}</td>${cells}</tr>`;
     }).join('');
 
     const html = `<!DOCTYPE html>
@@ -861,12 +936,12 @@ export const FinalResultReport = {
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:#fff;padding:18px 20px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #16a34a;padding-bottom:10px;margin-bottom:12px}
-  .header-left .title{font-size:18px;font-weight:700;color:#15803d;letter-spacing:-0.3px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #2563eb;padding-bottom:10px;margin-bottom:12px}
+  .header-left .title{font-size:18px;font-weight:700;color:#1e40af;letter-spacing:-0.3px}
   .header-left .subtitle{font-size:10.5px;color:#64748b;margin-top:2px}
   .header-right{text-align:right;font-size:10px;color:#64748b;line-height:1.6}
   .header-right .date{font-weight:600;color:#1e293b;font-size:10.5px}
-  .meta-bar{display:flex;align-items:center;gap:12px;padding:6px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:9px;font-size:10px;color:#15803d;font-weight:600}
+  .meta-bar{display:flex;align-items:center;gap:12px;padding:6px 12px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:9px;font-size:10px;color:#1e40af;font-weight:600}
   .stats-row{display:flex;align-items:stretch;gap:0;margin-bottom:10px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
   .stat-box{flex:1;padding:7px 10px;text-align:center;border-right:1px solid #e2e8f0;background:#f8fafc}
   .stat-box:last-child{border-right:none}
@@ -884,10 +959,10 @@ export const FinalResultReport = {
   .rate-pct{font-size:14px;font-weight:700}
   .rate-sub{font-size:8.5px;color:#64748b}
   table{width:100%;border-collapse:collapse;font-size:9.5px}
-  thead tr{background:#15803d}
+  thead tr{background:#1e40af}
   thead th{color:#fff;font-weight:600;padding:6px;text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap}
   tbody tr.even{background:#fff}
-  tbody tr.odd{background:#f7fdf9}
+  tbody tr.odd{background:#f8faff}
   tbody td{padding:5px 6px;border-bottom:1px solid #e2e8f0;color:#334155;vertical-align:middle;white-space:nowrap}
   .footer{margin-top:12px;padding-top:8px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:9px;color:#94a3b8}
   @media print{body{padding:10px 12px}@page{size:A4 landscape;margin:8mm}.no-print{display:none}}
@@ -905,7 +980,7 @@ export const FinalResultReport = {
     </div>
   </div>
 
-  <div class="meta-bar">🏠 ${d.campusName}${d.batchDisplayName !== '—' ? ` <span style="color:#bbf7d0">|</span> 📅 ${d.batchDisplayName}` : ''}</div>
+  <div class="meta-bar">🏠 ${d.campusName}${d.batchDisplayName !== '—' ? ` <span style="color:#bfdbfe">|</span> 📅 ${d.batchDisplayName}` : ''}</div>
 
   <div class="stats-row">
     <div class="stat-box"><div class="num">${d.totalCount}</div><div class="lbl">Total</div></div>
@@ -927,10 +1002,7 @@ export const FinalResultReport = {
 
   <table>
     <thead>
-      <tr>
-        <th>#</th><th>Student</th><th>Roll No</th><th>Campus</th><th>Session</th>
-        <th>Subject</th><th>Batch</th><th>Exam Date</th><th>Marks</th><th>Status</th>
-      </tr>
+      <tr>${theadCells}</tr>
     </thead>
     <tbody>${tdRows}</tbody>
   </table>
@@ -940,12 +1012,12 @@ export const FinalResultReport = {
     <span>Total: ${d.totalCount} record${d.totalCount !== 1 ? 's' : ''}</span>
   </div>
   <div style="margin-top:8px;text-align:center;font-size:9px;color:#94a3b8">
-    Powered by <strong style="color:#15803d">Learnomist</strong>
+    Powered by <strong style="color:#2563eb">Learnomist</strong>
   </div>
 
   <div class="no-print" style="margin-top:16px;text-align:center">
     <button onclick="window.print()"
-      style="padding:8px 26px;background:#16a34a;color:#fff;border:none;border-radius:8px;
+      style="padding:8px 26px;background:#2563eb;color:#fff;border:none;border-radius:8px;
              font-size:13px;font-weight:600;cursor:pointer">
       Print / Save as PDF
     </button>
