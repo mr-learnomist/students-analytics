@@ -148,6 +148,9 @@ function _pageTemplate() {
     return parse(b) - parse(a);
   });
 
+  // Build campus list from AppState campuses store
+  const campuses = AppState.get('campuses') || [];
+
   return `
     <div class="stu-toolbar">
       <div class="stu-search-wrap">
@@ -161,6 +164,13 @@ function _pageTemplate() {
         <option value="">All Disciplines</option>
         ${disciplines.map(function(d) {
           return '<option value="' + d.id + '">' + d.abbreviation + ' — ' + d.fullName + '</option>';
+        }).join('')}
+      </select>
+
+      <select class="stu-filter" id="stuFilterCampus">
+        <option value="">All Campuses</option>
+        ${campuses.map(function(c) {
+          return '<option value="' + c.id + '">' + c.campusName + '</option>';
         }).join('')}
       </select>
 
@@ -182,14 +192,16 @@ function _pageTemplate() {
 }
 
 // ── Table render ──────────────────────────────────────────────
-function _render(container, search, discFilter, sessionFilter) {
+function _render(container, search, discFilter, sessionFilter, campusFilter) {
   search        = (search        || '').toLowerCase();
   discFilter    = discFilter    || '';
   sessionFilter = sessionFilter || '';
+  campusFilter  = campusFilter  || '';
 
   let rows = AppState.get(KEY) || [];
   if (discFilter)    rows = rows.filter(function(s) { return s.disciplineId === discFilter; });
   if (sessionFilter) rows = rows.filter(function(s) { return s.session      === sessionFilter; });
+  if (campusFilter)  rows = rows.filter(function(s) { return (s.campusId || '') === campusFilter; });
 
   if (search) {
     rows = rows.filter(function(s) {
@@ -200,6 +212,7 @@ function _render(container, search, discFilter, sessionFilter) {
         (s.cnic           || '').toLowerCase().includes(search) ||
         cnicPlain.includes(search.replace(/-/g, ''))            ||
         (s.studentId      || '').toLowerCase().includes(search) ||
+        (s.campusSnapshot?.name || '').toLowerCase().includes(search) ||
         (s.session        || '').toLowerCase().includes(search) ||
         (s.admissionBatch || '').toLowerCase().includes(search) ||
         (disc?.abbreviation || '').toLowerCase().includes(search) ||
@@ -268,6 +281,16 @@ function _render(container, search, discFilter, sessionFilter) {
           if (!v) return '<span style="color:var(--t4)">—</span>';
           return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
             (v === 'male' ? 'Male' : 'Female') + '</span>';
+        },
+      },
+      {
+        key: 'campusSnapshot', label: 'Campus', width: '140px',
+        render: function(v, row) {
+          const name = v?.name || row.campus || '';
+          if (!name) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
+          return '<span style="font-size:12px;font-weight:600;color:var(--t1);' +
+            'background:var(--surface3);padding:2px 8px;border-radius:6px;' +
+            'border:1px solid var(--border)">' + name + '</span>';
         },
       },
       {
@@ -482,6 +505,20 @@ function _buildFormHTML(existing) {
       <span class="form-hint">Group students by batch for easy filtering and reporting</span>
     </div>
 
+    <!-- Campus -->
+    <div class="form-group">
+      <label class="form-label">Campus
+        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional)</span>
+      </label>
+      <select name="campusId" class="form-select">
+        <option value="">Select campus…</option>
+        ${(AppState.get('campuses') || []).map(function(c) {
+          return '<option value="' + c.id + '"' + (c.id === (existing?.campusId || '') ? ' selected' : '') + '>' + c.campusName + '</option>';
+        }).join('')}
+      </select>
+      <span class="form-hint">Campus snapshot save hoga — naam change hone par purana record safe rahega</span>
+    </div>
+
     <!-- Route (shown only when discipline has routes) -->
     <div class="form-group" id="frmRouteGroup" style="display:none">
       <label class="form-label">Route <span class="req">*</span></label>
@@ -508,11 +545,22 @@ function _buildFormHTML(existing) {
       <label class="form-label">Exempted Subjects
         <span id="frmExemptCountBadge" style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none;margin-left:4px"></span>
       </label>
+      <!-- Exemption count input -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <label style="font-size:12px;color:var(--t2);font-weight:600;white-space:nowrap">Number of Exemptions:</label>
+        <input type="number" id="frmExemptCount" min="1" max="20"
+               value="${existing?.exemptedPapers?.count || 1}"
+               style="width:70px;height:34px;padding:0 10px;background:var(--surface2);
+                      border:1px solid var(--border);border-radius:var(--r-sm);
+                      color:var(--t1);font-size:13px;font-weight:700;outline:none;
+                      text-align:center"/>
+        <span style="font-size:11.5px;color:var(--t3)">Type karein aur selects update ho jayenge</span>
+      </div>
       <div id="frmExemptSelects" style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-        <!-- Dynamically populated: one <select> per subject in the selected route -->
+        <!-- Dynamically populated: one <select> per exemption count -->
       </div>
       <span class="form-hint" style="margin-top:6px;display:block">
-        Each row corresponds to one exempt subject slot. Select the subject for each.
+        Har row ek exempt subject slot hai. Count type karein — selects automatically ban jayenge.
       </span>
       <div id="frmExemptSelected" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
     </div>
@@ -615,9 +663,10 @@ function _wireForm(modalEl, existing) {
     selectedPapers = [];
   }
 
-  // Build one <select> per route-subject slot
+  // Build <select>s — count driven by frmExemptCount input
   function _buildExemptSelects(discId, routeName) {
-    const selectsWrap = modalEl.querySelector('#frmExemptSelects');
+    const selectsWrap  = modalEl.querySelector('#frmExemptSelects');
+    const countInput   = modalEl.querySelector('#frmExemptCount');
     if (!selectsWrap) return;
 
     // Get subjects that belong to this discipline AND have this route assigned
@@ -633,45 +682,63 @@ function _wireForm(modalEl, existing) {
       return Array.isArray(s.routes) && s.routes.includes(routeName);
     });
 
-    if (!routeSubjects.length) {
-      selectsWrap.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:4px 0;display:block">' +
-        'No subjects found for route "' + routeName + '". Assign subjects to this route first.</span>';
-      return;
+    // Determine how many selects to show
+    const count = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : 1;
+
+    function buildSelects() {
+      const currentCount = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : count;
+      const savedPapers  = existing?.exemptedPapers?.papers || [];
+
+      if (!routeSubjects.length) {
+        selectsWrap.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:4px 0;display:block">' +
+          'No subjects found for route "' + routeName + '". Assign subjects to this route first.</span>';
+        return;
+      }
+
+      // Build N selects based on count
+      selectsWrap.innerHTML = Array.from({ length: currentCount }, function(_, i) {
+        const savedForSlot = savedPapers[i];
+        const selectedId   = savedForSlot ? savedForSlot.id : '';
+        return '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:11px;color:var(--t3);min-width:22px;text-align:right">' + (i + 1) + '.</span>' +
+          '<select data-slot="' + i + '" class="frm-exempt-sel form-select" ' +
+            'style="flex:1;height:36px;background:var(--surface2);border:1px solid var(--border);' +
+            'border-radius:var(--r-sm);color:var(--t1);font-size:12.5px;outline:none">' +
+            '<option value="">— select subject —</option>' +
+            routeSubjects.map(function(s) {
+              return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
+                s.subjectCode + ' — ' + s.subjectName + '</option>';
+            }).join('') +
+          '</select>' +
+        '</div>';
+      }).join('');
+
+      // Rebuild selectedPapers from current selects
+      _syncSelectedFromSelects(routeSubjects);
+
+      // Wire change on each select
+      selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
+        sel.addEventListener('change', function() {
+          _syncSelectedFromSelects(routeSubjects);
+          renderSelectedTags();
+        });
+      });
+
+      renderSelectedTags();
     }
 
-    // Restore saved snapshots for edit mode
-    const savedPapers = existing?.exemptedPapers?.papers || [];
+    // Initial render
+    buildSelects();
 
-    // One select per subject slot (number of route subjects = number of selects)
-    selectsWrap.innerHTML = routeSubjects.map(function(sub, i) {
-      const savedForSlot = savedPapers[i];
-      const selectedId   = savedForSlot ? savedForSlot.id : '';
-      return '<div style="display:flex;align-items:center;gap:8px">' +
-        '<span style="font-size:11px;color:var(--t3);min-width:22px;text-align:right">' + (i + 1) + '.</span>' +
-        '<select data-slot="' + i + '" class="frm-exempt-sel form-select" ' +
-          'style="flex:1;height:36px;background:var(--surface2);border:1px solid var(--border);' +
-          'border-radius:var(--r-sm);color:var(--t1);font-size:12.5px;outline:none">' +
-          '<option value="">— select subject —</option>' +
-          routeSubjects.map(function(s) {
-            return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
-              s.subjectCode + ' — ' + s.subjectName + '</option>';
-          }).join('') +
-        '</select>' +
-      '</div>';
-    }).join('');
-
-    // Rebuild selectedPapers from current selects
-    _syncSelectedFromSelects(routeSubjects);
-
-    // Wire change on each select
-    selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
-      sel.addEventListener('change', function() {
-        _syncSelectedFromSelects(routeSubjects);
-        renderSelectedTags();
+    // Wire count input to rebuild selects dynamically
+    if (countInput) {
+      // Remove old listeners by cloning
+      const newCountInput = countInput.cloneNode(true);
+      countInput.parentNode.replaceChild(newCountInput, countInput);
+      newCountInput.addEventListener('input', function() {
+        buildSelects();
       });
-    });
-
-    renderSelectedTags();
+    }
   }
 
   function _syncSelectedFromSelects(routeSubjects) {
@@ -681,7 +748,7 @@ function _wireForm(modalEl, existing) {
     selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
       const subId = sel.value;
       if (!subId) return;
-      const sub = routeSubjects.find(function(s) { return s.id === subId; });
+      const sub  = routeSubjects.find(function(s) { return s.id === subId; });
       const live = AppState.findById('subjects', subId);
       if (sub && !selectedPapers.some(function(p) { return p.id === subId; })) {
         selectedPapers.push({
@@ -776,6 +843,7 @@ function _collectForm(modalEl) {
     cnicRaw:         g('cnicRaw'),
     studentName:     g('studentName'),
     gender:          g('gender'),
+    campusId:        g('campusId'),
     disciplineId:    g('disciplineId'),
     dateOfAdmission: g('dateOfAdmission'),
     admissionBatch:  g('admissionBatch'),
@@ -1007,6 +1075,7 @@ function _exportPDF(rows, filterLabels) {
       '<td class="mono">' + (s.studentId || '—') + '</td>' +
       '<td class="mono">' + (s.cnic      || '—') + '</td>' +
       '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
+      '<td>' + (s.campusSnapshot?.name || s.campus || '—') + '</td>' +
       '<td>' + (disc?.abbreviation || '—') + '</td>' +
       '<td>' + (s.route || '—') +
         (s.route === 'Exemption' && s.exemptedPapers?.count
@@ -1089,6 +1158,7 @@ function _exportPDF(rows, filterLabels) {
         <th>Student ID</th>
         <th>CNIC</th>
         <th>Student Name</th>
+        <th>Campus</th>
         <th>Discipline</th>
         <th>Route</th>
         <th>Date of Admission</th>
@@ -1128,24 +1198,27 @@ function _getFilters(container) {
     search:  (container.querySelector('#stuSearch')?.value        || '').toLowerCase(),
     disc:     container.querySelector('#stuFilterDisc')?.value    || '',
     session:  container.querySelector('#stuFilterSession')?.value || '',
+    campus:   container.querySelector('#stuFilterCampus')?.value  || '',
   };
 }
 
 function _rerender(container) {
   const f = _getFilters(container);
-  _render(container, f.search, f.disc, f.session);
+  _render(container, f.search, f.disc, f.session, f.campus);
 }
 
 // ── Toolbar wiring ────────────────────────────────────────────
 function _attachToolbar(container) {
-  const search  = container.querySelector('#stuSearch');
-  const discSel = container.querySelector('#stuFilterDisc');
-  const sessSel = container.querySelector('#stuFilterSession');
+  const search    = container.querySelector('#stuSearch');
+  const discSel   = container.querySelector('#stuFilterDisc');
+  const sessSel   = container.querySelector('#stuFilterSession');
+  const campusSel = container.querySelector('#stuFilterCampus');
 
   const rerender = function() { _rerender(container); };
-  search?.addEventListener('input',   rerender);
-  discSel?.addEventListener('change', rerender);
-  sessSel?.addEventListener('change', rerender);
+  search?.addEventListener('input',    rerender);
+  discSel?.addEventListener('change',  rerender);
+  sessSel?.addEventListener('change',  rerender);
+  campusSel?.addEventListener('change', rerender);
 
   container.querySelector('#stuAddBtn')?.addEventListener('click', function() {
     _openForm(null, container);
@@ -1169,6 +1242,10 @@ function _attachToolbar(container) {
     if (f.disc) {
       const d = AppState.findById('disciplines', f.disc);
       if (d) labels.push('Discipline: ' + d.abbreviation);
+    }
+    if (f.campus) {
+      const c = AppState.findById('campuses', f.campus);
+      if (c) labels.push('Campus: ' + (c.campusName || c.name));
     }
     if (f.session) labels.push('Session: ' + f.session);
     if (f.search)  labels.push('Search: "' + f.search + '"');
