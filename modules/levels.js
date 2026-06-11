@@ -12,8 +12,10 @@ import { Auth } from '../utils/auth.js';
 const KEY = 'levels';
 
 const RULES = {
-  disciplineId: { required: true, message: 'Select a discipline.' },
-  levelName:    { required: true, minLen: 2, message: 'Enter a level name (e.g. Semester 1).' },
+  disciplineId:     { required: true, message: 'Select a discipline.' },
+  levelName:        { required: true, minLen: 2, message: 'Enter a level name (e.g. Semester 1).' },
+  compulsoryPapers: { required: true, message: 'Enter number of compulsory papers.' },
+  optionalPapers:   { required: true, message: 'Enter number of optional papers.' },
 };
 
 export const LevelsModule = {
@@ -77,6 +79,12 @@ export const LevelsModule = {
           }
         },
         { key: 'levelName', label: 'Level Name' },
+        { key: 'compulsoryPapers', label: 'Compulsory', width: '100px',
+          render: (val) => `<span class="badge badge--blue" style="font-family:var(--font-mono)">${val ?? 0} papers</span>`
+        },
+        { key: 'optionalPapers', label: 'Optional', width: '100px',
+          render: (val) => `<span class="badge badge--cyan" style="font-family:var(--font-mono)">${val ?? 0} papers</span>`
+        },
         { key: 'id', label: 'Subjects', width: '100px',
           render: (id) => {
             const count = (AppState.get('subjects') || []).filter(s => s.levelId === id).length;
@@ -113,6 +121,20 @@ export const LevelsModule = {
                  placeholder="e.g. Semester 1, Year 1, Term A"
                  value="${existing?.levelName || ''}"/>
           <span class="form-hint">How this level is referred to in your institution.</span>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label class="form-label">Compulsory Papers <span class="req">*</span></label>
+            <input name="compulsoryPapers" type="number" min="0" class="form-input"
+                   placeholder="e.g. 5"
+                   value="${existing?.compulsoryPapers ?? ''}"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Optional Papers <span class="req">*</span></label>
+            <input name="optionalPapers" type="number" min="0" class="form-input"
+                   placeholder="e.g. 2"
+                   value="${existing?.optionalPapers ?? ''}"/>
+          </div>
         </div>
       `,
       actions: [
