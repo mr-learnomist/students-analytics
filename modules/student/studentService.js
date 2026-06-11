@@ -192,10 +192,13 @@ export function isDuplicateStudentId(studentId, excludeId) {
 }
 
 // ── Route options per discipline ──────────────────────────────
-export const ROUTE_OPTIONS = {
-  ACCA: ['Foundation', 'ACCA', 'Exemption'],
-  CA:   ['PRC', 'CAF', 'Exemption'],
-};
+export const ROUTE_OPTIONS = {}; // kept for backward-compat
+
+export function getDiscRoutes(disciplineId) {
+  const disc = AppState.findById('disciplines', disciplineId);
+  if (!disc || !disc.hasRoutes || !disc.routes || !disc.routes.length) return [];
+  return disc.routes;
+}
 
 // Normalize exempted papers — preserve full snapshot { id, subjectCode, subjectName }
 // so that future edits to subjects.js never corrupt historical student records.
