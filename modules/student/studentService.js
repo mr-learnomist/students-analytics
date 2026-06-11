@@ -191,6 +191,21 @@ export function isDuplicateStudentId(studentId, excludeId) {
   });
 }
 
+// ── Route options per discipline ──────────────────────────────
+export const ROUTE_OPTIONS = {
+  ACCA: ['Foundation', 'ACCA', 'Exemption'],
+  CA:   ['PRC', 'CAF', 'Exemption'],
+};
+
+// Normalize exempted papers: array of trimmed uppercase codes, remove blanks
+function _sanitizeExemptedPapers(raw) {
+  if (!raw) return { count: 0, codes: [] };
+  const codes = (Array.isArray(raw.codes) ? raw.codes : [])
+    .map(function(c) { return String(c).trim().toUpperCase(); })
+    .filter(Boolean);
+  return { count: codes.length, codes };
+}
+
 // ── CRUD ──────────────────────────────────────────────────────
 export const StudentService = {
 
@@ -235,6 +250,8 @@ export const StudentService = {
       dateOfAdmission: data.dateOfAdmission,
       session:         sessionFromDate(data.dateOfAdmission),
       admissionBatch:  (data.admissionBatch || '').trim(),
+      route:           (data.route || '').trim(),
+      exemptedPapers:  data.route === 'Exemption' ? _sanitizeExemptedPapers(data.exemptedPapers) : null,
       createdAt:       new Date().toISOString(),
     };
     AppState.add(KEY, student);
@@ -284,6 +301,10 @@ export const StudentService = {
       dateOfAdmission,
       session:         sessionFromDate(dateOfAdmission),
       admissionBatch:  data.admissionBatch !== undefined ? data.admissionBatch.trim() : (existing.admissionBatch || ''),
+      route:           data.route !== undefined ? (data.route || '').trim() : (existing.route || ''),
+      exemptedPapers:  (data.route !== undefined ? data.route : existing.route) === 'Exemption'
+                         ? _sanitizeExemptedPapers(data.exemptedPapers !== undefined ? data.exemptedPapers : existing.exemptedPapers)
+                         : null,
       updatedAt:       new Date().toISOString(),
     };
 
@@ -301,7 +322,7 @@ export const StudentService = {
     const students = rows || AppState.get(KEY) || [];
     if (!students.length) return;
 
-    const headers  = ['studentId', 'cnic', 'studentName', 'gender', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch'];
+    const headers  = ['studentId', 'cnic', 'studentName', 'gender', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
     const now      = new Date();
     const dateStr  = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr  = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
@@ -328,8 +349,10 @@ export const StudentService = {
         safeDate,
         s.session          || '',
         s.admissionBatch   || '',
+        s.route            || '',
+        s.exemptedPapers?.count != null ? String(s.exemptedPapers.count) : '',
+        s.exemptedPapers?.codes?.length ? s.exemptedPapers.codes.join(' | ') : '',
       ].map(function(v, i) {
-        // CNIC (idx 1) and date (idx 5) already have their own ="..." wrapper — don't double-quote
         if (i === 1 || i === 5) return v;
         return '"' + String(v).replace(/"/g, '""') + '"';
       }).join(',');
@@ -499,14 +522,16 @@ export const StudentService = {
     }
 
     const colIdx = {
-      studentId:       findCol(['studentid', 'stuid', 'id']),          // ignored — always auto-generated
+      studentId:       findCol(['studentid', 'stuid', 'id']),
       cnic:            findCol(['cnic', 'uniqueid', 'nationalid', 'cnid']),
       studentName:     findCol(['studentname', 'name', 'fullname', 'studentfullname']),
       gender:          findCol(['gender', 'sex']),
       discipline:      findCol(['discipline', 'disc', 'program', 'dept']),
       dateOfAdmission: findCol(['dateofadmission', 'admissiondate', 'doa', 'admissiondateyyyy-mm-dd']),
-      session:         findCol(['session', 'sess']),                    // ignored — always auto-detected
+      session:         findCol(['session', 'sess']),
       admissionBatch:  findCol(['admissionbatch', 'batch', 'batchno', 'batchname']),
+      route:           findCol(['route']),
+      exemptedCodes:   findCol(['exemptedpapercodes', 'exemptcodes', 'papercodes', 'exemptedcodes']),
     };
 
     const requiredCols = ['cnic', 'studentName', 'discipline', 'dateOfAdmission'];
@@ -612,6 +637,13 @@ export const StudentService = {
       const studentId = generateStudentId(discCode, dateStr, gender);
 
       const admissionBatch = colIdx.admissionBatch !== -1 ? get(colIdx.admissionBatch) : '';
+      const route          = colIdx.route          !== -1 ? get(colIdx.route).trim()   : '';
+      let exemptedPapers   = null;
+      if (route === 'Exemption' && colIdx.exemptedCodes !== -1) {
+        const codesRaw = get(colIdx.exemptedCodes);
+        const codes = codesRaw.split(/[|,;]+/).map(function(c) { return c.trim().toUpperCase(); }).filter(Boolean);
+        exemptedPapers = { count: codes.length, codes };
+      }
 
       valid.push({
         _rowNum:         rowNum,
@@ -623,6 +655,8 @@ export const StudentService = {
         dateOfAdmission: dateStr,
         session:         sessionFromDate(dateStr),
         admissionBatch,
+        route,
+        exemptedPapers,
         createdAt:       new Date().toISOString(),
       });
     });
