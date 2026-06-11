@@ -17,6 +17,7 @@ import {
   cnicDigitsOnly,
   migrateStudentIds,
   ROUTE_OPTIONS,
+  getDiscRoutes,
 } from './studentService.js';
 
 const KEY = 'students';
@@ -282,7 +283,7 @@ function _render(container, search, discFilter, sessionFilter) {
         render: function(v, row) {
           if (!v) return '<span style="color:var(--t4)">—</span>';
           let html = '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
-          if (v === 'Exemption' && row.exemptedPapers?.count) {
+          if (row.exemptedPapers?.count) {
             const papers = row.exemptedPapers.papers || [];
             const codeList = papers.length
               ? papers.map(function(p) { return p.subjectCode; }).join(', ')
@@ -481,42 +482,39 @@ function _buildFormHTML(existing) {
       <span class="form-hint">Group students by batch for easy filtering and reporting</span>
     </div>
 
-    <!-- Route -->
+    <!-- Route (shown only when discipline has routes) -->
     <div class="form-group" id="frmRouteGroup" style="display:none">
       <label class="form-label">Route <span class="req">*</span></label>
       <select name="route" id="frmRoute" class="form-select">
         <option value="">Select route…</option>
       </select>
-      <span class="form-hint" id="frmRouteHint"></span>
+      <span class="form-hint" id="frmRouteHint">Routes are defined in the discipline settings.</span>
     </div>
 
-    <!-- Exemption details (only when Route = Exemption) -->
+    <!-- Exemption checkbox (shown after route is selected) -->
+    <div class="form-group" id="frmExemptChkGroup" style="display:none">
+      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="frmExemptChk"
+               style="width:14px;height:14px;accent-color:#4f85f7"/>
+        <span class="form-label" style="margin:0">Has Exemption</span>
+      </label>
+      <span class="form-hint" style="margin-top:4px;display:block">
+        Tick if this student has subject exemptions based on their route.
+      </span>
+    </div>
+
+    <!-- Exemption paper selects (one per exemption type, shown when checkbox ticked) -->
     <div class="form-group" id="frmExemptGroup" style="display:none">
-      <label class="form-label">Exempted Papers
+      <label class="form-label">Exempted Subjects
         <span id="frmExemptCountBadge" style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none;margin-left:4px"></span>
       </label>
-
-      <!-- Number of papers selector -->
-      <div style="margin-bottom:10px">
-        <label class="form-label" style="font-size:10.5px;margin-bottom:4px">How many papers exempt?</label>
-        <select id="frmExemptCount" name="exemptCount" class="form-select" style="max-width:160px">
-          <option value="">Select count…</option>
-        </select>
-        <span class="form-hint" style="margin-top:4px">Dropdown below will only allow this many selections</span>
+      <div id="frmExemptSelects" style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+        <!-- Dynamically populated: one <select> per subject in the selected route -->
       </div>
-
-      <!-- Paper multi-select dropdown -->
-      <div id="frmPaperPickerWrap">
-        <label class="form-label" style="font-size:10.5px;margin-bottom:6px">Select Exempt Paper Codes</label>
-        <div id="frmPaperPicker" style="
-          border:1px solid var(--border);border-radius:var(--r-sm);
-          background:var(--surface2);max-height:200px;overflow-y:auto;padding:6px 4px">
-          <span style="font-size:12px;color:var(--t4);padding:6px 10px;display:block">
-            Select a discipline first
-          </span>
-        </div>
-        <div id="frmExemptSelected" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
-      </div>
+      <span class="form-hint" style="margin-top:6px;display:block">
+        Each row corresponds to one exempt subject slot. Select the subject for each.
+      </span>
+      <div id="frmExemptSelected" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
     </div>
 
     <span id="frmErrMsg" class="err-msg" style="display:none"></span>
@@ -525,21 +523,19 @@ function _buildFormHTML(existing) {
 
 // Wire date → session auto-fill + discipline → route options + route → exemption paper picker
 function _wireForm(modalEl, existing) {
-  const cnicInput  = modalEl.querySelector('#frmCNIC');
-  const cnicPrev   = modalEl.querySelector('#cnicPreview');
-  const cnicHint   = modalEl.querySelector('#cnicHint');
-  const admDate    = modalEl.querySelector('#frmAdmDate');
-  const sessionDiv = modalEl.querySelector('#frmSession');
-  const discSel    = modalEl.querySelector('[name="disciplineId"]');
-  const routeGroup = modalEl.querySelector('#frmRouteGroup');
-  const routeSel   = modalEl.querySelector('#frmRoute');
-  const routeHint  = modalEl.querySelector('#frmRouteHint');
-  const exemptGrp  = modalEl.querySelector('#frmExemptGroup');
-  const countSel   = modalEl.querySelector('#frmExemptCount');
-  const picker     = modalEl.querySelector('#frmPaperPicker');
+  const cnicInput    = modalEl.querySelector('#frmCNIC');
+  const cnicPrev     = modalEl.querySelector('#cnicPreview');
+  const cnicHint     = modalEl.querySelector('#cnicHint');
+  const admDate      = modalEl.querySelector('#frmAdmDate');
+  const sessionDiv   = modalEl.querySelector('#frmSession');
+  const discSel      = modalEl.querySelector('[name="disciplineId"]');
+  const routeGroup   = modalEl.querySelector('#frmRouteGroup');
+  const routeSel     = modalEl.querySelector('#frmRoute');
+  const routeHint    = modalEl.querySelector('#frmRouteHint');
+  const exemptGrp    = modalEl.querySelector('#frmExemptGroup');
   const selectedWrap = modalEl.querySelector('#frmExemptSelected');
 
-  // Currently selected paper IDs (with snapshot data)
+  // Currently selected paper snapshots
   let selectedPapers = (existing?.exemptedPapers?.papers || []).slice();
 
   // ── CNIC ──
@@ -558,81 +554,8 @@ function _wireForm(modalEl, existing) {
     });
   }
 
-  // ── Paper picker helpers ──
 
-  function renderCountOptions(discId) {
-    if (!countSel) return;
-    // Count options = number of subjects in this discipline
-    const levels = AppState.get('levels') || [];
-    const discLevelIds = levels
-      .filter(function(l) { return l.disciplineId === discId; })
-      .map(function(l) { return l.id; });
-    const subjects = (AppState.get('subjects') || [])
-      .filter(function(s) { return discLevelIds.includes(s.levelId); });
-    const max = subjects.length || 14;
-    const savedCount = existing?.exemptedPapers?.count || 0;
-    countSel.innerHTML = '<option value="">Select count…</option>' +
-      Array.from({ length: max }, function(_, i) {
-        const n = i + 1;
-        return '<option value="' + n + '"' + (n === savedCount ? ' selected' : '') + '>' + n + '</option>';
-      }).join('');
-  }
-
-  function renderPicker(discId) {
-    if (!picker) return;
-    const levels = AppState.get('levels') || [];
-    const discLevelIds = levels
-      .filter(function(l) { return l.disciplineId === discId; })
-      .map(function(l) { return l.id; });
-    const subjects = (AppState.get('subjects') || [])
-      .filter(function(s) { return discLevelIds.includes(s.levelId); });
-
-    if (!subjects.length) {
-      picker.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:8px 10px;display:block">No subjects found for this discipline</span>';
-      return;
-    }
-
-    const maxAllowed = parseInt(countSel?.value) || 0;
-    picker.innerHTML = subjects.map(function(sub) {
-      const isSelected = selectedPapers.some(function(p) { return p.id === sub.id; });
-      const isDisabled = !isSelected && maxAllowed > 0 && selectedPapers.length >= maxAllowed;
-      return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;' +
-        'cursor:' + (isDisabled ? 'not-allowed' : 'pointer') + ';' +
-        'border-radius:5px;transition:background .12s;' +
-        (isSelected ? 'background:var(--blue-dim)' : '') + '"' +
-        ' onmouseover="if(!this.querySelector(\'input\').disabled)this.style.background=\'var(--surface3)\'"' +
-        ' onmouseout="this.style.background=\'' + (isSelected ? 'var(--blue-dim)' : '') + '\'">' +
-        '<input type="checkbox" data-subject-id="' + sub.id + '"' +
-          ' data-code="' + sub.subjectCode + '"' +
-          ' data-name="' + sub.subjectName.replace(/"/g,'&quot;') + '"' +
-          (isSelected ? ' checked' : '') +
-          (isDisabled ? ' disabled' : '') +
-          ' style="accent-color:var(--blue);width:14px;height:14px;cursor:' + (isDisabled ? 'not-allowed' : 'pointer') + '">' +
-        '<code style="font-size:12px;font-weight:700;color:var(--cyan);min-width:50px">' + sub.subjectCode + '</code>' +
-        '<span style="font-size:12px;color:var(--t2)">' + sub.subjectName + '</span>' +
-        '</label>';
-    }).join('');
-
-    // Wire checkboxes
-    picker.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
-      cb.addEventListener('change', function() {
-        const id   = cb.dataset.subjectId;
-        const code = cb.dataset.code;
-        const name = cb.dataset.name;
-        if (cb.checked) {
-          if (!selectedPapers.some(function(p) { return p.id === id; })) {
-            selectedPapers.push({ id: id, subjectCode: code, subjectName: name });
-          }
-        } else {
-          selectedPapers = selectedPapers.filter(function(p) { return p.id !== id; });
-        }
-        renderSelectedTags();
-        renderPicker(discId); // re-render to update disabled states
-      });
-    });
-  }
-
-  function renderSelectedTags() {
+    function renderSelectedTags() {
     if (!selectedWrap) return;
     if (!selectedPapers.length) {
       selectedWrap.innerHTML = '<span style="font-size:11.5px;color:var(--t4);font-style:italic">No papers selected yet</span>';
@@ -658,43 +581,156 @@ function _wireForm(modalEl, existing) {
     });
   }
 
-  // ── Route options ──
+  // ── Route options (dynamic from discipline.routes[]) ──
   function updateRouteOptions(discId) {
     if (!routeGroup || !routeSel) return;
-    const disc = AppState.findById('disciplines', discId);
-    const abbr = (disc?.abbreviation || '').toUpperCase();
-    const opts = ROUTE_OPTIONS[abbr] || null;
-    if (!opts) {
+    const routes = getDiscRoutes(discId);
+    if (!routes.length) {
       routeGroup.style.display = 'none';
       routeSel.innerHTML = '<option value="">Select route…</option>';
-      if (exemptGrp) exemptGrp.style.display = 'none';
+      _hideExemptChk();
+      _hideExemptGroup();
       return;
     }
     routeGroup.style.display = '';
-    const hintMap = { ACCA: 'Foundation → ACCA papers → Exemption track', CA: 'PRC → CAF → Exemption track' };
-    if (routeHint) routeHint.textContent = hintMap[abbr] || '';
+    // Snapshot: on edit use saved route value, but rebuild options from live discipline
     const savedRoute = existing?.route || '';
     routeSel.innerHTML = '<option value="">Select route…</option>' +
-      opts.map(function(r) {
+      routes.map(function(r) {
         return '<option value="' + r + '"' + (r === savedRoute ? ' selected' : '') + '>' + r + '</option>';
       }).join('');
-    toggleExemption(routeSel.value, discId);
+    // Restore exemption state if editing
+    _onRouteChange(routeSel.value, discId);
   }
 
-  function toggleExemption(route, discId) {
-    if (!exemptGrp) return;
-    const show = route === 'Exemption';
-    exemptGrp.style.display = show ? '' : 'none';
-    if (show && discId) {
-      renderCountOptions(discId);
-      renderPicker(discId);
-      renderSelectedTags();
+  function _hideExemptChk() {
+    const chkGrp = modalEl.querySelector('#frmExemptChkGroup');
+    if (chkGrp) chkGrp.style.display = 'none';
+    const chk = modalEl.querySelector('#frmExemptChk');
+    if (chk) chk.checked = false;
+  }
+
+  function _hideExemptGroup() {
+    if (exemptGrp) exemptGrp.style.display = 'none';
+    selectedPapers = [];
+  }
+
+  // Build one <select> per route-subject slot
+  function _buildExemptSelects(discId, routeName) {
+    const selectsWrap = modalEl.querySelector('#frmExemptSelects');
+    if (!selectsWrap) return;
+
+    // Get subjects that belong to this discipline AND have this route assigned
+    const levels = AppState.get('levels') || [];
+    const discLevelIds = levels
+      .filter(function(l) { return l.disciplineId === discId; })
+      .map(function(l) { return l.id; });
+    const allSubjects = (AppState.get('subjects') || [])
+      .filter(function(s) { return discLevelIds.includes(s.levelId); });
+
+    // Filter: subjects whose routes[] includes the selected route
+    const routeSubjects = allSubjects.filter(function(s) {
+      return Array.isArray(s.routes) && s.routes.includes(routeName);
+    });
+
+    if (!routeSubjects.length) {
+      selectsWrap.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:4px 0;display:block">' +
+        'No subjects found for route "' + routeName + '". Assign subjects to this route first.</span>';
+      return;
+    }
+
+    // Restore saved snapshots for edit mode
+    const savedPapers = existing?.exemptedPapers?.papers || [];
+
+    // One select per subject slot (number of route subjects = number of selects)
+    selectsWrap.innerHTML = routeSubjects.map(function(sub, i) {
+      const savedForSlot = savedPapers[i];
+      const selectedId   = savedForSlot ? savedForSlot.id : '';
+      return '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:11px;color:var(--t3);min-width:22px;text-align:right">' + (i + 1) + '.</span>' +
+        '<select data-slot="' + i + '" class="frm-exempt-sel form-select" ' +
+          'style="flex:1;height:36px;background:var(--surface2);border:1px solid var(--border);' +
+          'border-radius:var(--r-sm);color:var(--t1);font-size:12.5px;outline:none">' +
+          '<option value="">— select subject —</option>' +
+          routeSubjects.map(function(s) {
+            return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
+              s.subjectCode + ' — ' + s.subjectName + '</option>';
+          }).join('') +
+        '</select>' +
+      '</div>';
+    }).join('');
+
+    // Rebuild selectedPapers from current selects
+    _syncSelectedFromSelects(routeSubjects);
+
+    // Wire change on each select
+    selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
+      sel.addEventListener('change', function() {
+        _syncSelectedFromSelects(routeSubjects);
+        renderSelectedTags();
+      });
+    });
+
+    renderSelectedTags();
+  }
+
+  function _syncSelectedFromSelects(routeSubjects) {
+    selectedPapers = [];
+    const selectsWrap = modalEl.querySelector('#frmExemptSelects');
+    if (!selectsWrap) return;
+    selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
+      const subId = sel.value;
+      if (!subId) return;
+      const sub = routeSubjects.find(function(s) { return s.id === subId; });
+      const live = AppState.findById('subjects', subId);
+      if (sub && !selectedPapers.some(function(p) { return p.id === subId; })) {
+        selectedPapers.push({
+          id:          subId,
+          subjectCode: (live?.subjectCode || sub.subjectCode || '').toUpperCase(),
+          subjectName:  live?.subjectName  || sub.subjectName || '',
+        });
+      }
+    });
+  }
+
+  function _onRouteChange(routeName, discId) {
+    const chkGrp = modalEl.querySelector('#frmExemptChkGroup');
+    const chk    = modalEl.querySelector('#frmExemptChk');
+    if (!routeName || !discId) {
+      _hideExemptChk();
+      _hideExemptGroup();
+      return;
+    }
+    // Show exemption checkbox for any route
+    if (chkGrp) chkGrp.style.display = '';
+    // Restore checked state on edit
+    const hadExemption = !!(existing?.exemptedPapers?.count);
+    if (chk && hadExemption && existing?.route === routeName) {
+      chk.checked = true;
+      if (exemptGrp) exemptGrp.style.display = '';
+      _buildExemptSelects(discId, routeName);
+    } else if (chk && !hadExemption) {
+      chk.checked = false;
+      _hideExemptGroup();
+    }
+    if (chk) {
+      // Re-wire checkbox (remove old listener first by cloning)
+      const newChk = chk.cloneNode(true);
+      chk.parentNode.replaceChild(newChk, chk);
+      newChk.addEventListener('change', function() {
+        if (newChk.checked) {
+          if (exemptGrp) exemptGrp.style.display = '';
+          _buildExemptSelects(discId, routeName);
+        } else {
+          _hideExemptGroup();
+        }
+      });
     }
   }
 
   if (discSel) {
     discSel.addEventListener('change', function() {
-      selectedPapers = []; // reset selections on discipline change
+      selectedPapers = [];
       updateRouteOptions(discSel.value);
     });
     if (discSel.value) updateRouteOptions(discSel.value);
@@ -702,20 +738,7 @@ function _wireForm(modalEl, existing) {
 
   if (routeSel) {
     routeSel.addEventListener('change', function() {
-      toggleExemption(routeSel.value, discSel?.value);
-    });
-  }
-
-  if (countSel) {
-    countSel.addEventListener('change', function() {
-      // If new count < current selected, trim selection
-      const max = parseInt(countSel.value) || 0;
-      if (max && selectedPapers.length > max) {
-        selectedPapers = selectedPapers.slice(0, max);
-        renderSelectedTags();
-      }
-      const discId = discSel?.value;
-      if (discId) renderPicker(discId);
+      _onRouteChange(routeSel.value, discSel?.value);
     });
   }
 
@@ -730,22 +753,23 @@ function _collectForm(modalEl) {
   };
   const route = g('route');
   let exemptedPapers = null;
-  if (route === 'Exemption') {
+  const exemptChk = modalEl.querySelector('#frmExemptChk');
+  const hasExemption = !!(exemptChk && exemptChk.checked);
+  if (hasExemption) {
     const papers = modalEl._getSelectedPapers ? modalEl._getSelectedPapers() : [];
     // Save as snapshot: { id, subjectCode, subjectName } so future subject edits don't corrupt data
     const snapshots = papers.map(function(p) {
-      // Freshen snapshot from live subjects, fallback to stored snapshot
       const live = AppState.findById('subjects', p.id);
       return {
         id:          p.id,
         subjectCode: (live?.subjectCode || p.subjectCode || '').toUpperCase(),
-        subjectName: live?.subjectName  || p.subjectName  || '',
+        subjectName:  live?.subjectName  || p.subjectName  || '',
       };
-    });
+    }).filter(function(p) { return p.id; });
     exemptedPapers = {
-      count:   snapshots.length,
-      codes:   snapshots.map(function(p) { return p.subjectCode; }),
-      papers:  snapshots, // full snapshot for display & history
+      count:  snapshots.length,
+      codes:  snapshots.map(function(p) { return p.subjectCode; }),
+      papers: snapshots,
     };
   }
   return {
