@@ -1,21 +1,24 @@
 // ============================================================
-// modules/subjects.js — Subjects Module (CRUD)
-// Fields: id, levelId (FK → levels → disciplines), subjectCode, subjectName
+// modules/levels.js — Levels Module (CRUD)
+// Fields: id, disciplineId (FK), levelName
+// v2: Role-based access — admin CRUD, teacher/viewer read-only
 // ============================================================
 
 import { AppState, generateID } from '../utils/state.js';
 import { Modal, Table, Form, injectUIStyles } from '../utils/ui.js';
 import { Toast } from '../utils/helpers.js';
+import { Auth } from '../utils/auth.js';
 
-const KEY = 'subjects';
+const KEY = 'levels';
 
 const RULES = {
-  levelId:     { required: true, message: 'Select a level.' },
-  subjectCode: { required: true, minLen: 2, message: 'Enter a subject code (e.g. CS101).' },
-  subjectName: { required: true, minLen: 3, message: 'Enter the full subject name.' },
+  disciplineId:     { required: true, message: 'Select a discipline.' },
+  levelName:        { required: true, minLen: 2, message: 'Enter a level name (e.g. Semester 1).' },
+  compulsoryPapers: { required: true, message: 'Enter number of compulsory papers.' },
+  optionalPapers:   { required: true, message: 'Enter number of optional papers.' },
 };
 
-export const SubjectsModule = {
+export const LevelsModule = {
 
   mount(container) {
     injectUIStyles();
@@ -24,116 +27,131 @@ export const SubjectsModule = {
     el.innerHTML = this._pageTemplate();
     this._render(el);
     this._attachToolbar(el);
+
+    // Sirf admin Add button dekhe
+    const addBtn = el.querySelector('#levelsAddBtn');
+    if (addBtn) {
+      addBtn.style.display = Auth.can('levels:create') ? '' : 'none';
+    }
   },
 
-  _render(container, filter = '', levelFilter = '') {
+  _render(container, filter = '', discFilter = '') {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
+
+    // Levels global hain — campus se filter nahi hoti
+    // Teacher bhi sab levels dekh sakta hai (read-only)
     let rows = AppState.get(KEY) || [];
-    if (levelFilter) rows = rows.filter(s => s.levelId === levelFilter);
-    if (filter) rows = rows.filter(s =>
-      s.subjectCode.toLowerCase().includes(filter) ||
-      s.subjectName.toLowerCase().includes(filter)
-    );
+
+    if (discFilter) rows = rows.filter(l => l.disciplineId === discFilter);
+    if (filter)     rows = rows.filter(l => l.levelName.toLowerCase().includes(filter));
 
     const countEl = el.querySelector('.record-count');
     if (countEl) countEl.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''}`;
 
-    Table.render(el.querySelector('#subjects-table'), {
+    const canEdit   = Auth.can('levels:edit');
+    const canDelete = Auth.can('levels:delete');
+
+    const actions = [];
+    if (canEdit) {
+      actions.push({
+        label: 'Edit',
+        icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+        handler: (row) => this._openForm(row, el)
+      });
+    }
+    if (canDelete) {
+      actions.push({
+        label: 'Delete', danger: true,
+        icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`,
+        handler: (row) => this._delete(row, el)
+      });
+    }
+
+    Table.render(el.querySelector('#levels-table'), {
       columns: [
-        { key: 'subjectCode', label: 'Code', width: '110px',
-          render: (val) => `<code style="font-family:var(--font-mono);font-size:12px;color:var(--cyan)">${val}</code>`
-        },
-        { key: 'subjectName', label: 'Subject Name' },
-        { key: 'levelId', label: 'Level', width: '140px',
+        { key: 'disciplineId', label: 'Discipline', width: '160px',
           render: (id) => {
-            const level = AppState.findById('levels', id);
-            if (!level) return '<span style="color:var(--t4)">—</span>';
-            const disc = AppState.findById('disciplines', level.disciplineId);
-            return `
-              <span class="badge badge--blue" style="font-family:var(--font-mono);font-size:10.5px">
-                ${disc?.abbreviation || '?'}
-              </span>
-              <span style="color:var(--t2);font-size:12px;margin-left:6px">${level.levelName}</span>
-            `;
+            const d = AppState.findById('disciplines', id);
+            return d
+              ? `<span class="badge badge--blue" style="font-family:var(--font-mono)">${d.abbreviation}</span>
+                 <span style="color:var(--t2);font-size:12px;margin-left:6px">${d.fullName}</span>`
+              : '<span style="color:var(--t4)">Unknown</span>';
+          }
+        },
+        { key: 'levelName', label: 'Level Name' },
+        { key: 'compulsoryPapers', label: 'Compulsory', width: '100px',
+          render: (val) => `<span class="badge badge--blue" style="font-family:var(--font-mono)">${val ?? 0} papers</span>`
+        },
+        { key: 'optionalPapers', label: 'Optional', width: '100px',
+          render: (val) => `<span class="badge badge--cyan" style="font-family:var(--font-mono)">${val ?? 0} papers</span>`
+        },
+        { key: 'id', label: 'Subjects', width: '100px',
+          render: (id) => {
+            const count = (AppState.get('subjects') || []).filter(s => s.levelId === id).length;
+            return `<span class="badge badge--cyan">${count} subject${count !== 1 ? 's' : ''}</span>`;
           }
         },
       ],
       rows,
-      emptyMsg: 'No subjects yet. Add subjects to link them to levels and batches.',
-      actions: [
-        {
-          label: 'Edit',
-          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
-          handler: (row) => this._openForm(row, el)
-        },
-        {
-          label: 'Delete', danger: true,
-          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`,
-          handler: (row) => this._delete(row, el)
-        }
-      ]
+      emptyMsg: 'No levels configured. Add levels to link subjects and batches.',
+      actions,
     });
   },
 
   _openForm(existing = null, container) {
-    const levels = AppState.get('levels') || [];
-    const disciplines = AppState.get('disciplines') || [];
     const isEdit = !!existing;
+    if (isEdit  && !Auth.can('levels:edit'))   return Toast.warning('Permission denied.');
+    if (!isEdit && !Auth.can('levels:create')) return Toast.warning('Permission denied.');
 
-    // Build grouped options: Discipline > Levels
-    const grouped = disciplines.map(disc => {
-      const discLevels = levels.filter(l => l.disciplineId === disc.id);
-      if (!discLevels.length) return '';
-      const opts = discLevels.map(l =>
-        `<option value="${l.id}" ${l.id === existing?.levelId ? 'selected' : ''}>
-          ${l.levelName}
-        </option>`
-      ).join('');
-      return `<optgroup label="${disc.abbreviation} — ${disc.fullName}">${opts}</optgroup>`;
-    }).join('');
+    const disciplines = AppState.get('disciplines') || [];
 
     Modal.open({
-      title: isEdit ? 'Edit Subject' : 'Add Subject',
+      title: isEdit ? 'Edit Level' : 'Add Level',
       body: `
         <div class="form-group">
-          <label class="form-label">Level <span class="req">*</span></label>
-          <select name="levelId" class="form-select form-input">
-            <option value="">Select level…</option>
-            ${grouped}
+          <label class="form-label">Discipline <span class="req">*</span></label>
+          <select name="disciplineId" class="form-select form-input">
+            <option value="">Select discipline…</option>
+            ${Form.buildOptions(disciplines, 'id', 'fullName', existing?.disciplineId || '')}
           </select>
-          <span class="form-hint">Subjects inherit the discipline from their level.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Level Name <span class="req">*</span></label>
+          <input name="levelName" class="form-input"
+                 placeholder="e.g. Semester 1, Year 1, Term A"
+                 value="${existing?.levelName || ''}"/>
+          <span class="form-hint">How this level is referred to in your institution.</span>
         </div>
         <div class="form-row cols-2">
           <div class="form-group">
-            <label class="form-label">Subject Code <span class="req">*</span></label>
-            <input name="subjectCode" class="form-input" placeholder="e.g. CS101"
-                   value="${existing?.subjectCode || ''}"
-                   style="text-transform:uppercase" maxlength="12"/>
+            <label class="form-label">Compulsory Papers <span class="req">*</span></label>
+            <input name="compulsoryPapers" type="number" min="0" class="form-input"
+                   placeholder="e.g. 5"
+                   value="${existing?.compulsoryPapers ?? ''}"/>
           </div>
           <div class="form-group">
-            <label class="form-label">Subject Name <span class="req">*</span></label>
-            <input name="subjectName" class="form-input"
-                   placeholder="e.g. Introduction to Programming"
-                   value="${existing?.subjectName || ''}"/>
+            <label class="form-label">Optional Papers <span class="req">*</span></label>
+            <input name="optionalPapers" type="number" min="0" class="form-input"
+                   placeholder="e.g. 2"
+                   value="${existing?.optionalPapers ?? ''}"/>
           </div>
         </div>
       `,
       actions: [
         { label: 'Cancel', variant: 'ghost' },
         {
-          label: isEdit ? 'Save Changes' : 'Add Subject',
+          label: isEdit ? 'Save Changes' : 'Add Level',
           variant: 'primary', close: false,
           handler: (modalEl) => {
             const { valid } = Form.validate(modalEl.querySelector('.modal-body'), RULES);
             if (!valid) return;
             const data = Form.collect(modalEl.querySelector('.modal-body'));
-            data.subjectCode = data.subjectCode.toUpperCase();
             if (isEdit) {
               AppState.update(KEY, existing.id, data);
-              Toast.success(`Subject "${data.subjectCode}" updated.`);
+              Toast.success(`Level "${data.levelName}" updated.`);
             } else {
-              AppState.add(KEY, { ...data, id: generateID('sub') });
-              Toast.success(`Subject "${data.subjectCode}" added.`);
+              AppState.add(KEY, { ...data, id: generateID('lvl') });
+              Toast.success(`Level "${data.levelName}" added.`);
             }
             Modal.closeAll();
             this._render(container);
@@ -144,70 +162,69 @@ export const SubjectsModule = {
   },
 
   async _delete(row, container) {
+    if (!Auth.can('levels:delete')) return Toast.warning('Permission denied.');
+
     const deps = AppState.getDependents(KEY, row.id);
     if (deps.length) {
       Toast.warning(`Cannot delete — referenced by ${deps.map(d => `${d.count} ${d.label}(s)`).join(', ')}.`);
       return;
     }
     const ok = await Modal.confirm({
-      title: 'Delete Subject',
-      message: `Delete <strong>${row.subjectCode} — ${row.subjectName}</strong>? This cannot be undone.`,
+      title: 'Delete Level',
+      message: `Delete <strong>${row.levelName}</strong>? This cannot be undone.`,
       confirmLabel: 'Delete', danger: true
     });
     if (!ok) return;
     AppState.remove(KEY, row.id);
-    Toast.success(`Subject "${row.subjectCode}" deleted.`);
+    Toast.success(`Level "${row.levelName}" deleted.`);
     this._render(container);
   },
 
   _attachToolbar(container) {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
 
-    el.querySelector('#subjectsAddBtn')?.addEventListener('click', () => this._openForm(null, el));
-
-    let searchVal = '', levelVal = '';
-
-    el.querySelector('#subjectsSearch')?.addEventListener('input', (e) => {
-      searchVal = e.target.value.toLowerCase().trim();
-      this._render(el, searchVal, levelVal);
+    el.querySelector('#levelsAddBtn')?.addEventListener('click', () => {
+      if (!Auth.can('levels:create')) return Toast.warning('Permission denied.');
+      this._openForm(null, el);
     });
 
-    el.querySelector('#subjectsLevelFilter')?.addEventListener('change', (e) => {
-      levelVal = e.target.value;
-      this._render(el, searchVal, levelVal);
+    let searchVal = '', discVal = '';
+
+    el.querySelector('#levelsSearch')?.addEventListener('input', (e) => {
+      searchVal = e.target.value.toLowerCase().trim();
+      this._render(el, searchVal, discVal);
+    });
+
+    el.querySelector('#levelsDiscFilter')?.addEventListener('change', (e) => {
+      discVal = e.target.value;
+      this._render(el, searchVal, discVal);
     });
   },
 
   _pageTemplate() {
-    const levels = AppState.get('levels') || [];
     const disciplines = AppState.get('disciplines') || [];
-
-    const levelOptions = disciplines.map(disc => {
-      const dLevels = levels.filter(l => l.disciplineId === disc.id);
-      if (!dLevels.length) return '';
-      return `<optgroup label="${disc.abbreviation}">
-        ${dLevels.map(l => `<option value="${l.id}">${l.levelName}</option>`).join('')}
-      </optgroup>`;
-    }).join('');
+    const discOptions = disciplines.map(d =>
+      `<option value="${d.id}">${d.abbreviation} — ${d.fullName}</option>`
+    ).join('');
 
     return `
       <div class="module-page">
         <div class="module-toolbar">
           <div class="search-wrap">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input id="subjectsSearch" class="search-input" placeholder="Search by code or name…"/>
+            <input id="levelsSearch" class="search-input" placeholder="Search levels…"/>
           </div>
-          <select id="subjectsLevelFilter" class="form-select form-input" style="max-width:220px;flex-shrink:0">
-            <option value="">All Levels</option>
-            ${levelOptions}
+          <select id="levelsDiscFilter" class="form-select form-input" style="max-width:200px;flex-shrink:0">
+            <option value="">All Disciplines</option>
+            ${discOptions}
           </select>
           <span class="record-count">— records</span>
-          <button id="subjectsAddBtn" class="add-btn" style="margin-left:auto">
+          <button id="levelsAddBtn" class="add-btn" style="margin-left:auto">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Subject
+            Add Level
           </button>
         </div>
-        <div id="subjects-table"></div>
+        <div id="levels-table"></div>
       </div>
     `;
   }
