@@ -682,6 +682,18 @@ function _wireForm(modalEl, existing) {
       return Array.isArray(s.routes) && s.routes.includes(routeName);
     });
 
+    // Pool used to populate the dropdowns. If this route doesn't have enough
+    // subjects tagged for it to fill all requested exemption slots, fall back
+    // to ALL of the discipline's subjects so extra slots are still usable.
+    // Route-tagged subjects are listed first.
+    const pickPool = routeSubjects.length
+      ? (function() {
+          const routeIds = routeSubjects.map(function(s) { return s.id; });
+          const rest = allSubjects.filter(function(s) { return !routeIds.includes(s.id); });
+          return routeSubjects.concat(rest);
+        })()
+      : allSubjects;
+
     // Determine how many selects to show
     const count = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : 1;
 
@@ -689,14 +701,21 @@ function _wireForm(modalEl, existing) {
       const currentCount = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : count;
       const savedPapers  = existing?.exemptedPapers?.papers || [];
 
-      if (!routeSubjects.length) {
+      if (!pickPool.length) {
         selectsWrap.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:4px 0;display:block">' +
-          'No subjects found for route "' + routeName + '". Assign subjects to this route first.</span>';
+          'No subjects found for this discipline. Add subjects first.</span>';
         return;
       }
 
+      const hint = (routeSubjects.length && currentCount > routeSubjects.length)
+        ? '<div style="font-size:11px;color:var(--t4);padding:2px 0 6px 30px">' +
+            'Only ' + routeSubjects.length + ' subject(s) are tagged for route "' + routeName + '". ' +
+            'Showing other discipline subjects for the remaining slot(s).' +
+          '</div>'
+        : '';
+
       // Build N selects based on count
-      selectsWrap.innerHTML = Array.from({ length: currentCount }, function(_, i) {
+      selectsWrap.innerHTML = hint + Array.from({ length: currentCount }, function(_, i) {
         const savedForSlot = savedPapers[i];
         const selectedId   = savedForSlot ? savedForSlot.id : '';
         return '<div style="display:flex;align-items:center;gap:8px">' +
@@ -705,7 +724,7 @@ function _wireForm(modalEl, existing) {
             'style="flex:1;height:36px;background:var(--surface2);border:1px solid var(--border);' +
             'border-radius:var(--r-sm);color:var(--t1);font-size:12.5px;outline:none">' +
             '<option value="">— select subject —</option>' +
-            routeSubjects.map(function(s) {
+            pickPool.map(function(s) {
               return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
                 s.subjectCode + ' — ' + s.subjectName + '</option>';
             }).join('') +
@@ -717,13 +736,13 @@ function _wireForm(modalEl, existing) {
       _refreshSelectOptions();
 
       // Sync selectedPapers
-      _syncSelectedFromSelects(routeSubjects);
+      _syncSelectedFromSelects(pickPool);
 
       // Wire change on each select
       selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
         sel.addEventListener('change', function() {
           _refreshSelectOptions();
-          _syncSelectedFromSelects(routeSubjects);
+          _syncSelectedFromSelects(pickPool);
           renderSelectedTags();
         });
       });
@@ -764,14 +783,14 @@ function _wireForm(modalEl, existing) {
     }
   }
 
-  function _syncSelectedFromSelects(routeSubjects) {
+  function _syncSelectedFromSelects(subjectPool) {
     selectedPapers = [];
     const selectsWrap = modalEl.querySelector('#frmExemptSelects');
     if (!selectsWrap) return;
     selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
       const subId = sel.value;
       if (!subId) return;
-      const sub  = routeSubjects.find(function(s) { return s.id === subId; });
+      const sub  = subjectPool.find(function(s) { return s.id === subId; });
       const live = AppState.findById('subjects', subId);
       if (sub && !selectedPapers.some(function(p) { return p.id === subId; })) {
         selectedPapers.push({
