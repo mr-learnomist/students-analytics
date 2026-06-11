@@ -47,9 +47,9 @@ export const SubjectsModule = {
         { key: 'subjectName', label: 'Subject Name' },
         { key: 'paperType', label: 'Type', width: '110px',
           render: (val) => val === 'compulsory'
-            ? `<span class="badge badge--blue">Compulsory</span>`
+            ? `<span style="font-size:12px;color:var(--t1)">Compulsory</span>`
             : val === 'optional'
-              ? `<span class="badge badge--cyan">Optional</span>`
+              ? `<span style="font-size:12px;color:var(--t1)">Optional</span>`
               : `<span style="color:var(--t4)">—</span>`
         },
         { key: 'levelId', label: 'Level', width: '140px',
