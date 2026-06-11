@@ -1,6 +1,6 @@
 // ============================================================
 // modules/subjects.js — Subjects Module (CRUD)
-// Fields: id, levelId (FK → levels → disciplines), subjectCode, subjectName
+// Fields: id, levelId (FK → levels → disciplines), subjectCode, subjectName, paperType, routes[]
 // ============================================================
 
 import { AppState, generateID } from '../utils/state.js';
@@ -45,14 +45,7 @@ export const SubjectsModule = {
           render: (val) => `<code style="font-family:var(--font-mono);font-size:12px;color:var(--cyan)">${val}</code>`
         },
         { key: 'subjectName', label: 'Subject Name' },
-        { key: 'paperType', label: 'Type', width: '110px',
-          render: (val) => val === 'compulsory'
-            ? `<span style="font-size:12px;color:var(--t1)">Compulsory</span>`
-            : val === 'optional'
-              ? `<span style="font-size:12px;color:var(--t1)">Optional</span>`
-              : `<span style="color:var(--t4)">—</span>`
-        },
-        { key: 'levelId', label: 'Level', width: '140px',
+        { key: 'levelId', label: 'Level', width: '160px',
           render: (id) => {
             const level = AppState.findById('levels', id);
             if (!level) return '<span style="color:var(--t4)">—</span>';
@@ -63,6 +56,21 @@ export const SubjectsModule = {
               </span>
               <span style="color:var(--t2);font-size:12px;margin-left:6px">${level.levelName}</span>
             `;
+          }
+        },
+        { key: 'paperType', label: 'Type', width: '100px',
+          render: (val) => val === 'compulsory'
+            ? `<span style="font-size:12px;color:var(--t1)">Compulsory</span>`
+            : val === 'optional'
+              ? `<span style="font-size:12px;color:var(--t1)">Optional</span>`
+              : `<span style="color:var(--t4)">—</span>`
+        },
+        { key: 'routes', label: 'Routes', width: '180px',
+          render: (val) => {
+            if (!val?.length) return `<span style="color:var(--t4)">—</span>`;
+            return val.map(r =>
+              `<span style="font-size:11.5px;color:var(--t2);margin-right:8px">${r}</span>`
+            ).join('');
           }
         },
       ],
@@ -84,28 +92,61 @@ export const SubjectsModule = {
   },
 
   _openForm(existing = null, container) {
-    const levels = AppState.get('levels') || [];
+    const levels      = AppState.get('levels')      || [];
     const disciplines = AppState.get('disciplines') || [];
-    const isEdit = !!existing;
+    const isEdit      = !!existing;
 
-    // Build grouped options: Discipline > Levels
+    // Get discipline for existing subject (to check hasRoutes)
+    const getDiscForLevel = (levelId) => {
+      const level = levels.find(l => l.id === levelId);
+      if (!level) return null;
+      return disciplines.find(d => d.id === level.disciplineId) || null;
+    };
+
+    const initDisc    = existing ? getDiscForLevel(existing.levelId) : null;
+    const initRoutes  = existing?.routes || [];
+    const hasRoutes   = initDisc?.hasRoutes || false;
+    const discRoutes  = initDisc?.routes    || [];
+
+    // Build grouped level options
     const grouped = disciplines.map(disc => {
       const discLevels = levels.filter(l => l.disciplineId === disc.id);
       if (!discLevels.length) return '';
       const opts = discLevels.map(l =>
-        `<option value="${l.id}" ${l.id === existing?.levelId ? 'selected' : ''}>
+        `<option value="${l.id}" data-disc="${disc.id}" ${l.id === existing?.levelId ? 'selected' : ''}>
           ${l.levelName}
         </option>`
       ).join('');
       return `<optgroup label="${disc.abbreviation} — ${disc.fullName}">${opts}</optgroup>`;
     }).join('');
 
+    // Build route checkboxes html
+    const buildRouteCheckboxes = (routes, selectedRoutes, disabled) => {
+      if (!routes.length) {
+        return `<span style="font-size:12px;color:var(--t3)">No routes defined for this discipline.</span>`;
+      }
+      return routes.map(r => {
+        const checked = selectedRoutes.includes(r) ? 'checked' : '';
+        const disabledAttr = disabled ? 'disabled' : '';
+        return `
+          <label style="display:inline-flex;align-items:center;gap:6px;
+                         padding:5px 12px;border-radius:20px;cursor:${disabled ? 'not-allowed' : 'pointer'};
+                         border:1px solid var(--border);background:var(--surface2);
+                         font-size:12.5px;color:${disabled ? 'var(--t4)' : 'var(--t1)'};margin:3px;
+                         opacity:${disabled ? '0.45' : '1'}">
+            <input type="checkbox" name="subj_route" value="${r}" ${checked} ${disabledAttr}
+                   style="width:13px;height:13px;accent-color:#4f85f7"/>
+            ${r}
+          </label>`;
+      }).join('');
+    };
+
     Modal.open({
       title: isEdit ? 'Edit Subject' : 'Add Subject',
       body: `
         <div class="form-group">
           <label class="form-label">Level <span class="req">*</span></label>
-          <select name="levelId" class="form-select form-input">
+          <select id="subj_levelSel" name="levelId" class="form-select form-input">
             <option value="">Select level…</option>
             ${grouped}
           </select>
@@ -133,7 +174,50 @@ export const SubjectsModule = {
             <option value="optional"   ${existing?.paperType === 'optional'   ? 'selected' : ''}>Optional</option>
           </select>
         </div>
+        <div class="form-group">
+          <label class="form-label" style="opacity:${hasRoutes ? '1' : '0.45'}">Routes</label>
+          <div id="subj_routesWrap" style="display:flex;flex-wrap:wrap;gap:2px;min-height:38px;
+                                            padding:8px;border:1px solid var(--border);
+                                            border-radius:var(--r-sm);background:var(--surface2);
+                                            opacity:${hasRoutes ? '1' : '0.45'}">
+            ${hasRoutes
+              ? buildRouteCheckboxes(discRoutes, initRoutes, false)
+              : `<span style="font-size:12px;color:var(--t4)">Routes not enabled for this discipline.</span>`
+            }
+          </div>
+          <span class="form-hint" id="subj_routesHint">
+            ${hasRoutes ? 'Select one or more routes for this subject.' : 'Select a discipline that has routes enabled.'}
+          </span>
+        </div>
       `,
+      onOpen: (modalEl) => {
+        const levelSel    = modalEl.querySelector('#subj_levelSel');
+        const routesWrap  = modalEl.querySelector('#subj_routesWrap');
+        const routesLabel = modalEl.querySelector('.form-label[style*="opacity"]');
+        const routesHint  = modalEl.querySelector('#subj_routesHint');
+
+        levelSel.addEventListener('change', () => {
+          const selOpt = levelSel.options[levelSel.selectedIndex];
+          const discId = selOpt?.dataset?.disc || '';
+          const disc   = disciplines.find(d => d.id === discId);
+          const dr     = disc?.routes || [];
+          const hr     = disc?.hasRoutes || false;
+
+          if (routesLabel) routesLabel.style.opacity = hr ? '1' : '0.45';
+          routesWrap.style.opacity = hr ? '1' : '0.45';
+
+          if (hr && dr.length) {
+            routesWrap.innerHTML = buildRouteCheckboxes(dr, [], false);
+            routesHint.textContent = 'Select one or more routes for this subject.';
+          } else if (hr && !dr.length) {
+            routesWrap.innerHTML = `<span style="font-size:12px;color:var(--t3)">No routes defined for this discipline.</span>`;
+            routesHint.textContent = 'No routes defined for this discipline.';
+          } else {
+            routesWrap.innerHTML = `<span style="font-size:12px;color:var(--t4)">Routes not enabled for this discipline.</span>`;
+            routesHint.textContent = 'Select a discipline that has routes enabled.';
+          }
+        });
+      },
       actions: [
         { label: 'Cancel', variant: 'ghost' },
         {
@@ -144,6 +228,11 @@ export const SubjectsModule = {
             if (!valid) return;
             const data = Form.collect(modalEl.querySelector('.modal-body'));
             data.subjectCode = data.subjectCode.toUpperCase();
+
+            // Collect selected routes
+            data.routes = [...modalEl.querySelectorAll('input[name="subj_route"]:checked')]
+              .map(cb => cb.value);
+
             if (isEdit) {
               AppState.update(KEY, existing.id, data);
               Toast.success(`Subject "${data.subjectCode}" updated.`);
