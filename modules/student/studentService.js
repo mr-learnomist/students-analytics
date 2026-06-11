@@ -197,13 +197,22 @@ export const ROUTE_OPTIONS = {
   CA:   ['PRC', 'CAF', 'Exemption'],
 };
 
-// Normalize exempted papers: array of trimmed uppercase codes, remove blanks
+// Normalize exempted papers — preserve full snapshot { id, subjectCode, subjectName }
+// so that future edits to subjects.js never corrupt historical student records.
 function _sanitizeExemptedPapers(raw) {
-  if (!raw) return { count: 0, codes: [] };
-  const codes = (Array.isArray(raw.codes) ? raw.codes : [])
-    .map(function(c) { return String(c).trim().toUpperCase(); })
-    .filter(Boolean);
-  return { count: codes.length, codes };
+  if (!raw) return { count: 0, codes: [], papers: [] };
+  const papers = (Array.isArray(raw.papers) ? raw.papers : [])
+    .map(function(p) {
+      return {
+        id:          p.id          || '',
+        subjectCode: (p.subjectCode || '').toUpperCase().trim(),
+        subjectName: (p.subjectName || '').trim(),
+      };
+    })
+    .filter(function(p) { return p.subjectCode; });
+  // codes array kept in sync for CSV export / legacy display
+  const codes = papers.map(function(p) { return p.subjectCode; });
+  return { count: papers.length, codes, papers };
 }
 
 // ── CRUD ──────────────────────────────────────────────────────
