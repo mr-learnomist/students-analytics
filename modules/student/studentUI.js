@@ -1217,15 +1217,16 @@ function _openImportModal(container) {
             }).join('');
 
             const confirmOverlay = document.createElement('div');
-            confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+            confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
             confirmOverlay.innerHTML = `
-              <div style="background:var(--surface1);border:1px solid var(--border);border-radius:12px;
-                          width:440px;max-width:92vw;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.25)">
+              <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;
+                          width:440px;max-width:92vw;overflow:hidden;
+                          box-shadow:0 20px 60px rgba(0,0,0,.35)">
 
                 <!-- Header -->
-                <div style="padding:16px 20px 14px;border-bottom:1px solid var(--border)">
+                <div style="padding:16px 20px 14px;border-bottom:1px solid #e2e8f0;background:#ffffff">
                   <div style="display:flex;align-items:center;gap:10px">
-                    <div style="width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,.12);
+                    <div style="width:36px;height:36px;border-radius:8px;background:#fef3c7;
                                 display:flex;align-items:center;justify-content:center;flex-shrink:0">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -1234,20 +1235,20 @@ function _openImportModal(container) {
                       </svg>
                     </div>
                     <div>
-                      <div style="font-size:14px;font-weight:600;color:var(--t1)">
+                      <div style="font-size:14px;font-weight:600;color:#0f172a">
                         ${duplicates.length} student${duplicates.length !== 1 ? 's' : ''} already exist
                       </div>
-                      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">Matched by CNIC in the system</div>
+                      <div style="font-size:11.5px;color:#64748b;margin-top:2px">Matched by CNIC in the system</div>
                     </div>
                   </div>
                 </div>
 
                 <!-- Body -->
-                <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px">
-                  <p style="font-size:12.5px;color:var(--t2);line-height:1.55;margin:0">
+                <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px;background:#ffffff">
+                  <p style="font-size:12.5px;color:#475569;line-height:1.55;margin:0">
                     These students are already registered. Import them again (creates duplicates) or skip?
                   </p>
-                  <div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.22);
+                  <div style="background:#fffbeb;border:1px solid #fcd34d;
                               border-radius:8px;padding:10px 14px;display:flex;flex-direction:column;
                               gap:10px;max-height:200px;overflow-y:auto">
                     ${dupItems}
@@ -1255,27 +1256,27 @@ function _openImportModal(container) {
                 </div>
 
                 <!-- Footer -->
-                <div style="padding:12px 20px;border-top:1px solid var(--border);
+                <div style="padding:12px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;
                             display:flex;align-items:center;gap:8px">
                   <button id="dupCancel"
-                    style="height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);
-                           background:none;color:var(--t2);font-size:12.5px;cursor:pointer">
+                    style="height:32px;padding:0 12px;border-radius:6px;border:1px solid #e2e8f0;
+                           background:#ffffff;color:#64748b;font-size:12.5px;cursor:pointer">
                     Cancel
                   </button>
                   <div style="flex:1"></div>
                   <button id="dupSkip"
-                    style="height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--border);
-                           background:none;color:var(--t1);font-size:12.5px;font-weight:600;cursor:pointer">
+                    style="height:32px;padding:0 14px;border-radius:6px;border:1px solid #e2e8f0;
+                           background:#ffffff;color:#0f172a;font-size:12.5px;font-weight:600;cursor:pointer">
                     Skip duplicates
-                    <span style="font-weight:400;color:var(--t3);font-size:11.5px;margin-left:2px">
+                    <span style="font-weight:400;color:#94a3b8;font-size:11.5px;margin-left:2px">
                       (${valid.length} new only)
                     </span>
                   </button>
                   <button id="dupImport"
                     style="height:32px;padding:0 14px;border-radius:6px;border:none;
-                           background:#d97706;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">
+                           background:var(--blue);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">
                     Import all
-                    <span style="font-weight:400;opacity:.8;font-size:11.5px;margin-left:2px">
+                    <span style="font-weight:400;opacity:.85;font-size:11.5px;margin-left:2px">
                       (${valid.length + duplicates.length} total)
                     </span>
                   </button>
