@@ -1241,6 +1241,7 @@ function openModal(enrolmentId = null) {
   const existing = isEdit ? EnrolmentService.getById(enrolmentId) : null;
 
   // ── Local form state ──────────────────────────────────────
+  let _selCampus   = existing?.campusId       || '';
   let _selSession  = existing?.session        || '';
   let _selAdmBatch = existing?.admissionBatch || '';
 
@@ -1379,7 +1380,7 @@ function openModal(enrolmentId = null) {
   function getAdmBatches(sess) {
     if (!sess) return [];
     return [...new Set((AppState.get('students') || [])
-      .filter(s => s.session === sess)
+      .filter(s => s.session === sess && (!_selCampus || s.campusId === _selCampus))
       .map(s => s.admissionBatch).filter(Boolean))].sort();
   }
 
@@ -1406,8 +1407,9 @@ function openModal(enrolmentId = null) {
 
   function filterStudents() {
     let list = AppState.get('students') || [];
-    if (_selSession)  list = list.filter(s => s.session       === _selSession);
-    if (_selAdmBatch) list = list.filter(s => s.admissionBatch === _selAdmBatch);
+    if (_selCampus)   list = list.filter(s => s.campusId        === _selCampus);
+    if (_selSession)  list = list.filter(s => s.session         === _selSession);
+    if (_selAdmBatch) list = list.filter(s => s.admissionBatch  === _selAdmBatch);
     // Preserve _enrolled state and _subjectData for already-loaded students
     _studentRows = list.map(s => {
       const existing = _studentRows.find(r => r.id === s.id);
@@ -1908,6 +1910,7 @@ function openModal(enrolmentId = null) {
 
   // ── Build modal HTML ──────────────────────────────────────
   const sessions = getUniqueSessions();
+  const campuses = (AppState.get('campuses') || []);
 
   overlay.innerHTML = `
 <div class="enr-modal" style="max-width:900px;width:100%;margin:auto" role="dialog" aria-modal="true">
@@ -1924,10 +1927,17 @@ function openModal(enrolmentId = null) {
 
   <div class="enr-modal-body">
 
-    <!-- ① Session & Admission Batch -->
+    <!-- ① Campus, Session & Admission Batch -->
     <div class="enrs-box">
       <div class="enrs-box-title"><span class="enrs-badge">1</span>Session &amp; Admission Batch</div>
-      <div class="enr-form-row" style="grid-template-columns:1fr 1fr">
+      <div class="enr-form-row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="enr-field" style="margin-bottom:0">
+          <label class="enr-label">Campus <span style="color:var(--red)">*</span></label>
+          <select id="enrFldCampus" class="enr-select">
+            <option value="">— Select campus —</option>
+            ${campuses.map(c => `<option value="${c.id}" ${c.id===_selCampus?'selected':''}>${c.campusName || c.name || c.id}</option>`).join('')}
+          </select>
+        </div>
         <div class="enr-field" style="margin-bottom:0">
           <label class="enr-label">Session <span style="color:var(--red)">*</span></label>
           <select id="enrFldSession" class="enr-select">
@@ -1985,6 +1995,17 @@ function openModal(enrolmentId = null) {
   G('enrModalCancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
+  // ── Wire campus change ────────────────────────────────────
+  G('enrFldCampus').addEventListener('change', e => {
+    _selCampus   = e.target.value;
+    _selAdmBatch = '';
+    _firstRowData = {};
+    renderAdmBatchOpts();
+    filterStudents();
+    renderStudentMatrix();
+    renderAddStudentRow();
+  });
+
   // ── Wire session change ───────────────────────────────────
   G('enrFldSession').addEventListener('change', e => {
     _selSession  = e.target.value;
@@ -2034,6 +2055,7 @@ function openModal(enrolmentId = null) {
     // Add mode — enrol each student
     const toEnrol = _studentRows.filter(s => s._enrolled !== false);
     if (!toEnrol.length) { Toast.error('No students to enrol. Load students first.'); return; }
+    if (!_selCampus)     { Toast.error('Please select a campus.'); return; }
     if (!_selSession)    { Toast.error('Please select a session.'); return; }
 
     // ── Pre-check: find duplicates before saving ──────────────
@@ -2074,6 +2096,7 @@ function openModal(enrolmentId = null) {
             const subjects = collectSubjectsForStudent(s);
             const r = EnrolmentService.add({
               studentId: s.id, enrolmentDate, status, feeStatus, notes, subjects,
+              campusId: _selCampus,
               session: _selSession, admissionBatch: _selAdmBatch,
               batchId: subjects[0]?.batchId || '',
             }, user);
@@ -2098,6 +2121,7 @@ function openModal(enrolmentId = null) {
         feeStatus,
         notes,
         subjects,
+        campusId:       _selCampus,
         session:        _selSession,
         admissionBatch: _selAdmBatch,
         batchId:        subjects[0]?.batchId || '',
