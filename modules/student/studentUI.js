@@ -115,12 +115,12 @@ function injectStudentStyles() {
       min-width:0;
       max-width:100%;
       overflow-x:auto;
-      overflow-y:visible;
+      overflow-y:auto;
       -webkit-overflow-scrolling:touch;
       border:1px solid var(--border);
       border-radius:var(--r-sm);
     }
-    #stuTableWrap::-webkit-scrollbar{height:6px}
+    #stuTableWrap::-webkit-scrollbar{height:6px;width:6px}
     #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2)}
     #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
     #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t4)}
@@ -288,12 +288,12 @@ function _pageTemplate() {
         }).join('')}
       </select>
 
-      <button class="stu-btn stu-btn--ghost" id="stuImportBtn">${ICONS.upload} Import CSV</button>
-      <button class="stu-btn stu-btn--ghost" id="stuExportCSVBtn">${ICONS.dl} Export CSV</button>
-      <button class="stu-btn stu-btn--ghost" id="stuExportPDFBtn">${ICONS.pdf} Export PDF</button>
-      <button class="stu-btn stu-btn--ghost" id="stuTemplateBtn">${ICONS.csv} Template</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuImportBtn" title="Import CSV">${ICONS.upload}</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuExportCSVBtn" title="Export CSV">${ICONS.dl}</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuExportPDFBtn" title="Export PDF">${ICONS.pdf}</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuTemplateBtn" title="Download Template">${ICONS.csv}</button>
       <div class="col-mgr-wrap">
-        <button class="stu-btn stu-btn--ghost" id="stuColMgrBtn" title="Manage columns">${ICONS.columns} Columns</button>
+        <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuColMgrBtn" title="Manage columns">${ICONS.columns}</button>
         <div class="col-mgr-panel" id="stuColMgrPanel">
           <div class="col-mgr-head">
             <span class="col-mgr-title">${ICONS.columns} Manage Columns</span>
