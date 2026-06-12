@@ -263,7 +263,13 @@ export const StudentService = {
       studentId,
       cnic,
       studentName:     data.studentName.trim(),
+      fatherName:      (data.fatherName || '').trim(),
       gender:          data.gender,
+      studentPhone:    (data.studentPhone || '').trim(),
+      guardianPhone:   (data.guardianPhone || '').trim(),
+      qualification:   (data.qualification || '').trim(),
+      district:        (data.district || '').trim(),
+      province:        (data.province || '').trim(),
       campusId:        campusRecord ? campusRecord.id : '',
       campusSnapshot,
       disciplineId:    data.disciplineId,
@@ -325,7 +331,13 @@ export const StudentService = {
       cnic,
       studentId,
       studentName:     (data.studentName || existing.studentName).trim(),
+      fatherName:      data.fatherName !== undefined ? (data.fatherName || '').trim() : (existing.fatherName || ''),
       gender,
+      studentPhone:    data.studentPhone !== undefined ? (data.studentPhone || '').trim() : (existing.studentPhone || ''),
+      guardianPhone:   data.guardianPhone !== undefined ? (data.guardianPhone || '').trim() : (existing.guardianPhone || ''),
+      qualification:   data.qualification !== undefined ? (data.qualification || '').trim() : (existing.qualification || ''),
+      district:        data.district !== undefined ? (data.district || '').trim() : (existing.district || ''),
+      province:        data.province !== undefined ? (data.province || '').trim() : (existing.province || ''),
       campusId,
       campusSnapshot,
       disciplineId,
@@ -353,7 +365,7 @@ export const StudentService = {
     const students = rows || AppState.get(KEY) || [];
     if (!students.length) return;
 
-    const headers  = ['studentId', 'cnic', 'studentName', 'gender', 'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
+    const headers  = ['studentId', 'cnic', 'studentName', 'fatherName', 'gender', 'studentPhone', 'guardianPhone', 'qualification', 'district', 'province', 'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
     const now      = new Date();
     const dateStr  = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr  = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
@@ -375,7 +387,13 @@ export const StudentService = {
         s.studentId        || '',
         safeCNIC,
         s.studentName      || '',
+        s.fatherName       || '',
         s.gender           ? (s.gender.charAt(0).toUpperCase() + s.gender.slice(1)) : '',
+        s.studentPhone     || '',
+        s.guardianPhone    || '',
+        s.qualification    || '',
+        s.district         || '',
+        s.province         || '',
         s.campus           || s.campusSnapshot?.name || '',
         disc?.abbreviation || '',
         safeDate,
@@ -385,7 +403,7 @@ export const StudentService = {
         s.exemptedPapers?.count != null ? String(s.exemptedPapers.count) : '',
         s.exemptedPapers?.codes?.length ? s.exemptedPapers.codes.join(' | ') : '',
       ].map(function(v, i) {
-        if (i === 1 || i === 6) return v;
+        if (i === 1 || i === 12) return v;  // safeCNIC at idx 1, safeDate at idx 12
         return '"' + String(v).replace(/"/g, '""') + '"';
       }).join(',');
     });
@@ -414,14 +432,22 @@ export const StudentService = {
       // ── Sheet 1: Student Import ──────────────────────────────
       // We build rows as arrays; column order matches the table exactly
       const HEADERS = [
-        'studentId', 'cnic', 'studentName', 'campus', 'discipline',
-        'dateOfAdmission', 'session', 'admissionBatch',
+        'studentId', 'cnic', 'studentName', 'fatherName', 'gender',
+        'studentPhone', 'guardianPhone', 'qualification', 'district', 'province',
+        'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch',
       ];
 
       const HINTS = [
         'Auto-generated — leave BLANK',
         '13 digits  e.g. 35202-1234567-8',
         'Full name of the student',
+        'Father\'s full name',
+        'Male or Female',
+        'Student mobile number',
+        'Guardian/Parent mobile number',
+        'e.g. Matric, FA, BA, BSc',
+        'e.g. Rawalpindi, Lahore',
+        'e.g. Punjab, Sindh, KPK',
         'e.g. Main Campus, North Campus',
         'Abbreviation  e.g. ' + (discEx || 'ACCA'),
         'Format: YYYY-MM-DD  e.g. 2025-09-01',
@@ -431,13 +457,13 @@ export const StudentService = {
 
       // Sample rows — studentId & session blank (auto)
       const SAMPLES = [
-        ['', '35202-1234567-8', 'Muhammad Ali', 'Main Campus',  discEx, '2025-09-01', '', 'Batch-1'],
-        ['', '35202-9876543-2', 'Sara Khan',    'North Campus', discEx, '2026-03-15', '', 'Batch-2'],
-        ['', '35202-1111111-9', 'Ahmed Raza',   'Main Campus',  discEx, '2025-11-20', '', 'Batch-1'],
+        ['', '35202-1234567-8', 'Muhammad Ali', 'Ahmad Ali',   'Male',   '0300-1234567', '0300-7654321', 'Matric',    'Rawalpindi', 'Punjab', 'Main Campus',  discEx, '2025-09-01', '', 'Batch-1'],
+        ['', '35202-9876543-2', 'Sara Khan',    'Imran Khan',  'Female', '0321-9876543', '0321-1234567', 'FA',        'Lahore',     'Punjab', 'North Campus', discEx, '2026-03-15', '', 'Batch-2'],
+        ['', '35202-1111111-9', 'Ahmed Raza',   'Raza Hussain','Male',   '0333-1111111', '0333-9999999', 'BA',        'Karachi',    'Sindh',  'Main Campus',  discEx, '2025-11-20', '', 'Batch-1'],
       ];
 
       // 100 empty data rows after samples
-      const EMPTY_ROWS = Array.from({ length: 97 }, function() { return ['', '', '', '', '', '', '', '']; });
+      const EMPTY_ROWS = Array.from({ length: 97 }, function() { return ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '']; });
 
       const wsData = [HEADERS, HINTS, ...SAMPLES, ...EMPTY_ROWS];
       const ws     = XLSX.utils.aoa_to_sheet(wsData);
@@ -447,6 +473,13 @@ export const StudentService = {
         { wch: 22 }, // studentId
         { wch: 22 }, // cnic
         { wch: 26 }, // studentName
+        { wch: 26 }, // fatherName
+        { wch: 10 }, // gender
+        { wch: 18 }, // studentPhone
+        { wch: 18 }, // guardianPhone
+        { wch: 16 }, // qualification
+        { wch: 18 }, // district
+        { wch: 16 }, // province
         { wch: 20 }, // campus
         { wch: 18 }, // discipline
         { wch: 20 }, // dateOfAdmission
@@ -454,9 +487,8 @@ export const StudentService = {
         { wch: 20 }, // admissionBatch
       ];
 
-      // Force ALL cells in CNIC (col B) and dateOfAdmission (col F)
-      // to number format "text" (@) so Excel never converts them
-      const textCols = [1, 5]; // 0-based: B=1, F=5
+      // Force CNIC (col B, idx 1) and dateOfAdmission (col M, idx 12) to text
+      const textCols = [1, 12];
       const totalRows = wsData.length;
       textCols.forEach(function(colIdx) {
         for (let r = 0; r < totalRows; r++) {
@@ -476,7 +508,14 @@ export const StudentService = {
         ['studentId',       'Leave BLANK — auto-generated on import'],
         ['cnic',            '13 digits with dashes: 35202-1234567-8\n(without dashes also accepted: 3520212345678)'],
         ['studentName',     'Full name  e.g. Muhammad Ali'],
-        ['campus',          'Campus name  e.g. Main Campus, North Campus, Rawalpindi Campus'],
+        ['fatherName',      'Father\'s full name  e.g. Ahmad Ali'],
+        ['gender',          'Male or Female'],
+        ['studentPhone',    'Student mobile number  e.g. 0300-1234567'],
+        ['guardianPhone',   'Guardian/Parent mobile number  e.g. 0321-9876543'],
+        ['qualification',   'Previous qualification  e.g. Matric, FA, BA, BSc'],
+        ['district',        'District of residence  e.g. Rawalpindi, Lahore, Karachi'],
+        ['province',        'Province  e.g. Punjab, Sindh, KPK, Balochistan'],
+        ['campus',          'Campus name  e.g. Main Campus, North Campus'],
         ['discipline',      'Use exact abbreviation from system\nAvailable: ' + discList],
         ['dateOfAdmission', 'YYYY-MM-DD format only  e.g. 2025-09-01\nColumn is TEXT — do not change format'],
         ['session',         'Leave BLANK — auto-detected from dateOfAdmission\nJul–Dec → Dec-YY  |  Jan–Jun → June-YY'],
@@ -505,10 +544,10 @@ export const StudentService = {
     script.onerror = function() {
       // Fallback to plain CSV if CDN fails
       const csv = [
-        'studentId,cnic,studentName,campus,discipline,dateOfAdmission,session,admissionBatch',
-        ',"35202-1234567-8",Muhammad Ali,Main Campus,'  + discEx + ',"2025-09-01",,Batch-1',
-        ',"35202-9876543-2",Sara Khan,North Campus,'    + discEx + ',"2026-03-15",,Batch-2',
-        ',"35202-1111111-9",Ahmed Raza,Main Campus,'    + discEx + ',"2025-11-20",,Batch-1',
+        'studentId,cnic,studentName,fatherName,gender,studentPhone,guardianPhone,qualification,district,province,campus,discipline,dateOfAdmission,session,admissionBatch',
+        ',"35202-1234567-8",Muhammad Ali,Ahmad Ali,Male,0300-1234567,0300-7654321,Matric,Rawalpindi,Punjab,Main Campus,'  + discEx + ',"2025-09-01",,Batch-1',
+        ',"35202-9876543-2",Sara Khan,Imran Khan,Female,0321-9876543,0321-1234567,FA,Lahore,Punjab,North Campus,'    + discEx + ',"2026-03-15",,Batch-2',
+        ',"35202-1111111-9",Ahmed Raza,Raza Hussain,Male,0333-1111111,0333-9999999,BA,Karachi,Sindh,Main Campus,'    + discEx + ',"2025-11-20",,Batch-1',
       ].join('\n');
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
       const url  = URL.createObjectURL(blob);
@@ -560,7 +599,13 @@ export const StudentService = {
       studentId:       findCol(['studentid', 'stuid', 'id']),
       cnic:            findCol(['cnic', 'uniqueid', 'nationalid', 'cnid']),
       studentName:     findCol(['studentname', 'name', 'fullname', 'studentfullname']),
+      fatherName:      findCol(['fathername', 'father', 'fatherfullname']),
       gender:          findCol(['gender', 'sex']),
+      studentPhone:    findCol(['studentphone', 'phone', 'mobile', 'studentmobile', 'studentcontact']),
+      guardianPhone:   findCol(['guardianphone', 'guardianmobile', 'parentphone', 'parentmobile', 'guardiancontact']),
+      qualification:   findCol(['qualification', 'qual', 'education', 'previousqualification']),
+      district:        findCol(['district']),
+      province:        findCol(['province']),
       campus:          findCol(['campus', 'campusname', 'branch']),
       discipline:      findCol(['discipline', 'disc', 'program', 'dept']),
       dateOfAdmission: findCol(['dateofadmission', 'admissiondate', 'doa', 'admissiondateyyyy-mm-dd']),
@@ -614,10 +659,16 @@ export const StudentService = {
       const get           = function(idx) { return (vals[idx] || '').replace(/"/g,'').replace(/^=/, '').trim(); };
       const rawCNIC       = get(colIdx.cnic);
       const studentName   = get(colIdx.studentName);
+      const fatherName    = colIdx.fatherName   !== -1 ? get(colIdx.fatherName)   : '';
       const disciplineStr = get(colIdx.discipline);
       const dateStr       = get(colIdx.dateOfAdmission);
       const genderRaw     = colIdx.gender !== -1 ? get(colIdx.gender).toLowerCase() : '';
       const gender        = genderRaw === 'female' || genderRaw === 'f' ? 'female' : 'male';
+      const studentPhone  = colIdx.studentPhone  !== -1 ? get(colIdx.studentPhone)  : '';
+      const guardianPhone = colIdx.guardianPhone !== -1 ? get(colIdx.guardianPhone) : '';
+      const qualification = colIdx.qualification !== -1 ? get(colIdx.qualification) : '';
+      const district      = colIdx.district      !== -1 ? get(colIdx.district)      : '';
+      const province      = colIdx.province      !== -1 ? get(colIdx.province)      : '';
       const campusRaw     = colIdx.campus !== -1 ? get(colIdx.campus) : '';
       // Resolve campus name → campusId + snapshot
       const campuses      = AppState.get('campuses') || [];
@@ -694,7 +745,13 @@ export const StudentService = {
         studentId,
         cnic:            formattedCNIC,
         studentName,
+        fatherName,
         gender,
+        studentPhone,
+        guardianPhone,
+        qualification,
+        district,
+        province,
         campusId,
         campusSnapshot,
         disciplineId:    disc.id,
