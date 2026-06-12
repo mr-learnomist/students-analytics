@@ -125,10 +125,9 @@ function injectStudentStyles() {
     #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
     #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t4)}
     #stuTableWrap table{
-      min-width:max-content;
-      width:100%;
       border-collapse:collapse;
-      table-layout:fixed
+      table-layout:auto;
+      white-space:nowrap;
     }
     /* Table.render() wraps the <table> in its own .table-wrap (overflow-x:auto,
        border, border-radius). That creates a SECOND scroll/measure context
