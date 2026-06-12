@@ -647,8 +647,9 @@ export const StudentService = {
     }
 
     const disciplines = AppState.get('disciplines') || [];
-    const valid  = [];
-    const errors = [];
+    const valid      = [];
+    const errors     = [];
+    const duplicates = [];  // rows with CNIC already in system
 
     dataLines.slice(startIdx).forEach(function(line, i) {
       const rowNum = startIdx + i + 1;
@@ -684,6 +685,8 @@ export const StudentService = {
 
       // ── CNIC (optional — old data may not have it) ──
       let formattedCNIC = '';
+      let _isDupSystem  = false;
+      let _isDupInFile  = false;
       if (rawCNIC) {
         const cr = validateCNIC(rawCNIC);
         if (!cr.valid) {
@@ -691,9 +694,12 @@ export const StudentService = {
         } else {
           formattedCNIC = cr.formatted;
           if (isDuplicateCNIC(formattedCNIC)) {
-            rowErrors.push('CNIC ' + formattedCNIC + ' is already registered in the system');
-          } else if (valid.some(function(v) { return v.cnic === formattedCNIC; })) {
-            rowErrors.push('CNIC ' + formattedCNIC + ' appears more than once in this file');
+            _isDupSystem = true;   // existing in AppState — warn user, don't hard-error
+          } else if (
+            valid.some(function(v) { return v.cnic === formattedCNIC; }) ||
+            duplicates.some(function(v) { return v.cnic === formattedCNIC; })
+          ) {
+            _isDupInFile = true;   // same CNIC appears twice in this CSV
           }
         }
       }
@@ -740,7 +746,7 @@ export const StudentService = {
         exemptedPapers = { count: codes.length, codes };
       }
 
-      valid.push({
+      const rowData = {
         _rowNum:         rowNum,
         studentId,
         cnic:            formattedCNIC,
@@ -761,10 +767,20 @@ export const StudentService = {
         route,
         exemptedPapers,
         createdAt:       new Date().toISOString(),
-      });
+      };
+
+      if (_isDupSystem) {
+        // Already exists in system — put in duplicates for user to review
+        duplicates.push(Object.assign(rowData, { _dupReason: 'system' }));
+      } else if (_isDupInFile) {
+        // Same CNIC twice in this file — treat as hard error
+        errors.push('Row ' + rowNum + ' (' + studentName + '): CNIC ' + formattedCNIC + ' appears more than once in this file');
+      } else {
+        valid.push(rowData);
+      }
     });
 
-    return { valid, errors };
+    return { valid, errors, duplicates };
   },
 
   importStudents(rows) {
