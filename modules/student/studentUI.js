@@ -1197,47 +1197,90 @@ function _openImportModal(container) {
 
           // If there are duplicate rows — show confirm dialog before saving
           if (duplicates.length) {
-            const dupList = duplicates.map(function(d) {
-              return '<li style="margin-bottom:6px">'
-                + '<b>' + d.studentName + '</b>'
-                + (d.cnic ? ' <span style="color:var(--t3)">(' + d.cnic + ')</span>' : '')
-                + ' <span style="color:var(--t3);font-size:11px">— Row ' + d._rowNum + '</span>'
-                + '<br><span style="font-size:11px;color:#d97706">' + (d._dupReason || 'Already exists') + '</span>'
-                + '</li>';
+            const dupItems = duplicates.map(function(d) {
+              const initials = (d.studentName || '?').split(' ')
+                .map(function(w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase();
+              return '<div style="display:flex;align-items:flex-start;gap:10px">' +
+                '<div style="width:32px;height:32px;border-radius:50%;background:rgba(245,158,11,.22);' +
+                  'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;' +
+                  'color:#92400e;flex-shrink:0;margin-top:1px">' + initials + '</div>' +
+                '<div>' +
+                  '<div style="font-size:13px;font-weight:600;color:#92400e">' + d.studentName + '</div>' +
+                  (d.cnic ? '<div style="font-size:11px;color:#b45309;margin-top:1px;font-family:\'Courier New\',monospace">' + d.cnic + '</div>' : '') +
+                  '<div style="display:flex;align-items:center;gap:6px;margin-top:3px">' +
+                    '<span style="font-size:10.5px;color:#b45309;background:rgba(245,158,11,.22);' +
+                      'padding:1px 7px;border-radius:4px">Row ' + d._rowNum + '</span>' +
+                    (d._dupReason ? '<span style="font-size:10.5px;color:#b45309">' + d._dupReason + '</span>' : '') +
+                  '</div>' +
+                '</div>' +
+              '</div>';
             }).join('');
 
             const confirmOverlay = document.createElement('div');
             confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
             confirmOverlay.innerHTML = `
-              <div style="background:var(--surface1);border:1px solid var(--border);border-radius:10px;
-                          padding:28px 28px 22px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                  </svg>
-                  <div style="font-size:15px;font-weight:700;color:var(--t1)">${duplicates.length} Student${duplicates.length !== 1 ? 's' : ''} Already Exist</div>
+              <div style="background:var(--surface1);border:1px solid var(--border);border-radius:12px;
+                          width:440px;max-width:92vw;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.25)">
+
+                <!-- Header -->
+                <div style="padding:16px 20px 14px;border-bottom:1px solid var(--border)">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,.12);
+                                display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div style="font-size:14px;font-weight:600;color:var(--t1)">
+                        ${duplicates.length} student${duplicates.length !== 1 ? 's' : ''} already exist
+                      </div>
+                      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">Matched by CNIC in the system</div>
+                    </div>
+                  </div>
                 </div>
-                <p style="font-size:13px;color:var(--t2);margin:0 0 12px">
-                  The following student${duplicates.length !== 1 ? 's are' : ' is'} already registered in the system (matched by CNIC).
-                  Do you want to import them again or skip?
-                </p>
-                <ul style="margin:0 0 18px;padding-left:18px;max-height:160px;overflow-y:auto;
-                           background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);
-                           border-radius:6px;padding:10px 10px 10px 26px;list-style:disc">
-                  ${dupList}
-                </ul>
-                <div style="display:flex;gap:8px;justify-content:flex-end">
-                  <button id="dupSkip"   style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t1);font-size:13px;font-weight:600;cursor:pointer">
-                    Skip Duplicates (${valid.length} new only)
-                  </button>
-                  <button id="dupImport" style="height:36px;padding:0 16px;border-radius:6px;border:none;background:#f59e0b;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
-                    Import All (${valid.length + duplicates.length} total)
-                  </button>
-                  <button id="dupCancel" style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t3);font-size:13px;cursor:pointer">
+
+                <!-- Body -->
+                <div style="padding:14px 20px;display:flex;flex-direction:column;gap:12px">
+                  <p style="font-size:12.5px;color:var(--t2);line-height:1.55;margin:0">
+                    These students are already registered. Import them again (creates duplicates) or skip?
+                  </p>
+                  <div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.22);
+                              border-radius:8px;padding:10px 14px;display:flex;flex-direction:column;
+                              gap:10px;max-height:200px;overflow-y:auto">
+                    ${dupItems}
+                  </div>
+                </div>
+
+                <!-- Footer -->
+                <div style="padding:12px 20px;border-top:1px solid var(--border);
+                            display:flex;align-items:center;gap:8px">
+                  <button id="dupCancel"
+                    style="height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);
+                           background:none;color:var(--t2);font-size:12.5px;cursor:pointer">
                     Cancel
                   </button>
+                  <div style="flex:1"></div>
+                  <button id="dupSkip"
+                    style="height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--border);
+                           background:none;color:var(--t1);font-size:12.5px;font-weight:600;cursor:pointer">
+                    Skip duplicates
+                    <span style="font-weight:400;color:var(--t3);font-size:11.5px;margin-left:2px">
+                      (${valid.length} new only)
+                    </span>
+                  </button>
+                  <button id="dupImport"
+                    style="height:32px;padding:0 14px;border-radius:6px;border:none;
+                           background:#d97706;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">
+                    Import all
+                    <span style="font-weight:400;opacity:.8;font-size:11.5px;margin-left:2px">
+                      (${valid.length + duplicates.length} total)
+                    </span>
+                  </button>
                 </div>
+
               </div>`;
 
             document.body.appendChild(confirmOverlay);
