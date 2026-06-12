@@ -1188,8 +1188,80 @@ function _openImportModal(container) {
         variant: 'primary',
         close:   false,
         handler: function() {
-          if (!parsedData?.valid?.length) { Toast.error('No valid rows to import.'); return; }
-          const count = StudentService.importStudents(parsedData.valid);
+          const valid      = parsedData?.valid      || [];
+          const duplicates = parsedData?.duplicates || [];
+
+          if (!valid.length && !duplicates.length) {
+            Toast.error('No valid rows to import.'); return;
+          }
+
+          // If there are duplicate rows — show confirm dialog before saving
+          if (duplicates.length) {
+            const dupList = duplicates.map(function(d) {
+              return '<li style="margin-bottom:4px"><b>' + d.studentName + '</b>'
+                + (d.cnic ? ' — ' + d.cnic : '')
+                + ' <span style="color:var(--t3);font-size:11px">(Row ' + d._rowNum + ')</span></li>';
+            }).join('');
+
+            const confirmOverlay = document.createElement('div');
+            confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+            confirmOverlay.innerHTML = \`
+              <div style="background:var(--surface1);border:1px solid var(--border);border-radius:10px;
+                          padding:28px 28px 22px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <div style="font-size:15px;font-weight:700;color:var(--t1)">${duplicates.length} Student${duplicates.length !== 1 ? 's' : ''} Already Exist</div>
+                </div>
+                <p style="font-size:13px;color:var(--t2);margin:0 0 12px">
+                  The following student${duplicates.length !== 1 ? 's are' : ' is'} already registered in the system (matched by CNIC).
+                  Do you want to import them again or skip?
+                </p>
+                <ul style="margin:0 0 18px;padding-left:18px;max-height:160px;overflow-y:auto;
+                           background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);
+                           border-radius:6px;padding:10px 10px 10px 26px;list-style:disc">
+                  \${dupList}
+                </ul>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <button id="dupSkip"   style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t1);font-size:13px;font-weight:600;cursor:pointer">
+                    Skip Duplicates (${valid.length} new only)
+                  </button>
+                  <button id="dupImport" style="height:36px;padding:0 16px;border-radius:6px;border:none;background:#f59e0b;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+                    Import All (${valid.length + duplicates.length} total)
+                  </button>
+                  <button id="dupCancel" style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t3);font-size:13px;cursor:pointer">
+                    Cancel
+                  </button>
+                </div>
+              </div>\`;
+
+            document.body.appendChild(confirmOverlay);
+
+            confirmOverlay.querySelector('#dupCancel').onclick = function() {
+              document.body.removeChild(confirmOverlay);
+            };
+            confirmOverlay.querySelector('#dupSkip').onclick = function() {
+              document.body.removeChild(confirmOverlay);
+              if (!valid.length) { Toast.error('No new students to import.'); return; }
+              const count = StudentService.importStudents(valid);
+              Modal.close(_mid);
+              _rerender(container);
+              Toast.success(count + ' new student' + (count !== 1 ? 's' : '') + ' imported. ' + duplicates.length + ' duplicate' + (duplicates.length !== 1 ? 's' : '') + ' skipped.');
+            };
+            confirmOverlay.querySelector('#dupImport').onclick = function() {
+              document.body.removeChild(confirmOverlay);
+              const count = StudentService.importStudents([...valid, ...duplicates]);
+              Modal.close(_mid);
+              _rerender(container);
+              Toast.success(count + ' student' + (count !== 1 ? 's' : '') + ' imported (including ' + duplicates.length + ' duplicate' + (duplicates.length !== 1 ? 's' : '') + ').');
+            };
+            return;
+          }
+
+          // No duplicates — import directly
+          const count = StudentService.importStudents(valid);
           Modal.close(_mid);
           _rerender(container);
           Toast.success(count + ' student' + (count !== 1 ? 's' : '') + ' imported successfully.');
@@ -1265,7 +1337,22 @@ function _renderImportPreview(el, data, fileName) {
       </svg>
       <div>
         <div style="font-size:18px;font-weight:800;color:#059669;line-height:1">${valid.length}</div>
-        <div style="font-size:11px;color:#059669;margin-top:1px">student${valid.length !== 1 ? 's' : ''} ready to import</div>
+        <div style="font-size:11px;color:#059669;margin-top:1px">new student${valid.length !== 1 ? 's' : ''} ready to import</div>
+      </div>
+    </div>`;
+  }
+
+  const duplicates = data.duplicates || [];
+  if (duplicates.length) {
+    html += `<div style="flex:1;display:flex;align-items:center;gap:10px;padding:12px 16px;
+        background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:var(--r-sm)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <div>
+        <div style="font-size:18px;font-weight:800;color:#d97706;line-height:1">${duplicates.length}</div>
+        <div style="font-size:11px;color:#d97706;margin-top:1px">already exist (will ask before saving)</div>
       </div>
     </div>`;
   }
