@@ -1337,7 +1337,6 @@ function _openImportModal(container) {
             };
             return;
           }
-          }
 
           // No duplicates — import directly
           const count = StudentService.importStudents(valid);
