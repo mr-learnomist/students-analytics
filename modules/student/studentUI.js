@@ -24,13 +24,15 @@ const KEY = 'students';
 
 // ── Icons ─────────────────────────────────────────────────────
 const ICONS = {
-  add:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-  edit:   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
-  trash:  `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`,
-  csv:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
-  upload: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
-  dl:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
-  pdf:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+  add:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  edit:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
+  trash:   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`,
+  csv:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+  upload:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+  dl:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+  pdf:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+  columns: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/></svg>`,
+  drag:    `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
 };
 
 // ── CSS ───────────────────────────────────────────────────────
@@ -137,8 +139,73 @@ function injectStudentStyles() {
       background:var(--surface2);border-radius:var(--r-sm);margin-bottom:10px;font-size:12.5px}
     .import-ok{color:#10b981;font-weight:700}
     .import-bad{color:#ef4444;font-weight:700}
+
+    /* ── Column Manager ── */
+    .col-mgr-wrap{position:relative}
+    .col-mgr-panel{position:absolute;top:calc(100% + 6px);right:0;z-index:999;
+      width:260px;background:var(--surface);border:1px solid var(--border);
+      border-radius:var(--r-sm);box-shadow:0 8px 24px rgba(0,0,0,.14);
+      display:none;flex-direction:column;overflow:hidden}
+    .col-mgr-panel.open{display:flex}
+    .col-mgr-head{padding:10px 14px 8px;border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between}
+    .col-mgr-title{font-size:12px;font-weight:700;color:var(--t1);
+      display:flex;align-items:center;gap:6px}
+    .col-mgr-actions{display:flex;gap:6px}
+    .col-mgr-link{font-size:11px;color:var(--blue);cursor:pointer;
+      background:none;border:none;padding:0;text-decoration:underline}
+    .col-mgr-list{padding:6px 0;max-height:340px;overflow-y:auto}
+    .col-mgr-item{display:flex;align-items:center;gap:8px;padding:7px 14px;
+      cursor:grab;user-select:none;transition:background .12s;border-radius:0}
+    .col-mgr-item:hover{background:var(--surface2)}
+    .col-mgr-item.dragging{opacity:.4;background:var(--surface2)}
+    .col-mgr-item.drag-over{border-top:2px solid var(--blue)}
+    .col-mgr-drag{color:var(--t4);flex-shrink:0;cursor:grab}
+    .col-mgr-chk{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0}
+    .col-mgr-lbl{font-size:12.5px;color:var(--t1);flex:1;cursor:pointer}
+    .col-mgr-item.disabled .col-mgr-lbl{color:var(--t4)}
+    .col-mgr-foot{padding:8px 14px;border-top:1px solid var(--border);
+      font-size:11px;color:var(--t3);text-align:center}
   `;
   document.head.appendChild(s);
+}
+
+// ── Column definitions (master list) ─────────────────────────
+const ALL_COLUMNS = [
+  { key: 'studentId',      label: 'Student ID' },
+  { key: 'cnic',           label: 'CNIC' },
+  { key: 'studentName',    label: 'Student Name' },
+  { key: 'fatherName',     label: 'Father Name' },
+  { key: 'gender',         label: 'Gender' },
+  { key: 'studentPhone',   label: 'Student Phone' },
+  { key: 'guardianPhone',  label: 'Guardian Phone' },
+  { key: 'qualification',  label: 'Qualification' },
+  { key: 'district',       label: 'District' },
+  { key: 'province',       label: 'Province' },
+  { key: 'campusSnapshot', label: 'Campus' },
+  { key: 'disciplineId',   label: 'Discipline' },
+  { key: 'route',          label: 'Route' },
+  { key: 'dateOfAdmission',label: 'Date of Admission' },
+  { key: 'session',        label: 'Session' },
+  { key: 'admissionBatch', label: 'Admission Batch' },
+];
+
+const COL_PREF_KEY = 'stu_col_prefs';
+
+function _getColPrefs() {
+  try {
+    const raw = AppState.get(COL_PREF_KEY);
+    if (raw && Array.isArray(raw.order) && raw.order.length) return raw;
+  } catch(e) {}
+  // Default: all visible, default order
+  return {
+    order:   ALL_COLUMNS.map(function(c) { return c.key; }),
+    hidden:  [],
+  };
+}
+
+function _saveColPrefs(prefs) {
+  AppState.set(COL_PREF_KEY, prefs);
 }
 
 // ── Page skeleton ─────────────────────────────────────────────
@@ -193,6 +260,20 @@ function _pageTemplate() {
       <button class="stu-btn stu-btn--ghost" id="stuExportCSVBtn">${ICONS.dl} Export CSV</button>
       <button class="stu-btn stu-btn--ghost" id="stuExportPDFBtn">${ICONS.pdf} Export PDF</button>
       <button class="stu-btn stu-btn--ghost" id="stuTemplateBtn">${ICONS.csv} Template</button>
+      <div class="col-mgr-wrap">
+        <button class="stu-btn stu-btn--ghost" id="stuColMgrBtn" title="Manage columns">${ICONS.columns} Columns</button>
+        <div class="col-mgr-panel" id="stuColMgrPanel">
+          <div class="col-mgr-head">
+            <span class="col-mgr-title">${ICONS.columns} Manage Columns</span>
+            <div class="col-mgr-actions">
+              <button class="col-mgr-link" id="colMgrShowAll">Show All</button>
+              <button class="col-mgr-link" id="colMgrReset">Reset</button>
+            </div>
+          </div>
+          <div class="col-mgr-list" id="colMgrList"></div>
+          <div class="col-mgr-foot">Drag rows to reorder • Check to show/hide</div>
+        </div>
+      </div>
       <button class="stu-btn stu-btn--primary" id="stuAddBtn">${ICONS.add} Add Student</button>
       <span class="stu-count" id="stuCount"></span>
     </div>
@@ -259,140 +340,119 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
   if (canEdit)   actions.push({ label: 'Edit',   icon: ICONS.edit,  handler: function(row) { _openForm(row, container); } });
   if (canDelete) actions.push({ label: 'Delete', danger: true, icon: ICONS.trash, handler: function(row) { _delete(row, container); } });
 
+  // ── Column render map ──────────────────────────────────────
+  const COL_RENDERERS = {
+    studentId: { label: 'Student ID', width: '170px',
+      render: function(v) {
+        return v
+          ? '<span style="font-family:Inter,\'Segoe UI\',system-ui,sans-serif;font-size:11px;font-weight:700;color:var(--t1);letter-spacing:.03em">' + v + '</span>'
+          : '<span style="color:var(--t4);font-size:11px">—</span>';
+      }},
+    cnic: { label: 'CNIC', width: '160px',
+      render: function(v) {
+        if (!v) return '<span style="font-size:10.5px;color:var(--t4);font-style:italic;' +
+          'background:var(--surface3);padding:2px 8px;border-radius:5px;border:1px dashed var(--border2)">Not provided</span>';
+        return '<span class="cnic-badge">' + v + '</span>';
+      }},
+    studentName: { label: 'Student Name',
+      render: function(v) {
+        return '<span style="font-weight:600;color:var(--t1)">' + (v || '—') + '</span>';
+      }},
+    fatherName: { label: 'Father Name', width: '150px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+      }},
+    gender: { label: 'Gender', width: '100px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
+          (v === 'male' ? 'Male' : 'Female') + '</span>';
+      }},
+    studentPhone: { label: 'Student Phone', width: '140px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+      }},
+    guardianPhone: { label: 'Guardian Phone', width: '140px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+      }},
+    qualification: { label: 'Qualification', width: '120px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
+    district: { label: 'District', width: '120px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
+    province: { label: 'Province', width: '110px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
+    campusSnapshot: { label: 'Campus', width: '140px',
+      render: function(v, row) {
+        const name = v?.name || row.campus || '';
+        if (!name) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
+        return '<span style="font-size:12px;font-weight:600;color:var(--t1);' +
+          'background:var(--surface3);padding:2px 8px;border-radius:6px;' +
+          'border:1px solid var(--border)">' + name + '</span>';
+      }},
+    disciplineId: { label: 'Discipline', width: '120px',
+      render: function(id) {
+        const d = AppState.findById('disciplines', id);
+        if (!d) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;font-weight:700;color:var(--t1)">' + d.abbreviation + '</span>';
+      }},
+    route: { label: 'Route', width: '170px',
+      render: function(v, row) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        let html = '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+        if (row.exemptedPapers?.count) {
+          const papers = row.exemptedPapers.papers || [];
+          const codeList = papers.length
+            ? papers.map(function(p) { return p.subjectCode; }).join(', ')
+            : (row.exemptedPapers.codes || []).join(', ');
+          html += '<br><span style="font-size:10.5px;color:var(--t3);margin-top:2px;display:block">' +
+            row.exemptedPapers.count + ' exempt: ' + codeList + '</span>';
+        }
+        return html;
+      }},
+    dateOfAdmission: { label: 'Date of Admission', width: '148px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        const [y, m, d] = v.split('-');
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const label  = parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y;
+        return '<span style="font-size:12.5px;color:var(--t1)">' + label + '</span>';
+      }},
+    session: { label: 'Session', width: '105px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
+      }},
+    admissionBatch: { label: 'Admission Batch', width: '130px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
+      }},
+  };
+
+  // Build ordered + filtered column list from prefs
+  const prefs = _getColPrefs();
+  const columns = prefs.order
+    .filter(function(k) { return !prefs.hidden.includes(k) && COL_RENDERERS[k]; })
+    .map(function(k) {
+      const def = COL_RENDERERS[k];
+      return { key: k, label: def.label, width: def.width, render: def.render };
+    });
+
   Table.render(wrap, {
-    columns: [
-      {
-        key: 'studentId', label: 'Student ID', width: '170px',
-        render: function(v) {
-          return v
-            ? '<span style="font-family:Inter,\'Segoe UI\',system-ui,sans-serif;font-size:11px;font-weight:700;color:var(--t1);letter-spacing:.03em">' + v + '</span>'
-            : '<span style="color:var(--t4);font-size:11px">—</span>';
-        },
-      },
-      {
-        key: 'cnic', label: 'CNIC', width: '160px',
-        render: function(v) {
-          if (!v) return '<span style="font-size:10.5px;color:var(--t4);font-style:italic;' +
-            'background:var(--surface3);padding:2px 8px;border-radius:5px;border:1px dashed var(--border2)">Not provided</span>';
-          return '<span class="cnic-badge">' + v + '</span>';
-        },
-      },
-      {
-        key: 'studentName', label: 'Student Name',
-        render: function(v) {
-          return '<span style="font-weight:600;color:var(--t1)">' + (v || '—') + '</span>';
-        },
-      },
-      {
-        key: 'fatherName', label: 'Father Name', width: '150px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
-        },
-      },
-      {
-        key: 'gender', label: 'Gender', width: '100px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
-            (v === 'male' ? 'Male' : 'Female') + '</span>';
-        },
-      },
-      {
-        key: 'studentPhone', label: 'Student Phone', width: '140px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
-        },
-      },
-      {
-        key: 'guardianPhone', label: 'Guardian Phone', width: '140px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
-        },
-      },
-      {
-        key: 'qualification', label: 'Qualification', width: '120px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
-        },
-      },
-      {
-        key: 'district', label: 'District', width: '120px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
-        },
-      },
-      {
-        key: 'province', label: 'Province', width: '110px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
-        },
-      },
-      {
-        key: 'campusSnapshot', label: 'Campus', width: '140px',
-        render: function(v, row) {
-          const name = v?.name || row.campus || '';
-          if (!name) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
-          return '<span style="font-size:12px;font-weight:600;color:var(--t1);' +
-            'background:var(--surface3);padding:2px 8px;border-radius:6px;' +
-            'border:1px solid var(--border)">' + name + '</span>';
-        },
-      },
-      {
-        key: 'disciplineId', label: 'Discipline', width: '120px',
-        render: function(id) {
-          const d = AppState.findById('disciplines', id);
-          if (!d) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;font-weight:700;color:var(--t1)">' + d.abbreviation + '</span>';
-        },
-      },
-      {
-        key: 'route', label: 'Route', width: '170px',
-        render: function(v, row) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          let html = '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
-          if (row.exemptedPapers?.count) {
-            const papers = row.exemptedPapers.papers || [];
-            const codeList = papers.length
-              ? papers.map(function(p) { return p.subjectCode; }).join(', ')
-              : (row.exemptedPapers.codes || []).join(', ');
-            html += '<br><span style="font-size:10.5px;color:var(--t3);margin-top:2px;display:block">' +
-              row.exemptedPapers.count + ' exempt: ' + codeList +
-              '</span>';
-          }
-          return html;
-        },
-      },
-      {
-        key: 'dateOfAdmission', label: 'Date of Admission', width: '148px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          const [y, m, d] = v.split('-');
-          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          const label  = parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y;
-          return '<span style="font-size:12.5px;color:var(--t1)">' + label + '</span>';
-        },
-      },
-      {
-        key: 'session', label: 'Session', width: '105px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
-        },
-      },
-      {
-        key: 'admissionBatch', label: 'Admission Batch', width: '130px',
-        render: function(v) {
-          if (!v) return '<span style="color:var(--t4)">—</span>';
-          return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
-        },
-      },
-    ],
+    columns: columns,
     rows:    rows,
     actions: actions,
     rowKey:  'id',
@@ -1363,6 +1423,136 @@ function _rerender(container) {
   _render(container, f.search, f.disc, f.session, f.campus);
 }
 
+// ── Column Manager ────────────────────────────────────────────
+function _wireColManager(container) {
+  const btn   = container.querySelector('#stuColMgrBtn');
+  const panel = container.querySelector('#stuColMgrPanel');
+  const list  = container.querySelector('#colMgrList');
+  if (!btn || !panel || !list) return;
+
+  // Toggle panel open/close
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+      panel.classList.remove('open');
+    } else {
+      _renderColList(list, container);
+      panel.classList.add('open');
+    }
+  });
+
+  // Close on outside click
+  document.addEventListener('click', function(e) {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.remove('open');
+    }
+  });
+
+  // Show All
+  container.querySelector('#colMgrShowAll')?.addEventListener('click', function() {
+    const prefs = _getColPrefs();
+    prefs.hidden = [];
+    _saveColPrefs(prefs);
+    _renderColList(list, container);
+    _rerender(container);
+  });
+
+  // Reset to default
+  container.querySelector('#colMgrReset')?.addEventListener('click', function() {
+    _saveColPrefs({
+      order:  ALL_COLUMNS.map(function(c) { return c.key; }),
+      hidden: [],
+    });
+    _renderColList(list, container);
+    _rerender(container);
+  });
+}
+
+function _renderColList(listEl, container) {
+  const prefs = _getColPrefs();
+  listEl.innerHTML = '';
+
+  prefs.order.forEach(function(key) {
+    const colDef = ALL_COLUMNS.find(function(c) { return c.key === key; });
+    if (!colDef) return;
+
+    const isVisible = !prefs.hidden.includes(key);
+    const item = document.createElement('div');
+    item.className = 'col-mgr-item' + (isVisible ? '' : ' disabled');
+    item.draggable = true;
+    item.dataset.key = key;
+
+    item.innerHTML =
+      '<span class="col-mgr-drag">' + ICONS.drag + '</span>' +
+      '<input type="checkbox" class="col-mgr-chk" id="chk_' + key + '"' + (isVisible ? ' checked' : '') + '/>' +
+      '<label class="col-mgr-lbl" for="chk_' + key + '">' + colDef.label + '</label>';
+
+    // Checkbox toggle
+    item.querySelector('.col-mgr-chk').addEventListener('change', function(e) {
+      const p = _getColPrefs();
+      if (e.target.checked) {
+        p.hidden = p.hidden.filter(function(h) { return h !== key; });
+        item.classList.remove('disabled');
+      } else {
+        if (!p.hidden.includes(key)) p.hidden.push(key);
+        item.classList.add('disabled');
+      }
+      _saveColPrefs(p);
+      _rerender(container);
+    });
+
+    // ── Drag & Drop ──
+    let dragSrc = null;
+
+    item.addEventListener('dragstart', function(e) {
+      dragSrc = item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', key);
+    });
+
+    item.addEventListener('dragend', function() {
+      item.classList.remove('dragging');
+      listEl.querySelectorAll('.col-mgr-item').forEach(function(el) {
+        el.classList.remove('drag-over');
+      });
+    });
+
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      listEl.querySelectorAll('.col-mgr-item').forEach(function(el) {
+        el.classList.remove('drag-over');
+      });
+      if (dragSrc && dragSrc !== item) item.classList.add('drag-over');
+    });
+
+    item.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!dragSrc || dragSrc === item) return;
+      item.classList.remove('drag-over');
+
+      const srcKey  = dragSrc.dataset.key;
+      const tgtKey  = item.dataset.key;
+      const p       = _getColPrefs();
+      const srcIdx  = p.order.indexOf(srcKey);
+      const tgtIdx  = p.order.indexOf(tgtKey);
+      if (srcIdx === -1 || tgtIdx === -1) return;
+
+      p.order.splice(srcIdx, 1);
+      p.order.splice(tgtIdx, 0, srcKey);
+      _saveColPrefs(p);
+
+      // Re-render the list and the table
+      _renderColList(listEl, container);
+      _rerender(container);
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
 // ── Toolbar wiring ────────────────────────────────────────────
 function _attachToolbar(container) {
   const search    = container.querySelector('#stuSearch');
@@ -1413,6 +1603,7 @@ function _attachToolbar(container) {
   });
 
   AppState.subscribe(KEY, rerender);
+  _wireColManager(container);
 }
 
 // ── Module entry point ────────────────────────────────────────
