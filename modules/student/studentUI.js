@@ -1197,36 +1197,66 @@ function _openImportModal(container) {
 
           // If there are duplicate rows — show confirm dialog before saving
           if (duplicates.length) {
-            const dupItems = duplicates.map(function(d) {
-              const initials = (d.studentName || '?').split(' ')
-                .map(function(w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase();
-              return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;' +
-                'background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm)">' +
-                '<div style="width:34px;height:34px;border-radius:50%;' +
-                  'background:var(--blue-dim,rgba(59,130,246,.1));' +
-                  'display:flex;align-items:center;justify-content:center;' +
-                  'font-size:12px;font-weight:700;color:var(--blue);flex-shrink:0">' + initials + '</div>' +
-                '<div style="min-width:0;flex:1">' +
-                  '<div style="font-size:13px;font-weight:600;color:var(--t1);' +
-                    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + d.studentName + '</div>' +
-                  '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">' +
-                    '<span style="font-size:11px;font-weight:600;color:var(--t2);' +
-                      'background:var(--surface3);border:1px solid var(--border);' +
-                      'padding:1px 8px;border-radius:4px">Row ' + d._rowNum + '</span>' +
-                    (d.cnic ? '<span style="font-size:11px;color:var(--t2);' +
-                      'font-family:\'Courier New\',monospace;letter-spacing:.04em">' + d.cnic + '</span>' : '') +
-                    (d._dupReason ? '<span style="font-size:11px;color:var(--t3)">· ' + d._dupReason + '</span>' : '') +
+            // Track which duplicates are checked (all checked by default)
+            const dupChecked = duplicates.map(function() { return true; });
+
+            function _buildDupItems() {
+              return duplicates.map(function(d, i) {
+                const initials = (d.studentName || '?').split(' ')
+                  .map(function(w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase();
+                const checked = dupChecked[i];
+                return '<label data-idx="' + i + '" style="display:flex;align-items:center;gap:12px;' +
+                  'padding:10px 14px;background:var(--surface2);border:1px solid var(--border);' +
+                  'border-radius:var(--r-sm);cursor:pointer;user-select:none;' +
+                  'opacity:' + (checked ? '1' : '0.45') + ';transition:opacity .15s">' +
+                  '<input type="checkbox" data-idx="' + i + '"' + (checked ? ' checked' : '') +
+                    ' style="width:15px;height:15px;accent-color:var(--blue);flex-shrink:0;cursor:pointer"/>' +
+                  '<div style="width:34px;height:34px;border-radius:50%;' +
+                    'background:var(--blue-dim,rgba(59,130,246,.1));' +
+                    'display:flex;align-items:center;justify-content:center;' +
+                    'font-size:12px;font-weight:700;color:var(--blue);flex-shrink:0">' + initials + '</div>' +
+                  '<div style="min-width:0;flex:1">' +
+                    '<div style="font-size:13px;font-weight:600;color:var(--t1);' +
+                      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + d.studentName + '</div>' +
+                    '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">' +
+                      '<span style="font-size:11px;font-weight:600;color:var(--t2);' +
+                        'background:var(--surface3);border:1px solid var(--border);' +
+                        'padding:1px 8px;border-radius:4px">Row ' + d._rowNum + '</span>' +
+                      (d.cnic ? '<span style="font-size:11px;color:var(--t2);' +
+                        'font-family:\'Courier New\',monospace;letter-spacing:.04em">' + d.cnic + '</span>' : '') +
+                      (d._dupReason ? '<span style="font-size:11px;color:var(--t3)">· ' + d._dupReason + '</span>' : '') +
+                    '</div>' +
                   '</div>' +
-                '</div>' +
-              '</div>';
-            }).join('');
+                  '<span style="font-size:11px;font-weight:600;flex-shrink:0;' +
+                    'color:' + (checked ? 'var(--blue)' : 'var(--t4)') + '">' +
+                    (checked ? 'Import' : 'Skip') + '</span>' +
+                '</label>';
+              }).join('');
+            }
+
+            function _updateFooter(overlay) {
+              const selectedCount = dupChecked.filter(Boolean).length;
+              const totalToImport = valid.length + selectedCount;
+              const skippedCount  = duplicates.length - selectedCount;
+              const btn = overlay.querySelector('#dupImport');
+              if (btn) {
+                btn.textContent = selectedCount === 0
+                  ? 'Import ' + valid.length + ' new only'
+                  : 'Import ' + totalToImport + ' (' + selectedCount + ' duplicate' + (selectedCount !== 1 ? 's' : '') + ' included)';
+              }
+              const hint = overlay.querySelector('#dupHint');
+              if (hint) {
+                hint.textContent = skippedCount > 0
+                  ? skippedCount + ' duplicate' + (skippedCount !== 1 ? 's' : '') + ' will be skipped'
+                  : '';
+              }
+            }
 
             const confirmOverlay = document.createElement('div');
             confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
             confirmOverlay.innerHTML = `
               <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md,10px);
-                          width:460px;max-width:100%;overflow:hidden;
-                          box-shadow:0 24px 64px rgba(0,0,0,.4)">
+                          width:460px;max-width:100%;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.4)">
 
                 <!-- Header -->
                 <div style="padding:18px 22px 16px;border-bottom:1px solid var(--border)">
@@ -1234,20 +1264,20 @@ function _openImportModal(container) {
                     ${duplicates.length} student${duplicates.length !== 1 ? 's' : ''} already exist
                   </div>
                   <div style="font-size:12.5px;color:var(--t2);line-height:1.5">
-                    The following student${duplicates.length !== 1 ? 's are' : ' is'} already registered (matched by CNIC).
-                    Do you want to import them again or skip?
+                    Already registered (matched by CNIC). Check which ones to import.
                   </div>
                 </div>
 
                 <!-- Student list -->
-                <div style="padding:12px 22px;display:flex;flex-direction:column;gap:8px;
-                            max-height:220px;overflow-y:auto">
-                  ${dupItems}
+                <div id="dupList" style="padding:12px 22px;display:flex;flex-direction:column;gap:8px;
+                            max-height:260px;overflow-y:auto">
+                  ${_buildDupItems()}
                 </div>
 
                 <!-- Footer -->
                 <div style="padding:14px 22px;border-top:1px solid var(--border);background:var(--surface2);
-                            display:flex;align-items:center;justify-content:flex-end;gap:8px">
+                            display:flex;align-items:center;gap:8px">
+                  <span id="dupHint" style="font-size:11.5px;color:var(--t3);flex:1"></span>
                   <button id="dupCancel"
                     style="display:inline-flex;align-items:center;height:36px;padding:0 16px;
                            border-radius:var(--r-sm);border:1px solid var(--border);
@@ -1255,19 +1285,11 @@ function _openImportModal(container) {
                            font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">
                     Cancel
                   </button>
-                  <button id="dupSkip"
-                    style="display:inline-flex;align-items:center;height:36px;padding:0 16px;
-                           border-radius:var(--r-sm);border:1px solid var(--border);
-                           background:var(--surface2);color:var(--t1);
-                           font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">
-                    Skip (${valid.length} new only)
-                  </button>
                   <button id="dupImport"
                     style="display:inline-flex;align-items:center;height:36px;padding:0 16px;
-                           border-radius:var(--r-sm);border:none;
-                           background:var(--blue);color:#fff;
+                           border-radius:var(--r-sm);border:none;background:var(--blue);color:#fff;
                            font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">
-                    Import all (${valid.length + duplicates.length})
+                    Import ${valid.length + duplicates.length} total
                   </button>
                 </div>
 
@@ -1275,25 +1297,46 @@ function _openImportModal(container) {
 
             document.body.appendChild(confirmOverlay);
 
+            // Wire checkboxes
+            confirmOverlay.querySelector('#dupList').addEventListener('change', function(e) {
+              const chk = e.target;
+              if (chk.type !== 'checkbox') return;
+              const idx = parseInt(chk.dataset.idx);
+              dupChecked[idx] = chk.checked;
+              // Update label opacity + badge
+              const label = confirmOverlay.querySelector('label[data-idx="' + idx + '"]');
+              if (label) {
+                label.style.opacity = chk.checked ? '1' : '0.45';
+                const badge = label.querySelector('span:last-child');
+                if (badge) {
+                  badge.textContent = chk.checked ? 'Import' : 'Skip';
+                  badge.style.color  = chk.checked ? 'var(--blue)' : 'var(--t4)';
+                }
+              }
+              _updateFooter(confirmOverlay);
+            });
+
+            _updateFooter(confirmOverlay);
+
             confirmOverlay.querySelector('#dupCancel').onclick = function() {
               document.body.removeChild(confirmOverlay);
             };
-            confirmOverlay.querySelector('#dupSkip').onclick = function() {
-              document.body.removeChild(confirmOverlay);
-              if (!valid.length) { Toast.error('No new students to import.'); return; }
-              const count = StudentService.importStudents(valid);
-              Modal.close(_mid);
-              _rerender(container);
-              Toast.success(count + ' new student' + (count !== 1 ? 's' : '') + ' imported. ' + duplicates.length + ' duplicate' + (duplicates.length !== 1 ? 's' : '') + ' skipped.');
-            };
             confirmOverlay.querySelector('#dupImport').onclick = function() {
               document.body.removeChild(confirmOverlay);
-              const count = StudentService.importStudents([...valid, ...duplicates]);
+              const selectedDups = duplicates.filter(function(_, i) { return dupChecked[i]; });
+              const skippedDups  = duplicates.filter(function(_, i) { return !dupChecked[i]; });
+              const toImport = [...valid, ...selectedDups];
+              if (!toImport.length) { Toast.error('No students selected to import.'); return; }
+              const count = StudentService.importStudents(toImport);
               Modal.close(_mid);
               _rerender(container);
-              Toast.success(count + ' student' + (count !== 1 ? 's' : '') + ' imported (including ' + duplicates.length + ' duplicate' + (duplicates.length !== 1 ? 's' : '') + ').');
+              const msg = count + ' student' + (count !== 1 ? 's' : '') + ' imported' +
+                (selectedDups.length ? ' (' + selectedDups.length + ' duplicate' + (selectedDups.length !== 1 ? 's' : '') + ' included)' : '') +
+                (skippedDups.length  ? '. ' + skippedDups.length + ' skipped.' : '.');
+              Toast.success(msg);
             };
             return;
+          }
           }
 
           // No duplicates — import directly
