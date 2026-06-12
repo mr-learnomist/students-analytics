@@ -133,14 +133,11 @@ function injectStudentStyles() {
     /* Table.render() wraps the <table> in its own .table-wrap (overflow-x:auto,
        border, border-radius). That creates a SECOND scroll/measure context
        nested inside #stuTableWrap, which breaks the table's min-width:max-content
-       sizing, the sticky header, and hides columns that don't fit. Neutralize it
-       so #stuTableWrap is the single scroll container. */
+       sizing, the sticky header, and hides columns that don't fit.
+       display:contents removes this wrapper's box entirely from layout so the
+       <table> becomes a direct child of #stuTableWrap for sizing/scroll purposes. */
     #stuTableWrap .table-wrap{
-      overflow:visible;
-      border:none;
-      border-radius:0;
-      width:max-content;
-      min-width:100%;
+      display:contents;
     }
     /* Sticky table header */
     #stuTableWrap thead th{
