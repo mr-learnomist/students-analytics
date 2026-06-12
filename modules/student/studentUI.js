@@ -44,7 +44,7 @@ function injectStudentStyles() {
   s.textContent = `
     /* ── Toolbar ── */
     .stu-page{display:flex;flex-direction:column;height:100%;min-height:0;
-      width:100%;max-width:100%;min-width:0}
+      width:100%;max-width:100%;min-width:0;overflow-x:hidden}
     .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
       margin-bottom:12px;flex-shrink:0}
     .stu-search{flex:1;min-width:180px;max-width:300px;height:36px;padding:0 12px 0 36px;
@@ -176,10 +176,11 @@ function injectStudentStyles() {
 
     /* ── Column Manager ── */
     .col-mgr-wrap{position:relative}
-    .col-mgr-panel{position:absolute;top:calc(100% + 6px);right:0;z-index:9999;
+    .col-mgr-panel{position:fixed;z-index:9999;
       width:270px;background:var(--surface);border:1px solid var(--border);
       border-radius:var(--r-sm);box-shadow:0 8px 32px rgba(0,0,0,.18);
-      display:none;flex-direction:column;overflow:hidden}
+      display:none;flex-direction:column;overflow:hidden;
+      max-height:min(420px, calc(100vh - 24px))}
     .col-mgr-panel.open{display:flex}
     .col-mgr-head{padding:10px 14px 8px;border-bottom:1px solid var(--border);
       display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
@@ -1471,6 +1472,16 @@ function _wireColManager(container) {
   const list  = container.querySelector('#colMgrList');
   if (!btn || !panel || !list) return;
 
+  // Position the (position:fixed) panel directly under the toggle button
+  function _positionPanel() {
+    const r = btn.getBoundingClientRect();
+    const panelW = 270;
+    let left = r.right - panelW;
+    left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+    panel.style.left = left + 'px';
+    panel.style.top  = (r.bottom + 6) + 'px';
+  }
+
   // Toggle panel open/close
   btn.addEventListener('click', function(e) {
     e.stopPropagation();
@@ -1479,8 +1490,17 @@ function _wireColManager(container) {
       panel.classList.remove('open');
     } else {
       _renderColList(list, container);
+      _positionPanel();
       panel.classList.add('open');
     }
+  });
+
+  // Keep aligned with the button while open
+  window.addEventListener('scroll', function() {
+    if (panel.classList.contains('open')) _positionPanel();
+  }, true);
+  window.addEventListener('resize', function() {
+    if (panel.classList.contains('open')) _positionPanel();
   });
 
   // Close on outside click
