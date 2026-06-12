@@ -43,7 +43,9 @@ function injectStudentStyles() {
   s.id = 'student-module-css';
   s.textContent = `
     /* ── Toolbar ── */
-    .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+    .stu-page{display:flex;flex-direction:column;height:100%;min-height:0}
+    .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+      margin-bottom:12px;flex-shrink:0}
     .stu-search{flex:1;min-width:180px;max-width:300px;height:36px;padding:0 12px 0 36px;
       background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
       color:var(--t1);font-size:13px;outline:none;transition:border .15s}
@@ -106,12 +108,33 @@ function injectStudentStyles() {
       padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
 
     /* ── Table scroll wrapper ── */
-    #stuTableWrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-    #stuTableWrap::-webkit-scrollbar{height:7px}
-    #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2);border-radius:4px}
-    #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+    #stuTableWrap{
+      flex:1;
+      width:100%;
+      overflow-x:auto;
+      overflow-y:visible;
+      -webkit-overflow-scrolling:touch;
+      border:1px solid var(--border);
+      border-radius:var(--r-sm);
+    }
+    #stuTableWrap::-webkit-scrollbar{height:6px}
+    #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2)}
+    #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
     #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t4)}
-    #stuTableWrap table{min-width:1400px;width:max-content}
+    #stuTableWrap table{
+      min-width:max-content;
+      width:100%;
+      border-collapse:collapse;
+      table-layout:fixed
+    }
+    /* Sticky table header */
+    #stuTableWrap thead th{
+      position:sticky;
+      top:0;
+      z-index:2;
+      background:var(--surface3);
+      white-space:nowrap
+    }
 
     /* ── Empty state ── */
     .stu-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -142,30 +165,35 @@ function injectStudentStyles() {
 
     /* ── Column Manager ── */
     .col-mgr-wrap{position:relative}
-    .col-mgr-panel{position:absolute;top:calc(100% + 6px);right:0;z-index:999;
-      width:260px;background:var(--surface);border:1px solid var(--border);
-      border-radius:var(--r-sm);box-shadow:0 8px 24px rgba(0,0,0,.14);
+    .col-mgr-panel{position:absolute;top:calc(100% + 6px);right:0;z-index:9999;
+      width:270px;background:var(--surface);border:1px solid var(--border);
+      border-radius:var(--r-sm);box-shadow:0 8px 32px rgba(0,0,0,.18);
       display:none;flex-direction:column;overflow:hidden}
     .col-mgr-panel.open{display:flex}
     .col-mgr-head{padding:10px 14px 8px;border-bottom:1px solid var(--border);
-      display:flex;align-items:center;justify-content:space-between}
+      display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
     .col-mgr-title{font-size:12px;font-weight:700;color:var(--t1);
       display:flex;align-items:center;gap:6px}
-    .col-mgr-actions{display:flex;gap:6px}
+    .col-mgr-actions{display:flex;gap:8px}
     .col-mgr-link{font-size:11px;color:var(--blue);cursor:pointer;
-      background:none;border:none;padding:0;text-decoration:underline}
-    .col-mgr-list{padding:6px 0;max-height:340px;overflow-y:auto}
-    .col-mgr-item{display:flex;align-items:center;gap:8px;padding:7px 14px;
-      cursor:grab;user-select:none;transition:background .12s;border-radius:0}
+      background:none;border:none;padding:0;text-decoration:underline;font-weight:600}
+    .col-mgr-link:hover{opacity:.8}
+    .col-mgr-list{padding:4px 0;max-height:340px;overflow-y:auto;flex:1}
+    .col-mgr-list::-webkit-scrollbar{width:4px}
+    .col-mgr-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+    .col-mgr-item{display:flex;align-items:center;gap:8px;padding:7px 12px;
+      cursor:default;user-select:none;transition:background .1s}
     .col-mgr-item:hover{background:var(--surface2)}
-    .col-mgr-item.dragging{opacity:.4;background:var(--surface2)}
-    .col-mgr-item.drag-over{border-top:2px solid var(--blue)}
-    .col-mgr-drag{color:var(--t4);flex-shrink:0;cursor:grab}
+    .col-mgr-item.dragging{opacity:.35;background:var(--surface3)}
+    .col-mgr-item.drag-over{box-shadow:inset 0 2px 0 var(--blue)}
+    .col-mgr-drag{color:var(--t4);flex-shrink:0;cursor:grab;line-height:0;padding:2px}
+    .col-mgr-drag:active{cursor:grabbing}
     .col-mgr-chk{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0}
-    .col-mgr-lbl{font-size:12.5px;color:var(--t1);flex:1;cursor:pointer}
-    .col-mgr-item.disabled .col-mgr-lbl{color:var(--t4)}
-    .col-mgr-foot{padding:8px 14px;border-top:1px solid var(--border);
-      font-size:11px;color:var(--t3);text-align:center}
+    .col-mgr-lbl{font-size:12.5px;color:var(--t1);flex:1;cursor:pointer;line-height:1.3}
+    .col-mgr-item.col-hidden .col-mgr-lbl{color:var(--t4)}
+    .col-mgr-foot{padding:7px 12px;border-top:1px solid var(--border);
+      font-size:11px;color:var(--t3);text-align:center;flex-shrink:0;
+      background:var(--surface2)}
   `;
   document.head.appendChild(s);
 }
@@ -227,6 +255,7 @@ function _pageTemplate() {
   const campuses = AppState.get('campuses') || [];
 
   return `
+    <div class="stu-page">
     <div class="stu-toolbar">
       <div class="stu-search-wrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -277,7 +306,8 @@ function _pageTemplate() {
       <button class="stu-btn stu-btn--primary" id="stuAddBtn">${ICONS.add} Add Student</button>
       <span class="stu-count" id="stuCount"></span>
     </div>
-    <div id="stuTableWrap"></div>`;
+    <div id="stuTableWrap"></div>
+    </div>`;
 }
 
 // ── Table render ──────────────────────────────────────────────
@@ -666,7 +696,7 @@ function _buildFormHTML(existing) {
           return '<option value="' + c.id + '"' + (c.id === (existing?.campusId || '') ? ' selected' : '') + '>' + c.campusName + '</option>';
         }).join('')}
       </select>
-      <span class="form-hint">Campus snapshot save hoga — naam change hone par purana record safe rahega</span>
+      <span class="form-hint">Campus name is saved as a snapshot — safe even if the campus is renamed later</span>
     </div>
 
     <!-- Route (shown only when discipline has routes) -->
@@ -1479,7 +1509,7 @@ function _renderColList(listEl, container) {
 
     const isVisible = !prefs.hidden.includes(key);
     const item = document.createElement('div');
-    item.className = 'col-mgr-item' + (isVisible ? '' : ' disabled');
+    item.className = 'col-mgr-item' + (isVisible ? '' : ' col-hidden');
     item.draggable = true;
     item.dataset.key = key;
 
@@ -1493,10 +1523,10 @@ function _renderColList(listEl, container) {
       const p = _getColPrefs();
       if (e.target.checked) {
         p.hidden = p.hidden.filter(function(h) { return h !== key; });
-        item.classList.remove('disabled');
+        item.classList.remove('col-hidden');
       } else {
         if (!p.hidden.includes(key)) p.hidden.push(key);
-        item.classList.add('disabled');
+        item.classList.add('col-hidden');
       }
       _saveColPrefs(p);
       _rerender(container);
