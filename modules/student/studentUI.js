@@ -103,6 +103,14 @@ function injectStudentStyles() {
       color:var(--t1);letter-spacing:.04em;background:var(--surface3);
       padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
 
+    /* ── Table scroll wrapper ── */
+    #stuTableWrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    #stuTableWrap::-webkit-scrollbar{height:7px}
+    #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2);border-radius:4px}
+    #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+    #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t4)}
+    #stuTableWrap table{min-width:1400px;width:max-content}
+
     /* ── Empty state ── */
     .stu-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
       min-height:260px;gap:12px;color:var(--t3);border:1px dashed var(--border2);border-radius:var(--r-lg)}
