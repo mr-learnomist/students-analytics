@@ -43,7 +43,8 @@ function injectStudentStyles() {
   s.id = 'student-module-css';
   s.textContent = `
     /* ── Toolbar ── */
-    .stu-page{display:flex;flex-direction:column;height:100%;min-height:0}
+    .stu-page{display:flex;flex-direction:column;height:100%;min-height:0;
+      width:100%;max-width:100%;min-width:0;overflow-x:hidden}
     .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
       margin-bottom:12px;flex-shrink:0}
     .stu-search{flex:1;min-width:180px;max-width:300px;height:36px;padding:0 12px 0 36px;
@@ -111,6 +112,8 @@ function injectStudentStyles() {
     #stuTableWrap{
       flex:1;
       width:100%;
+      min-width:0;
+      max-width:100%;
       overflow-x:auto;
       overflow-y:visible;
       -webkit-overflow-scrolling:touch;
