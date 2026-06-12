@@ -1198,9 +1198,12 @@ function _openImportModal(container) {
           // If there are duplicate rows — show confirm dialog before saving
           if (duplicates.length) {
             const dupList = duplicates.map(function(d) {
-              return '<li style="margin-bottom:4px"><b>' + d.studentName + '</b>'
-                + (d.cnic ? ' — ' + d.cnic : '')
-                + ' <span style="color:var(--t3);font-size:11px">(Row ' + d._rowNum + ')</span></li>';
+              return '<li style="margin-bottom:6px">'
+                + '<b>' + d.studentName + '</b>'
+                + (d.cnic ? ' <span style="color:var(--t3)">(' + d.cnic + ')</span>' : '')
+                + ' <span style="color:var(--t3);font-size:11px">— Row ' + d._rowNum + '</span>'
+                + '<br><span style="font-size:11px;color:#d97706">' + (d._dupReason || 'Already exists') + '</span>'
+                + '</li>';
             }).join('');
 
             const confirmOverlay = document.createElement('div');
