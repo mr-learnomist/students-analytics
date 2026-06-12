@@ -1205,7 +1205,7 @@ function _openImportModal(container) {
 
             const confirmOverlay = document.createElement('div');
             confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
-            confirmOverlay.innerHTML = \`
+            confirmOverlay.innerHTML = `
               <div style="background:var(--surface1);border:1px solid var(--border);border-radius:10px;
                           padding:28px 28px 22px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -1222,7 +1222,7 @@ function _openImportModal(container) {
                 <ul style="margin:0 0 18px;padding-left:18px;max-height:160px;overflow-y:auto;
                            background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);
                            border-radius:6px;padding:10px 10px 10px 26px;list-style:disc">
-                  \${dupList}
+                  ${dupList}
                 </ul>
                 <div style="display:flex;gap:8px;justify-content:flex-end">
                   <button id="dupSkip"   style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t1);font-size:13px;font-weight:600;cursor:pointer">
@@ -1235,7 +1235,7 @@ function _openImportModal(container) {
                     Cancel
                   </button>
                 </div>
-              </div>\`;
+              </div>`;
 
             document.body.appendChild(confirmOverlay);
 
