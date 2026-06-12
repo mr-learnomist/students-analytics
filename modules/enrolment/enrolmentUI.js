@@ -1,2374 +1,1781 @@
 // ============================================================
-// modules/enrolment/enrolmentUI.js
-// Enrolment Module — Full UI (list, add, edit, filters, export)
+// modules/student/studentUI.js — Student Module UI
+// Simplified: Student ID · CNIC · Name · Discipline ·
+//             Date of Admission · Session (auto)
 // ============================================================
 
-import { AppState }       from '../../utils/state.js';
-import { Auth }           from '../../utils/auth.js';
-import { Toast }          from '../../utils/helpers.js';
+import { AppState }                     from '../../utils/state.js';
+import { Modal, Table, injectUIStyles } from '../../utils/ui.js';
+import { Toast }                        from '../../utils/helpers.js';
+import { Auth }                         from '../../utils/auth.js';
 import {
-  EnrolmentService,
-  ensureEnrolmentKeys,
-  ENROLMENT_STATUSES,
-  FEE_STATUSES,
-  STATUS_LABELS,
-  FEE_LABELS,
-  ENR_SUBJECT_STATUSES,
-  ENR_SUBJECT_STATUS_LABELS,
-} from './enrolmentService.js';
+  StudentService,
+  sessionFromDate,
+  sessionLabel,
+  formatCNIC,
+  validateCNIC,
+  cnicDigitsOnly,
+  migrateStudentIds,
+  ROUTE_OPTIONS,
+  getDiscRoutes,
+} from './studentService.js';
 
-// ── Styles (injected once) ────────────────────────────────────
-let _stylesInjected = false;
-function injectStyles() {
-  if (_stylesInjected) return;
-  _stylesInjected = true;
+const KEY = 'students';
+
+// ── Icons ─────────────────────────────────────────────────────
+const ICONS = {
+  add:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  edit:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>`,
+  trash:   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`,
+  csv:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+  upload:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+  dl:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+  pdf:     `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+  columns: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/></svg>`,
+  drag:    `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
+};
+
+// ── CSS ───────────────────────────────────────────────────────
+function injectStudentStyles() {
+  const existing = document.getElementById('student-module-css');
+  if (existing) existing.remove();
   const s = document.createElement('style');
+  s.id = 'student-module-css';
   s.textContent = `
-.enr-wrap{padding:20px;display:flex;flex-direction:column;gap:16px}
+    /* ── Toolbar ── */
+    .stu-page{display:flex;flex-direction:column;height:100%;min-height:0;
+      width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+    .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+      margin-bottom:12px;flex-shrink:0}
+    .stu-search{flex:1;min-width:180px;max-width:300px;height:36px;padding:0 12px 0 36px;
+      background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
+      color:var(--t1);font-size:13px;outline:none;transition:border .15s}
+    .stu-search:focus{border-color:var(--blue)}
+    .stu-search-wrap{position:relative}
+    .stu-search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+      color:var(--t4);pointer-events:none}
+    .stu-filter{height:36px;padding:0 10px;background:var(--surface2);
+      border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t1);
+      font-size:12.5px;outline:none;cursor:pointer}
+    .stu-btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;
+      border-radius:var(--r-sm);font-size:12.5px;font-weight:600;border:none;
+      cursor:pointer;transition:opacity .15s,transform .1s;white-space:nowrap}
+    .stu-btn:active{transform:scale(.97)}
+    .stu-btn--primary{background:var(--blue);color:#fff}
+    .stu-btn--primary:hover{opacity:.9}
+    .stu-btn--ghost{background:var(--surface2);color:var(--t2);border:1px solid var(--border)}
+    .stu-btn--ghost:hover{color:var(--t1);background:var(--surface3)}
+    .stu-btn--icon{width:36px;padding:0;justify-content:center}
+    .stu-count{font-size:12px;color:var(--t3);white-space:nowrap}
 
-/* toolbar */
-.enr-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.enr-search{flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--border2);
-  border-radius:var(--r-sm);color:var(--t1);font-size:13px;padding:8px 12px;outline:none;transition:border-color .15s}
-.enr-search:focus{border-color:var(--blue)}
-.enr-select{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);
-  color:var(--t1);font-size:13px;padding:8px 10px;outline:none;cursor:pointer}
-.enr-select:focus{border-color:var(--blue)}
+    /* ── Form ── */
+    .stu-form .form-group{margin-bottom:16px}
+    .stu-form .form-label{display:block;font-size:11.5px;font-weight:600;
+      color:var(--t2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+    .stu-form .req{color:#ef4444}
+    .stu-form .form-input,.stu-form .form-select{
+      width:100%;height:38px;padding:0 12px;box-sizing:border-box;
+      background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
+      color:var(--t1);font-size:13px;outline:none;transition:border .15s}
+    .stu-form .form-input:focus,.stu-form .form-select:focus{border-color:var(--blue)}
+    .stu-form .form-input.inp-err{border-color:#ef4444!important}
+    .stu-form .form-hint{font-size:11.5px;color:var(--t3);margin-top:4px;display:block}
+    .stu-form .form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .stu-form .form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+    .stu-form .readonly-field{height:38px;padding:0 12px;background:var(--surface3);
+      border:1px solid var(--border);border-radius:var(--r-sm);color:var(--t2);
+      font-size:13px;display:flex;align-items:center;gap:6px}
+    .stu-form .session-badge{display:inline-block;padding:2px 10px;border-radius:10px;
+      background:var(--blue-dim);color:var(--blue);font-weight:700;font-size:12px;
+      font-family:'Inter','Segoe UI',system-ui,sans-serif}
+    .stu-form .err-msg{font-size:12px;color:#ef4444;margin-top:4px;display:block}
 
-/* buttons */
-.enr-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--r-sm);
-  font-size:13px;font-weight:600;transition:opacity .15s,transform .15s;cursor:pointer;border:none;white-space:nowrap}
-.enr-btn:hover:not(:disabled){opacity:.85;transform:translateY(-1px)}
-.enr-btn:disabled{opacity:.4;cursor:not-allowed}
-.enr-btn-primary{background:var(--blue);color:#fff}
-.enr-btn-ghost{background:var(--surface3);color:var(--t2);border:1px solid var(--border2)}
-.enr-btn-danger{background:var(--red-dim);color:var(--red)}
+    /* ── CNIC field ── */
+    .cnic-wrap{position:relative}
+    .cnic-wrap .form-input{font-family:'Inter','Segoe UI',system-ui,sans-serif;letter-spacing:.06em;padding-right:108px}
+    .cnic-preview{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+      font-size:10.5px;font-family:'Inter','Segoe UI',system-ui,sans-serif;font-weight:700;
+      padding:2px 8px;border-radius:10px;pointer-events:none;transition:all .2s}
+    .cnic-preview.ok {background:rgba(16,185,129,.12);color:#10b981}
+    .cnic-preview.bad{background:rgba(239,68,68,.10);color:#ef4444}
+    .cnic-hint{font-size:11px;color:var(--t3);margin-top:4px;display:block;
+      font-family:'Inter','Segoe UI',system-ui,sans-serif}
 
-/* summary pills */
-.enr-summary{display:flex;gap:8px;flex-wrap:wrap}
-.enr-pill{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;
-  background:var(--surface2);border:1px solid var(--border2);color:var(--t2);
-  cursor:pointer;transition:all .15s;user-select:none}
-.enr-pill:hover{border-color:var(--blue);color:var(--blue)}
-.enr-pill.active-filter{background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}
-.enr-pill b{color:var(--t1);margin-left:4px}
+    /* ── Table badges ── */
+    .stu-id-badge{font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:11px;font-weight:700;
+      color:var(--t1);background:none;letter-spacing:.03em}
+    .cnic-badge{font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:11.5px;font-weight:700;
+      color:var(--t1);letter-spacing:.04em;background:var(--surface3);
+      padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
 
-/* table */
-.enr-table{width:100%;border-collapse:collapse;font-size:13px}
-.enr-table-wrap{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 260px);border-radius:var(--r);border:1px solid var(--border)}
-.enr-table th{background:var(--surface2);color:var(--t3);font-size:11px;font-weight:600;
-  text-transform:uppercase;letter-spacing:.06em;padding:10px 14px;text-align:left;
-  border-bottom:1px solid var(--border);white-space:nowrap;
-  position:sticky;top:0;z-index:2;}
-.enr-table td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--t2);vertical-align:middle}
-.enr-table tr:last-child td{border-bottom:none}
-.enr-table tbody tr:hover td{background:var(--surface2)}
-.enr-name{color:var(--t1);font-weight:500}
-.enr-cnic{font-size:11.5px;color:var(--t3);margin-top:2px}
+    /* ── Table scroll wrapper ── */
+    #stuTableWrap{
+      flex:1;
+      width:100%;
+      min-width:0;
+      max-width:100%;
+      overflow-x:auto;
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      border:1px solid var(--border);
+      border-radius:var(--r-sm);
+    }
+    #stuTableWrap::-webkit-scrollbar{height:6px;width:6px}
+    #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2)}
+    #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+    #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t4)}
+    #stuTableWrap table{
+      border-collapse:collapse;
+      table-layout:auto;
+      white-space:nowrap;
+    }
+    /* Table.render() wraps the <table> in its own .table-wrap (overflow-x:auto,
+       border, border-radius). That creates a SECOND scroll/measure context
+       nested inside #stuTableWrap, which breaks the table's min-width:max-content
+       sizing, the sticky header, and hides columns that don't fit.
+       display:contents removes this wrapper's box entirely from layout so the
+       <table> becomes a direct child of #stuTableWrap for sizing/scroll purposes. */
+    #stuTableWrap .table-wrap{
+      display:contents;
+    }
+    /* Sticky table header */
+    #stuTableWrap thead th{
+      position:sticky;
+      top:0;
+      z-index:2;
+      background:var(--surface3);
+      white-space:nowrap
+    }
 
-/* badges */
-.enr-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;
-  font-size:11.5px;font-weight:600;white-space:nowrap}
-.badge-active   {background:var(--green-dim);color:var(--green)}
-.badge-completed{background:var(--blue-dim);color:var(--blue)}
-.badge-dropped  {background:var(--red-dim);color:var(--red)}
-.badge-suspended{background:var(--yellow-dim);color:var(--yellow)}
-.badge-paid     {background:var(--green-dim);color:var(--green)}
-.badge-partial  {background:var(--yellow-dim);color:var(--yellow)}
-.badge-unpaid   {background:var(--red-dim);color:var(--red)}
+    /* ── Empty state ── */
+    .stu-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+      min-height:260px;gap:12px;color:var(--t3);border:1px dashed var(--border2);border-radius:var(--r-lg)}
+    .stu-empty svg{opacity:.4}
+    .stu-empty p{font-size:14px;font-weight:600;color:var(--t2);margin:0}
+    .stu-empty span{font-size:12.5px;color:var(--t3);margin:0}
 
-/* action buttons in table */
-.enr-actions{display:flex;gap:6px;align-items:center}
-.enr-icon-btn{width:30px;height:30px;border-radius:var(--r-sm);display:flex;align-items:center;
-  justify-content:center;cursor:pointer;border:none;transition:background .15s,color .15s}
-.enr-icon-btn.edit{background:transparent;color:var(--blue)}
-.enr-icon-btn.del {background:transparent;color:var(--red)}
-.enr-icon-btn:hover{opacity:.6}
+    /* ── Import ── */
+    .import-drop{padding:28px 20px;border:2px dashed var(--border2);border-radius:var(--r-sm);
+      text-align:center;cursor:pointer;transition:all .15s;background:var(--surface)}
+    .import-drop:hover,.import-drop.drag-over{border-color:var(--blue);background:var(--blue-dim)}
+    .import-preview{border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:12px}
+    .import-preview table{width:100%;border-collapse:collapse;font-size:12px}
+    .import-preview th{background:var(--surface3);color:var(--t2);font-size:10.5px;
+      font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:8px 12px;
+      border-bottom:1px solid var(--border);text-align:left}
+    .import-preview td{padding:7px 12px;border-bottom:1px solid var(--border);color:var(--t1)}
+    .import-preview tr:last-child td{border-bottom:none}
+    .import-preview tr:hover td{background:var(--surface2)}
+    .import-err-list{margin-top:10px;padding:12px 14px;background:rgba(239,68,68,.06);
+      border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm)}
+    .import-err-list li{font-size:12px;color:#ef4444;margin-bottom:3px;line-height:1.5}
+    .import-summary-bar{display:flex;align-items:center;gap:12px;padding:8px 12px;
+      background:var(--surface2);border-radius:var(--r-sm);margin-bottom:10px;font-size:12.5px}
+    .import-ok{color:#10b981;font-weight:700}
+    .import-bad{color:#ef4444;font-weight:700}
 
-/* bulk-delete toolbar */
-.enr-bulk-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;
-  border-radius:var(--r-sm);background:var(--red-dim);border:1px solid var(--red);
-  animation:fadeIn .15s ease}
-@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-.enr-bulk-count{font-size:13px;font-weight:600;color:var(--red);flex:1}
-.enr-bulk-del{background:var(--red);color:#fff;border:none;border-radius:var(--r-sm);
-  padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
-.enr-bulk-del:hover{opacity:.85}
-.enr-bulk-cancel{background:transparent;color:var(--red);border:1px solid var(--red);
-  border-radius:var(--r-sm);padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer}
-.enr-bulk-cancel:hover{background:var(--surface2)}
-
-/* row checkbox */
-.enr-row-chk{width:15px;height:15px;accent-color:var(--red);cursor:pointer}
-.enr-row-selected td{background:color-mix(in srgb,var(--red-dim) 30%,transparent)!important}
-
-/* sortable headers */
-.enr-sortable{cursor:pointer;user-select:none;white-space:nowrap}
-.enr-sortable:hover{color:var(--blue)}
-.enr-sort-icon{font-size:11px;font-weight:700;opacity:.8}
-
-/* filter bar */
-.enr-filter-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  padding:8px 12px;background:var(--surface);border:1px solid var(--border);
-  border-radius:12px}
-.enr-ms-wrap{position:relative}
-.enr-ms-trigger{height:30px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;
-  background:var(--surface2);border:1px solid var(--border2);border-radius:8px;
-  color:var(--t2);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;
-  transition:all .12s;max-width:180px;font-family:inherit}
-.enr-ms-trigger:hover{border-color:var(--blue);color:var(--t1)}
-.enr-ms-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}
-.enr-ms-caret{flex-shrink:0;color:var(--t4)}
-.enr-ms-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:180px;
-  max-height:300px;background:var(--surface);border:1px solid var(--border2);
-  border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:999;
-  flex-direction:column;overflow:hidden}
-.enr-ms-dropdown.open{display:flex}
-.enr-ms-search-wrap{padding:6px 8px;border-bottom:1px solid var(--border);flex-shrink:0}
-.enr-ms-search{width:100%;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;
-  background:var(--surface2);color:var(--t1);font-size:12px;outline:none;box-sizing:border-box}
-.enr-ms-search:focus{border-color:var(--blue)}
-.enr-ms-list{overflow-y:auto;flex:1;padding:4px}
-.enr-ms-option{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;
-  font-size:12.5px;color:var(--t2);cursor:pointer;transition:background .1s;user-select:none}
-.enr-ms-option:hover{background:var(--surface2);color:var(--t1)}
-.enr-ms-option input[type="checkbox"]{width:14px;height:14px;cursor:pointer;flex-shrink:0;accent-color:var(--blue)}
-.enr-ms-empty{padding:10px;text-align:center;font-size:12px;color:var(--t4)}
-
-/* active filter chips */
-.enr-active-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;
-  border-radius:20px;font-size:11px;font-weight:600;border:1px solid transparent;cursor:default}
-.enr-chip-x{font-size:10px;cursor:pointer;opacity:.7;line-height:1}
-.enr-chip-x:hover{opacity:1}
-
-/* clear all button */
-.enr-clear-all-btn{height:26px;padding:0 10px;border:1px solid var(--border2);border-radius:20px;
-  background:transparent;color:var(--t3);font-size:11px;font-weight:600;cursor:pointer;
-  transition:all .12s;white-space:nowrap;font-family:inherit}
-.enr-clear-all-btn:hover{border-color:var(--red);color:var(--red)}
-
-.enr-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:12px;padding:64px 20px;color:var(--t3);text-align:center}
-.enr-empty svg{opacity:.35}
-.enr-empty p{font-size:14px;font-weight:500}
-
-/* modal overlay */
-.enr-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;
-  display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;
-  overflow-y:auto;backdrop-filter:blur(3px)}
-.enr-modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);
-  width:100%;max-width:900px;margin:auto;box-shadow:var(--shadow-lg)}
-.enr-modal-hdr{display:flex;align-items:center;justify-content:space-between;
-  padding:18px 20px 14px;border-bottom:1px solid var(--border)}
-.enr-modal-title{font-size:15px;font-weight:700;color:var(--t1)}
-.enr-modal-close{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;
-  justify-content:center;cursor:pointer;border:none;background:var(--surface3);color:var(--t2)}
-.enr-modal-close:hover{background:var(--surface4)}
-.enr-modal-body{padding:20px;display:flex;flex-direction:column;gap:16px}
-.enr-modal-footer{display:flex;gap:10px;justify-content:flex-end;
-  padding:14px 20px;border-top:1px solid var(--border)}
-
-/* form fields */
-.enr-field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
-.enr-label{font-size:12px;font-weight:600;color:var(--t2)}
-.enr-input,.enr-field select,.enr-field textarea{background:var(--surface2);border:1px solid var(--border2);
-  border-radius:var(--r-sm);color:var(--t1);font-size:13px;padding:9px 12px;outline:none;
-  transition:border-color .15s;width:100%}
-.enr-input:focus,.enr-field select:focus,.enr-field textarea:focus{border-color:var(--blue)}
-.enr-input.err,.enr-field select.err{border-color:var(--red)}
-.enr-field textarea{resize:vertical;min-height:72px}
-.enr-form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:480px){.enr-form-row{grid-template-columns:1fr}}
-`;
+    /* ── Column Manager ── */
+    .col-mgr-wrap{position:relative}
+    .col-mgr-panel{position:fixed;z-index:9999;
+      width:270px;background:var(--surface);border:1px solid var(--border);
+      border-radius:var(--r-sm);box-shadow:0 8px 32px rgba(0,0,0,.18);
+      display:none;flex-direction:column;overflow:hidden;
+      max-height:min(420px, calc(100vh - 24px))}
+    .col-mgr-panel.open{display:flex}
+    .col-mgr-head{padding:10px 14px 8px;border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .col-mgr-title{font-size:12px;font-weight:700;color:var(--t1);
+      display:flex;align-items:center;gap:6px}
+    .col-mgr-actions{display:flex;gap:8px}
+    .col-mgr-link{font-size:11px;color:var(--blue);cursor:pointer;
+      background:none;border:none;padding:0;text-decoration:underline;font-weight:600}
+    .col-mgr-link:hover{opacity:.8}
+    .col-mgr-list{padding:4px 0;max-height:340px;overflow-y:auto;flex:1}
+    .col-mgr-list::-webkit-scrollbar{width:4px}
+    .col-mgr-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+    .col-mgr-item{display:flex;align-items:center;gap:8px;padding:7px 12px;
+      cursor:default;user-select:none;transition:background .1s}
+    .col-mgr-item:hover{background:var(--surface2)}
+    .col-mgr-item.dragging{opacity:.35;background:var(--surface3)}
+    .col-mgr-item.drag-over{box-shadow:inset 0 2px 0 var(--blue)}
+    .col-mgr-drag{color:var(--t4);flex-shrink:0;cursor:grab;line-height:0;padding:2px}
+    .col-mgr-drag:active{cursor:grabbing}
+    .col-mgr-chk{width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0}
+    .col-mgr-lbl{font-size:12.5px;color:var(--t1);flex:1;cursor:pointer;line-height:1.3}
+    .col-mgr-item.col-hidden .col-mgr-lbl{color:var(--t4)}
+    .col-mgr-foot{padding:7px 12px;border-top:1px solid var(--border);
+      font-size:11px;color:var(--t3);text-align:center;flex-shrink:0;
+      background:var(--surface2)}
+  `;
   document.head.appendChild(s);
 }
 
-// ── Badge helpers ─────────────────────────────────────────────
-function statusBadge(status) {
-  const label = STATUS_LABELS[status] || status;
-  return `<span class="enr-badge badge-${status}">${label}</span>`;
+// ── Column definitions (master list) ─────────────────────────
+const ALL_COLUMNS = [
+  { key: 'studentId',      label: 'Student ID' },
+  { key: 'cnic',           label: 'CNIC' },
+  { key: 'studentName',    label: 'Student Name' },
+  { key: 'fatherName',     label: 'Father Name' },
+  { key: 'gender',         label: 'Gender' },
+  { key: 'studentPhone',   label: 'Student Phone' },
+  { key: 'guardianPhone',  label: 'Guardian Phone' },
+  { key: 'qualification',  label: 'Qualification' },
+  { key: 'district',       label: 'District' },
+  { key: 'province',       label: 'Province' },
+  { key: 'campusSnapshot', label: 'Campus' },
+  { key: 'disciplineId',   label: 'Discipline' },
+  { key: 'route',          label: 'Route' },
+  { key: 'dateOfAdmission',label: 'Date of Admission' },
+  { key: 'session',        label: 'Session' },
+  { key: 'admissionBatch', label: 'Admission Batch' },
+];
+
+const COL_PREF_KEY = 'stu_col_prefs';
+
+function _getColPrefs() {
+  try {
+    const raw = AppState.get(COL_PREF_KEY);
+    if (raw && Array.isArray(raw.order) && raw.order.length) return raw;
+  } catch(e) {}
+  // Default: all visible, default order
+  return {
+    order:   ALL_COLUMNS.map(function(c) { return c.key; }),
+    hidden:  [],
+  };
 }
-function feeBadge(feeStatus) {
-  const label = FEE_LABELS[feeStatus] || feeStatus;
-  return `<span class="enr-badge badge-${feeStatus}">${label}</span>`;
+
+function _saveColPrefs(prefs) {
+  AppState.set(COL_PREF_KEY, prefs);
 }
 
-// ── Build <option> lists ──────────────────────────────────────
-function buildOptions(arr, valueKey, labelKey, selected = '') {
-  return arr.map(item =>
-    `<option value="${item[valueKey]}" ${item[valueKey] === selected ? 'selected' : ''}>
-      ${item[labelKey]}
-    </option>`
-  ).join('');
-}
+// ── Page skeleton ─────────────────────────────────────────────
+function _pageTemplate() {
+  const disciplines = AppState.get('disciplines') || [];
+  // Build unique session list from existing students
+  const sessions = [...new Set(
+    (AppState.get(KEY) || []).map(function(s) { return s.session; }).filter(Boolean)
+  )].sort(function(a, b) {
+    // Sort chronologically
+    const parse = function(v) {
+      const [n, yy] = v.split('-');
+      return parseInt(yy) * 2 + (n === 'June' ? 1 : 0);
+    };
+    return parse(b) - parse(a);
+  });
 
-// ── State ─────────────────────────────────────────────────────
-let _container      = null;
-let _filterCampus   = [];   // campus filter (first)
-let _filterBatch    = [];   // multi-select arrays
-let _filterStatus   = [];
-let _filterSubject  = [];
-let _filterSession  = [];
-let _filterTeacher  = [];
-let _filterFee      = '';
-let _search         = '';
-let _sortCol        = '';    // 'student'|'subject'|'batchNo'|'session'|'teacher'|'startDate'|'endDate'|'status'
-let _sortDir        = 'asc'; // 'asc'|'desc'
-let _selected       = new Set(); // bulk-delete: selected enrolment IDs
+  // Build campus list from AppState campuses store
+  const campuses = AppState.get('campuses') || [];
 
-// ── Main mount ────────────────────────────────────────────────
-export const EnrolmentModule = {
-  mount(container) {
-    if (!container) return;
-    _container = container;
-    ensureEnrolmentKeys();
-    injectStyles();
-    render();
-
-    // Re-render when students/batches change (e.g. from other modules)
-    AppState.subscribe('enrolments',    () => renderTable());
-    AppState.subscribe('lpAssignments', () => renderTable()); // LP end date live sync
-    AppState.subscribe('batches',       () => renderTable()); // batch endDate manual sync
-  },
-};
-
-// ── Full render ───────────────────────────────────────────────
-function render() {
-  const canWrite = Auth.can('enrolment');
-
-  _container.innerHTML = `
-<div class="enr-wrap">
-
-  <!-- Toolbar row 1: search + action buttons -->
-  <div class="enr-toolbar">
-    <input id="enrSearch" class="enr-search" placeholder="Search student / CNIC…" value="${_search}" style="min-width:140px;max-width:220px;flex:0 1 220px"/>
-    <div style="flex:1"></div>
-    <button class="enr-btn enr-btn-primary" id="enrAddBtn">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-      Add Enrolment
-    </button>
-    <button class="enr-btn enr-btn-ghost" id="enrExportBtn">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      Export CSV
-    </button>
-  </div>
-
-  <!-- Toolbar row 2: multi-select filter bar -->
-  <div class="enr-filter-bar" id="enrFilterBar">
-
-    <!-- Campus multi-select (first) -->
-    <div class="enr-ms-wrap" id="enrMsCampus">
-      <button class="enr-ms-trigger" id="enrMsCampusTrigger">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-          <polyline points="9 22 9 12 15 12 15 22"/>
+  return `
+    <div class="stu-page">
+    <div class="stu-toolbar">
+      <div class="stu-search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <span class="enr-ms-label" id="enrMsCampusLabel">All Campuses</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="enr-ms-caret"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="enr-ms-dropdown" id="enrMsCampusDropdown">
-        <div class="enr-ms-search-wrap"><input class="enr-ms-search" placeholder="Search campus…" data-dd="enrMsCampusDropdown"/></div>
-        <div class="enr-ms-list"><div class="enr-ms-empty">—</div></div>
+        <input class="stu-search" id="stuSearch" placeholder="Search by name, CNIC or Student ID…" autocomplete="off"/>
       </div>
-    </div>
 
-    <!-- Session multi-select (first — drives Subject/Batch#/Teacher) -->
-    <div class="enr-ms-wrap" id="enrMsSession">
-      <button class="enr-ms-trigger" id="enrMsSessionTrigger">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="4" width="18" height="18" rx="2"/>
-          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-          <line x1="3" y1="10" x2="21" y2="10"/>
-        </svg>
-        <span class="enr-ms-label" id="enrMsSessionLabel">All Sessions</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="enr-ms-caret"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="enr-ms-dropdown" id="enrMsSessionDropdown">
-        <div class="enr-ms-search-wrap"><input class="enr-ms-search" placeholder="Search session…" data-dd="enrMsSessionDropdown"/></div>
-        <div class="enr-ms-list"><div class="enr-ms-empty">—</div></div>
-      </div>
-    </div>
+      <select class="stu-filter" id="stuFilterDisc">
+        <option value="">All Disciplines</option>
+        ${disciplines.map(function(d) {
+          return '<option value="' + d.id + '">' + d.abbreviation + ' — ' + d.fullName + '</option>';
+        }).join('')}
+      </select>
 
-    <!-- Subject multi-select (filtered by session) -->
-    <div class="enr-ms-wrap" id="enrMsSubject">
-      <button class="enr-ms-trigger" id="enrMsSubjectTrigger">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-        </svg>
-        <span class="enr-ms-label" id="enrMsSubjectLabel">All Subjects</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="enr-ms-caret"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="enr-ms-dropdown" id="enrMsSubjectDropdown">
-        <div class="enr-ms-search-wrap"><input class="enr-ms-search" placeholder="Search subject…" data-dd="enrMsSubjectDropdown"/></div>
-        <div class="enr-ms-list"><div class="enr-ms-empty">—</div></div>
-      </div>
-    </div>
+      <select class="stu-filter" id="stuFilterCampus">
+        <option value="">All Campuses</option>
+        ${campuses.map(function(c) {
+          return '<option value="' + c.id + '">' + c.campusName + '</option>';
+        }).join('')}
+      </select>
 
-    <!-- Batch # multi-select (filtered by session + subject) -->
-    <div class="enr-ms-wrap" id="enrMsBatch">
-      <button class="enr-ms-trigger" id="enrMsBatchTrigger">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-          <circle cx="9" cy="7" r="4"/>
-        </svg>
-        <span class="enr-ms-label" id="enrMsBatchLabel">All Batch #</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="enr-ms-caret"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="enr-ms-dropdown" id="enrMsBatchDropdown">
-        <div class="enr-ms-search-wrap"><input class="enr-ms-search" placeholder="Search batch #…" data-dd="enrMsBatchDropdown"/></div>
-        <div class="enr-ms-list"><div class="enr-ms-empty">—</div></div>
-      </div>
-    </div>
+      <select class="stu-filter" id="stuFilterSession">
+        <option value="">All Sessions</option>
+        ${sessions.map(function(sv) {
+          return '<option value="' + sv + '">' + sv + '  (' + sessionLabel(sv) + ')</option>';
+        }).join('')}
+      </select>
 
-    <!-- Teacher multi-select (filtered by session + subject) -->
-    <div class="enr-ms-wrap" id="enrMsTeacher">
-      <button class="enr-ms-trigger" id="enrMsTeacherTrigger">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-          <circle cx="12" cy="7" r="4"/>
-        </svg>
-        <span class="enr-ms-label" id="enrMsTeacherLabel">All Teachers</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="enr-ms-caret"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="enr-ms-dropdown" id="enrMsTeacherDropdown">
-        <div class="enr-ms-search-wrap"><input class="enr-ms-search" placeholder="Search teacher…" data-dd="enrMsTeacherDropdown"/></div>
-        <div class="enr-ms-list"><div class="enr-ms-empty">—</div></div>
-      </div>
-    </div>
-
-    <!-- Status multi-select -->
-    <div class="enr-ms-wrap" id="enrMsStatus">
-      <button class="enr-ms-trigger" id="enrMsStatusTrigger">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
-        </svg>
-        <span class="enr-ms-label" id="enrMsStatusLabel">All Statuses</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="enr-ms-caret"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="enr-ms-dropdown" id="enrMsStatusDropdown">
-        <div class="enr-ms-search-wrap"><input class="enr-ms-search" placeholder="Search status…" data-dd="enrMsStatusDropdown"/></div>
-        <div class="enr-ms-list">
-        ${[
-          { value:'active',        label:'Active',        color:'var(--green)'  },
-          { value:'dormant',       label:'Dormant',       color:'var(--t3)'     },
-          { value:'exempt',        label:'Exempt',        color:'var(--blue)'   },
-          { value:'change_campus', label:'Change Campus', color:'var(--yellow)' },
-          { value:'left_study',    label:'Left Study',    color:'var(--red)'    },
-          { value:'left_campus',   label:'Left Campus',   color:'var(--orange)' },
-        ].map(s => `
-          <label class="enr-ms-option">
-            <input type="checkbox" value="${s.value}" class="enr-ms-cb enr-ms-status-cb" ${_filterStatus.includes(s.value)?'checked':''}/>
-            <span class="enr-ms-dot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${s.color}"></span>
-            ${s.label}
-          </label>`).join('')}
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuImportBtn" title="Import CSV">${ICONS.upload}</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuExportCSVBtn" title="Export CSV">${ICONS.dl}</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuExportPDFBtn" title="Export PDF">${ICONS.pdf}</button>
+      <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuTemplateBtn" title="Download Template">${ICONS.csv}</button>
+      <div class="col-mgr-wrap">
+        <button class="stu-btn stu-btn--ghost stu-btn--icon" id="stuColMgrBtn" title="Manage columns">${ICONS.columns}</button>
+        <div class="col-mgr-panel" id="stuColMgrPanel">
+          <div class="col-mgr-head">
+            <span class="col-mgr-title">${ICONS.columns} Manage Columns</span>
+            <div class="col-mgr-actions">
+              <button class="col-mgr-link" id="colMgrShowAll">Show All</button>
+              <button class="col-mgr-link" id="colMgrReset">Reset</button>
+            </div>
+          </div>
+          <div class="col-mgr-list" id="colMgrList"></div>
+          <div class="col-mgr-foot">Drag rows to reorder • Check to show/hide</div>
         </div>
       </div>
+      <button class="stu-btn stu-btn--primary" id="stuAddBtn">${ICONS.add} Add Student</button>
+      <span class="stu-count" id="stuCount"></span>
     </div>
-
-    <!-- Active chips + Clear all -->
-    <div id="enrActiveChips" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-left:4px"></div>
-    <button id="enrClearAll" class="enr-clear-all-btn" style="display:none">Clear all</button>
-
-  </div>
-
-  <!-- Bulk-delete bar (hidden by default) -->
-  <div id="enrBulkBar" style="display:none" class="enr-bulk-bar">
-    <span class="enr-bulk-count" id="enrBulkCount"></span>
-    <button class="enr-bulk-cancel" id="enrBulkCancel">Deselect All</button>
-    <button class="enr-bulk-del"    id="enrBulkDel">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-        style="vertical-align:-2px;margin-right:4px">
-        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-        <path d="M10 11v6"/><path d="M14 11v6"/>
-        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-      </svg>
-      Delete Selected
-    </button>
-  </div>
-
-  <!-- Summary pills -->
-  <div class="enr-summary" id="enrSummary"></div>
-
-  <!-- Table -->
-  <div class="enr-table-wrap">
-    <table class="enr-table">
-      <thead>
-        <tr>
-          <th style="width:36px;text-align:center">
-            <input type="checkbox" class="enr-row-chk" id="enrChkAll" title="Select all visible rows"/>
-          </th>
-          <th class="enr-sortable" data-col="student">Student <span class="enr-sort-icon" data-col="student"></span></th>
-          <th class="enr-sortable" data-col="campus">Campus <span class="enr-sort-icon" data-col="campus"></span></th>
-          <th class="enr-sortable" data-col="subject">Subject <span class="enr-sort-icon" data-col="subject"></span></th>
-          <th class="enr-sortable" data-col="batchNo">Batch # <span class="enr-sort-icon" data-col="batchNo"></span></th>
-          <th class="enr-sortable" data-col="session">Session <span class="enr-sort-icon" data-col="session"></span></th>
-          <th class="enr-sortable" data-col="teacher">Teacher <span class="enr-sort-icon" data-col="teacher"></span></th>
-          <th class="enr-sortable" data-col="startDate">Start Date <span class="enr-sort-icon" data-col="startDate"></span></th>
-          <th class="enr-sortable" data-col="endDate">End Date <span class="enr-sort-icon" data-col="endDate"></span></th>
-          <th>Duration</th>
-          <th class="enr-sortable" data-col="status">Status <span class="enr-sort-icon" data-col="status"></span></th>
-          <th>Note</th>
-          ${canWrite ? '<th>Actions</th>' : ''}
-        </tr>
-      </thead>
-      <tbody id="enrTbody"></tbody>
-    </table>
-  </div>
-
-</div>`;
-
-  wireEvents();
-  renderSummary();
-  renderTable();
-}
-
-// ── Multi-select helpers ──────────────────────────────────────
-function _enrInitMultiSelect({ triggerId, dropdownId, labelId, cbClass, allLabel, stateKey }) {
-  const trigger  = _container.querySelector(`#${triggerId}`);
-  const dropdown = _container.querySelector(`#${dropdownId}`);
-  if (!trigger || !dropdown) return;
-
-  trigger.addEventListener('click', e => {
-    e.stopPropagation();
-    const isOpen = dropdown.classList.contains('open');
-    _container.querySelectorAll('.enr-ms-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (!isOpen) {
-      dropdown.classList.add('open');
-      dropdown.querySelector('.enr-ms-search')?.focus();
-    }
-  });
-
-  // Wire checkboxes inside .enr-ms-list (or dropdown itself for backwards compat)
-  const list = dropdown.querySelector('.enr-ms-list') || dropdown;
-  list.querySelectorAll(`.${cbClass}`).forEach(cb => {
-    cb.addEventListener('change', () => {
-      if (stateKey === '_filterCampus')  _filterCampus  = [...dropdown.querySelectorAll(`.${cbClass}:checked`)].map(c => c.value);
-      if (stateKey === '_filterBatch')   _filterBatch   = [...dropdown.querySelectorAll(`.${cbClass}:checked`)].map(c => c.value);
-      if (stateKey === '_filterStatus')  _filterStatus  = [...dropdown.querySelectorAll(`.${cbClass}:checked`)].map(c => c.value);
-      if (stateKey === '_filterSubject') _filterSubject = [...dropdown.querySelectorAll(`.${cbClass}:checked`)].map(c => c.value);
-      if (stateKey === '_filterSession') _filterSession = [...dropdown.querySelectorAll(`.${cbClass}:checked`)].map(c => c.value);
-      if (stateKey === '_filterTeacher') _filterTeacher = [...dropdown.querySelectorAll(`.${cbClass}:checked`)].map(c => c.value);
-      _enrSyncLabel(labelId, _enrGetState(stateKey), allLabel);
-      _enrRenderChips();
-      renderTable();
-    });
-  });
-
-  // Wire search for static dropdowns (like status)
-  const searchInp = dropdown.querySelector('.enr-ms-search');
-  if (searchInp) {
-    searchInp.oninput = () => {
-      const q = searchInp.value.toLowerCase();
-      list.querySelectorAll('.enr-ms-option').forEach(opt => {
-        opt.style.display = opt.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
-    };
-  }
-}
-
-function _enrGetState(key) {
-  if (key === '_filterCampus')  return _filterCampus;
-  if (key === '_filterBatch')   return _filterBatch;
-  if (key === '_filterStatus')  return _filterStatus;
-  if (key === '_filterSubject') return _filterSubject;
-  if (key === '_filterSession') return _filterSession;
-  if (key === '_filterTeacher') return _filterTeacher;
-  return [];
-}
-
-function _enrSyncLabel(labelId, selected, allLabel) {
-  const el = _container.querySelector(`#${labelId}`);
-  if (!el) return;
-  if (!selected.length) { el.textContent = allLabel; return; }
-  if (selected.length === 1) {
-    const cb = _container.querySelector(`.enr-ms-cb[value="${selected[0]}"]`);
-    el.textContent = (cb?.closest('label')?.textContent?.trim()) || selected[0];
-  } else {
-    el.textContent = `${selected.length} selected`;
-  }
-}
-
-function _enrSyncAllLabels() {
-  _enrSyncLabel('enrMsCampusLabel',  _filterCampus,  'All Campuses');
-  _enrSyncLabel('enrMsSessionLabel', _filterSession, 'All Sessions');
-  _enrSyncLabel('enrMsSubjectLabel', _filterSubject, 'All Subjects');
-  _enrSyncLabel('enrMsBatchLabel',   _filterBatch,   'All Batch #');
-  _enrSyncLabel('enrMsTeacherLabel', _filterTeacher, 'All Teachers');
-  _enrSyncLabel('enrMsStatusLabel',  _filterStatus,  'All Statuses');
-}
-
-function _enrRenderChips() {
-  const wrap     = _container.querySelector('#enrActiveChips');
-  const clearBtn = _container.querySelector('#enrClearAll');
-  if (!wrap) return;
-
-  const STATUS_COLORS = {
-    active: 'var(--green)', dormant: 'var(--t3)', exempt: 'var(--blue)',
-    change_campus: 'var(--yellow)', left_study: 'var(--red)', left_campus: 'var(--orange)',
-  };
-
-  function makeChips(arr, stateKey, cbClass, color) {
-    return arr.map(val => {
-      const cb   = _container.querySelector(`.${cbClass}[value="${val}"]`);
-      const text = cb?.closest('label')?.textContent?.trim() || val;
-      const c    = stateKey === '_filterStatus' ? (STATUS_COLORS[val] || color) : color;
-      return `<span class="enr-active-chip" style="background:${c}20;color:${c};border-color:${c}50"
-                    data-key="${stateKey}" data-val="${val}">
-                ${text}
-                <span class="enr-chip-x">✕</span>
-              </span>`;
-    }).join('');
-  }
-
-  wrap.innerHTML =
-    makeChips(_filterCampus,  '_filterCampus',  'enr-ms-campus-cb',  'var(--teal, var(--blue))') +
-    makeChips(_filterBatch,   '_filterBatch',   'enr-ms-batch-cb',   'var(--blue)')   +
-    makeChips(_filterSubject, '_filterSubject', 'enr-ms-subject-cb', 'var(--violet)') +
-    makeChips(_filterSession, '_filterSession', 'enr-ms-session-cb', 'var(--teal, var(--blue))') +
-    makeChips(_filterTeacher, '_filterTeacher', 'enr-ms-teacher-cb', 'var(--green)')  +
-    makeChips(_filterStatus,  '_filterStatus',  'enr-ms-status-cb',  'var(--yellow)');
-
-  const hasAny = _filterCampus.length || _filterBatch.length || _filterSubject.length || _filterSession.length ||
-                 _filterTeacher.length || _filterStatus.length;
-  if (clearBtn) clearBtn.style.display = hasAny ? '' : 'none';
-
-  wrap.querySelectorAll('.enr-active-chip').forEach(chip => {
-    chip.querySelector('.enr-chip-x')?.addEventListener('click', () => {
-      const { key, val } = chip.dataset;
-      if (key === '_filterCampus')  _filterCampus  = _filterCampus.filter(v => v !== val);
-      if (key === '_filterBatch')   _filterBatch   = _filterBatch.filter(v => v !== val);
-      if (key === '_filterStatus')  _filterStatus  = _filterStatus.filter(v => v !== val);
-      if (key === '_filterSubject') _filterSubject = _filterSubject.filter(v => v !== val);
-      if (key === '_filterSession') _filterSession = _filterSession.filter(v => v !== val);
-      if (key === '_filterTeacher') _filterTeacher = _filterTeacher.filter(v => v !== val);
-      // Uncheck checkbox
-      const cb = _container.querySelector(`.enr-ms-cb[value="${val}"]`);
-      if (cb) cb.checked = false;
-      _enrSyncAllLabels();
-      _enrRenderChips();
-      renderTable();
-    });
-  });
-}
-
-// ── Wire toolbar events ───────────────────────────────────────
-function wireEvents() {
-  _container.querySelector('#enrSearch')?.addEventListener('input', e => {
-    _search = e.target.value;
-    renderTable();
-  });
-
-  _container.querySelector('#enrAddBtn')?.addEventListener('click', () => openModal());
-  _container.querySelector('#enrExportBtn')?.addEventListener('click', () => {
-    EnrolmentService.exportCSV(null);
-    Toast.success('CSV exported successfully.');
-  });
-
-  // ── Bulk-delete bar buttons ───────────────────────────────
-  _container.querySelector('#enrBulkCancel')?.addEventListener('click', () => {
-    _selected.clear();
-    renderTable();
-  });
-  _container.querySelector('#enrBulkDel')?.addEventListener('click', () => {
-    if (!_selected.size) return;
-    confirmBulkDelete([..._selected]);
-  });
-
-  // ── Multi-select filter dropdowns (status is static; others are dynamic via renderTable) ──
-  _enrInitMultiSelect({ triggerId:'enrMsStatusTrigger', dropdownId:'enrMsStatusDropdown', labelId:'enrMsStatusLabel', cbClass:'enr-ms-status-cb', allLabel:'All Statuses', stateKey:'_filterStatus' });
-
-  // Dynamic dropdowns (session/subject/batch/teacher) are wired inside repopDynDropdown on each renderTable call.
-  // We only need to wire their trigger buttons here:
-  ['enrMsCampus','enrMsSession','enrMsSubject','enrMsBatch','enrMsTeacher'].forEach(wrapId => {
-    const trigger  = _container.querySelector(`#${wrapId}Trigger`);
-    const dropdown = _container.querySelector(`#${wrapId}Dropdown`);
-    if (!trigger || !dropdown) return;
-    trigger.addEventListener('click', e => {
-      e.stopPropagation();
-      const isOpen = dropdown.classList.contains('open');
-      _container.querySelectorAll('.enr-ms-dropdown.open').forEach(d => d.classList.remove('open'));
-      if (!isOpen) {
-        dropdown.classList.add('open');
-        dropdown.querySelector('.enr-ms-search')?.focus();
-      }
-    });
-  });
-
-  // ── Clear all chips ───────────────────────────────────────
-  _container.querySelector('#enrClearAll')?.addEventListener('click', () => {
-    _filterCampus = []; _filterSession = []; _filterSubject = []; _filterBatch = [];
-    _filterTeacher = []; _filterStatus = [];
-    _container.querySelectorAll('.enr-ms-cb').forEach(cb => cb.checked = false);
-    _enrSyncAllLabels();
-    _enrRenderChips();
-    renderTable();
-  });
-
-  // ── Close dropdowns on outside click ─────────────────────
-  window.addEventListener('mousedown', function _enrOutside(e) {
-    if (!_container || !_container.isConnected) {
-      window.removeEventListener('mousedown', _enrOutside, true);
-      return;
-    }
-    if (!e.target.closest('.enr-ms-wrap')) {
-      _container.querySelectorAll('.enr-ms-dropdown.open').forEach(d => d.classList.remove('open'));
-    }
-  }, true);
-
-  // ── Sort header clicks ────────────────────────────────────
-  _container.querySelectorAll('.enr-sortable').forEach(th => {
-    th.addEventListener('click', () => {
-      const col = th.dataset.col;
-      if (_sortCol === col) { _sortDir = _sortDir === 'asc' ? 'desc' : 'asc'; }
-      else { _sortCol = col; _sortDir = 'asc'; }
-      renderTable();
-    });
-  });
-}
-
-// ── Summary pills ─────────────────────────────────────────────
-function renderSummary() {
-  const el = _container.querySelector('#enrSummary');
-  if (!el) return;
-
-  // Same statuses as table inline dropdown
-  const ENR_SUBJ_STATUS_OPTS = [
-    { value: 'active',        label: 'Active' },
-    { value: 'dormant',       label: 'Dormant' },
-    { value: 'exempt',        label: 'Exempt' },
-    { value: 'change_campus', label: 'Change Campus' },
-    { value: 'left_study',    label: 'Left Study' },
-    { value: 'left_campus',   label: 'Left Campus' },
-  ];
-
-  // Count per subject-level status across all enrolments
-  const allEnrolments = EnrolmentService.getAll();
-  let totalSubjectRows = 0;
-  const statusCounts = {};
-  ENR_SUBJ_STATUS_OPTS.forEach(o => { statusCounts[o.value] = 0; });
-
-  allEnrolments.forEach(e => {
-    const subjects = Array.isArray(e.subjects) && e.subjects.length ? e.subjects : null;
-    if (subjects) {
-      subjects.forEach(sub => {
-        totalSubjectRows++;
-        const st = sub.status || 'active';
-        if (st in statusCounts) statusCounts[st]++;
-      });
-    } else {
-      totalSubjectRows++;
-      const st = e.status || 'active';
-      if (st in statusCounts) statusCounts[st]++;
-    }
-  });
-
-  const pills = [
-    { label: 'Total', count: totalSubjectRows, value: '' },
-    ...ENR_SUBJ_STATUS_OPTS.map(o => ({ label: o.label, count: statusCounts[o.value], value: o.value })),
-  ];
-
-  el.innerHTML = pills.map(p => `
-    <div class="enr-pill ${p.value !== '' && _filterStatus.includes(p.value) ? 'active-filter' : ''}"
-         data-status="${p.value}" title="${p.value ? 'Filter by ' + p.label : 'Show all'}">
-      ${p.label} <b>${p.count}</b>
-    </div>
-  `).join('');
-
-  // Wire pill clicks → toggle in multi-select filter array + sync UI
-  el.querySelectorAll('.enr-pill').forEach(pill => {
-    pill.addEventListener('click', () => {
-      const val = pill.dataset.status;
-      if (!val) {
-        // "Total" pill → clear all status filters
-        _filterStatus = [];
-        _container.querySelectorAll('.enr-ms-status-cb').forEach(cb => cb.checked = false);
-      } else {
-        if (_filterStatus.includes(val)) {
-          _filterStatus = _filterStatus.filter(v => v !== val);
-          const cb = _container.querySelector(`.enr-ms-status-cb[value="${val}"]`);
-          if (cb) cb.checked = false;
-        } else {
-          _filterStatus = [..._filterStatus, val];
-          const cb = _container.querySelector(`.enr-ms-status-cb[value="${val}"]`);
-          if (cb) cb.checked = true;
-        }
-      }
-      _enrSyncAllLabels();
-      _enrRenderChips();
-      renderSummary();
-      renderTable();
-    });
-  });
+    <div id="stuTableWrap"></div>
+    </div>`;
 }
 
 // ── Table render ──────────────────────────────────────────────
-function renderTable() {
-  const canWrite = Auth.can('enrolment');
-  const tbody    = _container?.querySelector('#enrTbody');
-  if (!tbody) return;
+function _render(container, search, discFilter, sessionFilter, campusFilter) {
+  search        = (search        || '').toLowerCase();
+  discFilter    = discFilter    || '';
+  sessionFilter = sessionFilter || '';
+  campusFilter  = campusFilter  || '';
 
-  let rows = EnrolmentService.getEnriched();
+  let rows = AppState.get(KEY) || [];
+  if (discFilter)    rows = rows.filter(function(s) { return s.disciplineId === discFilter; });
+  if (sessionFilter) rows = rows.filter(function(s) { return s.session      === sessionFilter; });
+  if (campusFilter)  rows = rows.filter(function(s) { return (s.campusId || '') === campusFilter; });
 
-  // Search
-  if (_search.trim()) {
-    const q = _search.trim().toLowerCase();
-    rows = rows.filter(e =>
-      e.studentName.toLowerCase().includes(q) ||
-      e.studentCnic.toLowerCase().includes(q)
-    );
+  if (search) {
+    rows = rows.filter(function(s) {
+      const disc = AppState.findById('disciplines', s.disciplineId);
+      const cnicPlain = (s.cnic || '').replace(/-/g, '');
+      return (
+        (s.studentName    || '').toLowerCase().includes(search) ||
+        (s.cnic           || '').toLowerCase().includes(search) ||
+        cnicPlain.includes(search.replace(/-/g, ''))            ||
+        (s.studentId      || '').toLowerCase().includes(search) ||
+        (s.campusSnapshot?.name || '').toLowerCase().includes(search) ||
+        (s.session        || '').toLowerCase().includes(search) ||
+        (s.admissionBatch || '').toLowerCase().includes(search) ||
+        (disc?.abbreviation || '').toLowerCase().includes(search) ||
+        (disc?.fullName     || '').toLowerCase().includes(search)
+      );
+    });
   }
 
-  renderSummary();
+  // Store for export
+  container._filteredRows = rows;
+
+  const countEl = container.querySelector('#stuCount');
+  if (countEl) countEl.textContent = rows.length + ' student' + (rows.length !== 1 ? 's' : '');
+
+  const wrap = container.querySelector('#stuTableWrap');
+  if (!wrap) return;
 
   if (!rows.length) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="${canWrite ? 13 : 12}">
-          <div class="enr-empty">
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-            <p>No enrolments found</p>
-          </div>
-        </td>
-      </tr>`;
+    wrap.innerHTML = `
+      <div class="stu-empty">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <p>${(search || discFilter || sessionFilter) ? 'No students match your filters.' : 'No students yet.'}</p>
+        <span>Click "Add Student" to enroll the first student.</span>
+      </div>`;
     return;
   }
 
-  // ── Helper: parse batchName parts (e.g. FA1-Dec-25-01) ────
-  function parseBatchName(batchName) {
-    if (!batchName) return { subject: '—', batchNo: '—', session: '—' };
-    const parts = batchName.split('-');
-    // Subject = everything before first '-' that looks like a code (first segment)
-    const subject = parts[0] || '—';
-    // Batch# = last segment
-    const batchNo = parts[parts.length - 1] || '—';
-    // Session = middle segments joined (e.g. Dec-25)
-    const session = parts.length >= 3 ? parts.slice(1, parts.length - 1).join('-') : '—';
-    return { subject, batchNo, session };
-  }
+  const canEdit   = Auth.can('students:edit')   !== false;
+  const canDelete = Auth.can('students:delete') !== false;
+  const actions   = [];
+  if (canEdit)   actions.push({ label: 'Edit',   icon: ICONS.edit,  handler: function(row) { _openForm(row, container); } });
+  if (canDelete) actions.push({ label: 'Delete', danger: true, icon: ICONS.trash, handler: function(row) { _delete(row, container); } });
 
-  // ── Helper: compute duration between two date strings ─────
-  function calcDuration(startDate, endDate) {
-    if (!startDate || !endDate) return '—';
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (isNaN(s) || isNaN(e) || e <= s) return '—';
-    const diffMs    = e - s;
-    const diffDays  = Math.round(diffMs / (1000 * 60 * 60 * 24));
-    const months    = Math.floor(diffDays / 30);
-    const remDays   = diffDays % 30;
-    if (months > 0 && remDays > 0) return `${months}m ${remDays}d`;
-    if (months > 0) return `${months} month${months !== 1 ? 's' : ''}`;
-    return `${diffDays} day${diffDays !== 1 ? 's' : ''}`;
-  }
-
-  // ── Per-subject status options ─────────────────────────────
-  const ENR_SUBJ_STATUS_OPTS = [
-    { value: 'active',        label: 'Active' },
-    { value: 'dormant',       label: 'Dormant' },
-    { value: 'exempt',        label: 'Exempt' },
-    { value: 'change_campus', label: 'Change Campus' },
-    { value: 'left_study',    label: 'Left Study' },
-    { value: 'left_campus',   label: 'Left Campus' },
-  ];
-
-  // ── Expand each enrolment into per-subject rows ────────────
-  // Each enrolment may have multiple subjects; each gets its own table row.
-  // If no subjects stored, fall back to batchName-based row.
-  const expandedRows = [];
-  rows.forEach(e => {
-    const subjects = Array.isArray(e.subjects) && e.subjects.length ? e.subjects : null;
-    if (subjects) {
-      subjects.forEach(sub => {
-        const parsed = parseBatchName(sub.batchName || e.batchName);
-        const subBatchRec = (AppState.get('batches') || []).find(b => b.id === sub.batchId);
-        const _sCampus = subBatchRec?.campusId
-          ? (AppState.get('campuses') || []).find(c => c.id === subBatchRec.campusId)
-          : null;
-
-        // ── Live sync: resolve startDate/endDate from batch record (not stored snapshot) ──
-        const liveStartDate = subBatchRec?.startDate || sub.startDate || '';
-        let liveEndDate = subBatchRec?.endDate || sub.endDate || '';
-        if (subBatchRec && subBatchRec.endDateMode !== 'manual') {
-          try {
-            const allAssign = AppState.get('lpAssignments') || {};
-            const lpa       = allAssign[subBatchRec.id];
-            if (lpa && lpa.rows) {
-              const datedRows = lpa.rows.filter(r => r.date).sort((a, b) => a.date.localeCompare(b.date));
-              if (datedRows.length) liveEndDate = datedRows[datedRows.length - 1].date;
-            }
-          } catch(_) { /* fallback to batch stored endDate */ }
+  // ── Column render map ──────────────────────────────────────
+  const COL_RENDERERS = {
+    studentId: { label: 'Student ID', width: '170px',
+      render: function(v) {
+        return v
+          ? '<span style="font-family:Inter,\'Segoe UI\',system-ui,sans-serif;font-size:11px;font-weight:700;color:var(--t1);letter-spacing:.03em">' + v + '</span>'
+          : '<span style="color:var(--t4);font-size:11px">—</span>';
+      }},
+    cnic: { label: 'CNIC', width: '160px',
+      render: function(v) {
+        if (!v) return '<span style="font-size:10.5px;color:var(--t4);font-style:italic;' +
+          'background:var(--surface3);padding:2px 8px;border-radius:5px;border:1px dashed var(--border2)">Not provided</span>';
+        return '<span class="cnic-badge">' + v + '</span>';
+      }},
+    studentName: { label: 'Student Name',
+      render: function(v) {
+        return '<span style="font-weight:600;color:var(--t1)">' + (v || '—') + '</span>';
+      }},
+    fatherName: { label: 'Father Name', width: '150px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+      }},
+    gender: { label: 'Gender', width: '100px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
+          (v === 'male' ? 'Male' : 'Female') + '</span>';
+      }},
+    studentPhone: { label: 'Student Phone', width: '140px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+      }},
+    guardianPhone: { label: 'Guardian Phone', width: '140px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+      }},
+    qualification: { label: 'Qualification', width: '120px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
+    district: { label: 'District', width: '120px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
+    province: { label: 'Province', width: '110px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
+    campusSnapshot: { label: 'Campus', width: '140px',
+      render: function(v, row) {
+        const name = v?.name || row.campus || '';
+        if (!name) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
+        return '<span style="font-size:12px;font-weight:600;color:var(--t1);' +
+          'background:var(--surface3);padding:2px 8px;border-radius:6px;' +
+          'border:1px solid var(--border)">' + name + '</span>';
+      }},
+    disciplineId: { label: 'Discipline', width: '120px',
+      render: function(id) {
+        const d = AppState.findById('disciplines', id);
+        if (!d) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;font-weight:700;color:var(--t1)">' + d.abbreviation + '</span>';
+      }},
+    route: { label: 'Route', width: '170px',
+      render: function(v, row) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        let html = '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+        if (row.exemptedPapers?.count) {
+          const papers = row.exemptedPapers.papers || [];
+          const codeList = papers.length
+            ? papers.map(function(p) { return p.subjectCode; }).join(', ')
+            : (row.exemptedPapers.codes || []).join(', ');
+          html += '<br><span style="font-size:10.5px;color:var(--t3);margin-top:2px;display:block">' +
+            row.exemptedPapers.count + ' exempt: ' + codeList + '</span>';
         }
+        return html;
+      }},
+    dateOfAdmission: { label: 'Date of Admission', width: '148px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        const [y, m, d] = v.split('-');
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const label  = parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y;
+        return '<span style="font-size:12.5px;color:var(--t1)">' + label + '</span>';
+      }},
+    session: { label: 'Session', width: '105px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
+      }},
+    admissionBatch: { label: 'Admission Batch', width: '130px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<span style="font-size:12px;color:var(--t1);font-weight:600">' + v + '</span>';
+      }},
+  };
 
-        expandedRows.push({
-          _enrolmentId: e.id,
-          _subjectId:   sub.subjectId || '',
-          _subjectIdx:  subjects.indexOf(sub),
-          studentName:  e.studentName,
-          studentCnic:  e.studentCnic,
-          campus:       _sCampus ? (_sCampus.campusName || '').replace(/\s*campus$/i,'').trim() || _sCampus.campusName : '—',
-          subject:      parsed.subject,
-          batchNo:      sub.batchNo   || parsed.batchNo,
-          session:      sub.session   || parsed.session,
-          teacher:      subBatchRec?.teacher || subBatchRec?.teacherName || '—',
-          startDate:    liveStartDate,
-          endDate:      liveEndDate,
-          duration:     calcDuration(liveStartDate, liveEndDate),
-          subjectStatus: sub.status   || 'active',
-          note:         sub.note || e.notes || '',
-        });
-      });
-    } else {
-      const parsed = parseBatchName(e.batchName);
-      // Try to get dates from batch data
-      const batchRecord = (AppState.get('batches') || []).find(b => b.id === e.batchId);
-      const _bCampus = batchRecord?.campusId
-        ? (AppState.get('campuses') || []).find(c => c.id === batchRecord.campusId)
-        : null;
+  // Build ordered + filtered column list from prefs
+  const prefs = _getColPrefs();
+  const columns = prefs.order
+    .filter(function(k) { return !prefs.hidden.includes(k) && COL_RENDERERS[k]; })
+    .map(function(k) {
+      const def = COL_RENDERERS[k];
+      return { key: k, label: def.label, width: def.width, render: def.render };
+    });
 
-      // Resolve end date: if LP mode, get last dated row from assignment; else use stored endDate
-      let resolvedEndDate = batchRecord?.endDate || '';
-      if (batchRecord && batchRecord.endDateMode !== 'manual') {
-        try {
-          const allAssign = AppState.get('lpAssignments') || {};
-          const lpa       = allAssign[batchRecord.id];
-          if (lpa && lpa.rows) {
-            const datedRows = lpa.rows.filter(r => r.date).sort((a, b) => a.date.localeCompare(b.date));
-            if (datedRows.length) resolvedEndDate = datedRows[datedRows.length - 1].date;
-          }
-        } catch(e) { /* fallback to stored */ }
-      }
-
-      expandedRows.push({
-        _enrolmentId: e.id,
-        _subjectId:   '',
-        _subjectIdx:  -1,
-        studentName:  e.studentName,
-        studentCnic:  e.studentCnic,
-        campus:       _bCampus ? (_bCampus.campusName || '').replace(/\s*campus$/i,'').trim() || _bCampus.campusName : '—',
-        subject:      parsed.subject,
-        batchNo:      parsed.batchNo,
-        session:      parsed.session,
-        teacher:      batchRecord?.teacher || batchRecord?.teacherName || '—',
-        startDate:    batchRecord?.startDate  || '',
-        endDate:      resolvedEndDate,
-        duration:     calcDuration(batchRecord?.startDate, resolvedEndDate),
-        subjectStatus: e.status || 'active',
-        note:         e.notes || '',
-      });
-    }
+  Table.render(wrap, {
+    columns: columns,
+    rows:    rows,
+    actions: actions,
+    rowKey:  'id',
   });
 
-  // Filter expanded rows by subject-level status (multi-select)
-  const filteredRows = _filterStatus.length
-    ? expandedRows.filter(r => _filterStatus.includes(r.subjectStatus))
-    : expandedRows;
-
-  // ── Apply campus / subject / session / teacher / batchNo filters ──
-  let displayRows = filteredRows;
-  if (_filterCampus.length)  displayRows = displayRows.filter(r => _filterCampus.includes(r.campus));
-  if (_filterSubject.length) displayRows = displayRows.filter(r => _filterSubject.includes(r.subject));
-  if (_filterSession.length) displayRows = displayRows.filter(r => _filterSession.includes(r.session));
-  if (_filterTeacher.length) displayRows = displayRows.filter(r => _filterTeacher.includes(r.teacher));
-  if (_filterBatch.length)   displayRows = displayRows.filter(r => _filterBatch.includes(String(r.batchNo)));
-
-  // ── Populate dynamic filter dropdowns with search + cascade ──
-  function repopDynDropdown(dropdownId, cbClass, values, currentArr) {
-    const dd   = _container.querySelector(`#${dropdownId}`);
-    if (!dd) return;
-    const list = dd.querySelector('.enr-ms-list') || dd;
-    const unique = [...new Set(values.filter(v => v && v !== '—'))].sort();
-
-    const buildItems = (filter = '') => {
-      const shown = filter ? unique.filter(v => v.toLowerCase().includes(filter.toLowerCase())) : unique;
-      list.innerHTML = shown.length
-        ? shown.map(v => `
-            <label class="enr-ms-option">
-              <input type="checkbox" value="${v}" class="enr-ms-cb ${cbClass}" ${currentArr.includes(v)?'checked':''}/>
-              ${v}
-            </label>`).join('')
-        : `<div class="enr-ms-empty">No results</div>`;
-      // Re-wire checkboxes
-      list.querySelectorAll(`.${cbClass}`).forEach(cb => {
-        cb.addEventListener('change', () => {
-          if (cbClass === 'enr-ms-campus-cb')  _filterCampus  = [..._container.querySelectorAll('.enr-ms-campus-cb:checked')].map(c=>c.value);
-          if (cbClass === 'enr-ms-subject-cb') _filterSubject = [..._container.querySelectorAll(`.enr-ms-subject-cb:checked`)].map(c=>c.value);
-          if (cbClass === 'enr-ms-session-cb') _filterSession = [..._container.querySelectorAll(`.enr-ms-session-cb:checked`)].map(c=>c.value);
-          if (cbClass === 'enr-ms-teacher-cb') _filterTeacher = [..._container.querySelectorAll(`.enr-ms-teacher-cb:checked`)].map(c=>c.value);
-          if (cbClass === 'enr-ms-batch-cb')   _filterBatch   = [..._container.querySelectorAll(`.enr-ms-batch-cb:checked`)].map(c=>c.value);
-          _enrSyncAllLabels();
-          _enrRenderChips();
-          renderTable();
-        });
-      });
-    };
-
-    buildItems();
-
-    // Wire search input inside this dropdown
-    const searchInp = dd.querySelector('.enr-ms-search');
-    if (searchInp) {
-      searchInp.oninput = () => buildItems(searchInp.value);
-    }
-  }
-
-  // Cascading values: campus is the outermost filter
-  const allExpanded = expandedRows;
-
-  // Campus dropdown: always shows all campuses from ALL data
-  repopDynDropdown('enrMsCampusDropdown', 'enr-ms-campus-cb',
-    allExpanded.map(r => r.campus), _filterCampus);
-
-  // Session dropdown: filtered by campus selection
-  const campFiltered = _filterCampus.length
-    ? allExpanded.filter(r => _filterCampus.includes(r.campus))
-    : allExpanded;
-  repopDynDropdown('enrMsSessionDropdown', 'enr-ms-session-cb',
-    campFiltered.map(r => r.session), _filterSession);
-
-  // Subject dropdown: filtered by campus + session
-  const sessFiltered = _filterSession.length
-    ? campFiltered.filter(r => _filterSession.includes(r.session))
-    : campFiltered;
-  repopDynDropdown('enrMsSubjectDropdown', 'enr-ms-subject-cb',
-    sessFiltered.map(r => r.subject), _filterSubject);
-
-  // Batch# dropdown: filtered by session + subject
-  const subjFiltered = _filterSubject.length
-    ? sessFiltered.filter(r => _filterSubject.includes(r.subject))
-    : sessFiltered;
-  repopDynDropdown('enrMsBatchDropdown', 'enr-ms-batch-cb',
-    subjFiltered.map(r => r.batchNo), _filterBatch);
-
-  // Teacher dropdown: filtered by session + subject
-  repopDynDropdown('enrMsTeacherDropdown', 'enr-ms-teacher-cb',
-    subjFiltered.map(r => r.teacher).filter(t => t && t !== '—'), _filterTeacher);
-
-  // Wire search for status dropdown too
-  const statusDd = _container.querySelector('#enrMsStatusDropdown');
-  const statusSearch = statusDd?.querySelector('.enr-ms-search');
-  if (statusSearch) {
-    statusSearch.oninput = () => {
-      const q = statusSearch.value.toLowerCase();
-      const list = statusDd.querySelector('.enr-ms-list') || statusDd;
-      list.querySelectorAll('.enr-ms-option').forEach(opt => {
-        const txt = opt.textContent.toLowerCase();
-        opt.style.display = txt.includes(q) ? '' : 'none';
-      });
-    };
-  }
-  _enrSyncAllLabels();
-  _enrRenderChips();
-
-  // ── Sorting ───────────────────────────────────────────────
-  if (_sortCol) {
-    displayRows = [...displayRows].sort((a, b) => {
-      let av = '', bv = '';
-      switch (_sortCol) {
-        case 'student':   av = a.studentName;    bv = b.studentName;    break;
-        case 'campus':    av = a.campus;         bv = b.campus;         break;
-        case 'subject':   av = a.subject;        bv = b.subject;        break;
-        case 'batchNo':   av = a.batchNo;        bv = b.batchNo;        break;
-        case 'session':   av = a.session;        bv = b.session;        break;
-        case 'teacher':   av = a.teacher;        bv = b.teacher;        break;
-        case 'startDate': av = a.startDate;      bv = b.startDate;      break;
-        case 'endDate':   av = a.endDate;        bv = b.endDate;        break;
-        case 'status':    av = a.subjectStatus;  bv = b.subjectStatus;  break;
-      }
-      av = (av || '').toString().toLowerCase();
-      bv = (bv || '').toString().toLowerCase();
-      if (av < bv) return _sortDir === 'asc' ? -1 : 1;
-      if (av > bv) return _sortDir === 'asc' ?  1 : -1;
-      return 0;
-    });
-  }
-
-  // ── Update sort icons in headers ──────────────────────────
-  _container.querySelectorAll('.enr-sort-icon').forEach(icon => {
-    const col = icon.dataset.col;
-    if (col === _sortCol) {
-      icon.textContent = _sortDir === 'asc' ? ' ↑' : ' ↓';
-      icon.style.color = 'var(--blue)';
-      icon.closest('th').style.color = 'var(--blue)';
-    } else {
-      icon.textContent = '';
-      icon.closest('th').style.color = '';
-    }
-  });
-
-  tbody.innerHTML = displayRows.map((r, i) => {
-    const statusOpts = ENR_SUBJ_STATUS_OPTS.map(o =>
-      `<option value="${o.value}" ${r.subjectStatus === o.value ? 'selected' : ''}>${o.label}</option>`
-    ).join('');
-
-    return `
-    <tr class="${_selected.has(r._enrolmentId) ? 'enr-row-selected' : ''}" data-enrolment-id="${r._enrolmentId}">
-      <td style="text-align:center">
-        <input type="checkbox" class="enr-row-chk enr-chk-row"
-          data-id="${r._enrolmentId}"
-          ${_selected.has(r._enrolmentId) ? 'checked' : ''}/>
-      </td>
-      <td>
-        <div class="enr-name">${r.studentName}</div>
-        <div class="enr-cnic">${r.studentCnic}</div>
-      </td>
-      <td style="font-size:12px;color:var(--t2);white-space:nowrap">${r.campus || '—'}</td>
-      <td><span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--violet)">${r.subject}</span></td>
-      <td style="text-align:center"><span style="font-family:var(--font-mono);font-size:12px">${r.batchNo}</span></td>
-      <td><span style="font-size:12px">${r.session}</span></td>
-      <td style="font-size:12px;color:var(--t2)">${r.teacher || '—'}</td>
-      <td style="font-size:12px;color:var(--t2)">${r.startDate || '—'}</td>
-      <td style="font-size:12px;color:var(--t2)">${r.endDate || '—'}</td>
-      <td style="font-size:12px;color:var(--t3)">${r.duration}</td>
-      <td>
-        <select class="enr-subj-status-sel enr-select" style="padding:4px 8px;font-size:12px"
-          data-enrolment-id="${r._enrolmentId}"
-          data-subject-idx="${r._subjectIdx}"
-          data-subject-id="${r._subjectId}">
-          ${statusOpts}
-        </select>
-      </td>
-      <td style="font-size:12px;color:var(--t2);max-width:160px">
-        <span title="${r.note || ''}" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">
-          ${r.note || '—'}
-        </span>
-      </td>
-      ${canWrite ? `
-      <td>
-        <div class="enr-actions">
-          <button class="enr-icon-btn edit" data-id="${r._enrolmentId}" title="Edit">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
-          <button class="enr-icon-btn del" data-id="${r._enrolmentId}" title="Delete">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M10 11v6"/><path d="M14 11v6"/>
-              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-            </svg>
-          </button>
-        </div>
-      </td>` : ''}
-    </tr>`;
-  }).join('');
-
-  // ── Wire row checkboxes ──────────────────────────────────
-  function syncBulkBar() {
-    const bar      = _container.querySelector('#enrBulkBar');
-    const countEl  = _container.querySelector('#enrBulkCount');
-    const chkAll   = _container.querySelector('#enrChkAll');
-    if (!bar) return;
-    if (_selected.size > 0) {
-      bar.style.display = 'flex';
-      countEl.textContent = _selected.size + ' row' + (_selected.size > 1 ? 's' : '') + ' selected';
-    } else {
-      bar.style.display = 'none';
-    }
-    // sync select-all checkbox state
-    const visibleIds = displayRows.map(r => r._enrolmentId);
-    const allChecked = visibleIds.length > 0 && visibleIds.every(id => _selected.has(id));
-    if (chkAll) chkAll.checked = allChecked;
-  }
-
-  tbody.querySelectorAll('.enr-chk-row').forEach(chk => {
-    chk.addEventListener('change', () => {
-      const id  = chk.dataset.id;
-      const row = tbody.querySelector(`tr[data-enrolment-id="${id}"]`);
-      if (chk.checked) {
-        _selected.add(id);
-        row?.classList.add('enr-row-selected');
-      } else {
-        _selected.delete(id);
-        row?.classList.remove('enr-row-selected');
-      }
-      syncBulkBar();
-    });
-  });
-
-  // select-all
-  const chkAllEl = _container.querySelector('#enrChkAll');
-  if (chkAllEl) {
-    chkAllEl.addEventListener('change', () => {
-      displayRows.forEach(r => {
-        if (chkAllEl.checked) _selected.add(r._enrolmentId);
-        else                  _selected.delete(r._enrolmentId);
-      });
-      renderTable(); // re-render to reflect check states
-    });
-  }
-
-  syncBulkBar();
-
-  // ── Wire inline status dropdowns ──────────────────────────
-  tbody.querySelectorAll('.enr-subj-status-sel').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const enrolmentId = sel.dataset.enrolmentId;
-      const subjectIdx  = parseInt(sel.dataset.subjectIdx);
-      const newStatus   = sel.value;
-      const enrolment   = EnrolmentService.getById(enrolmentId);
-      if (!enrolment) return;
-
-      const user = AppState.get('currentUser')?.username || null;
-
-      if (subjectIdx >= 0 && Array.isArray(enrolment.subjects) && enrolment.subjects[subjectIdx]) {
-        // Update the specific subject's status
-        const updatedSubjects = enrolment.subjects.map((sub, idx) =>
-          idx === subjectIdx ? { ...sub, status: newStatus } : sub
-        );
-        const r = EnrolmentService.update(enrolmentId, { subjects: updatedSubjects }, user);
-        if (r.success) { Toast.success('Status updated.'); renderSummary(); }
-        else Toast.error(r.message || 'Update failed.');
-      } else {
-        // No subjects array — update top-level status
-        const r = EnrolmentService.update(enrolmentId, { status: newStatus }, user);
-        if (r.success) { Toast.success('Status updated.'); renderSummary(); }
-        else Toast.error(r.message || 'Update failed.');
-      }
-    });
-  });
-
-  // ── Wire edit / delete buttons ────────────────────────────
-  tbody.querySelectorAll('.enr-icon-btn.edit').forEach(btn =>
-    btn.addEventListener('click', () => openEditRowModal(btn.dataset.id))
-  );
-  tbody.querySelectorAll('.enr-icon-btn.del').forEach(btn =>
-    btn.addEventListener('click', () => confirmDelete(btn.dataset.id))
-  );
 }
 
-// ══════════════════════════════════════════════════════════════
-// INLINE ROW EDIT MODAL — Edit a single enrolment's editable fields
-// (student name is read-only; status, dates, notes are editable)
-// ══════════════════════════════════════════════════════════════
-function openEditRowModal(enrolmentId) {
-  const enrolment = EnrolmentService.getById(enrolmentId);
-  if (!enrolment) return;
+// ── CNIC live-format helper ───────────────────────────────────
+function _wireCNICInput(input, previewEl, hintEl) {
+  input.addEventListener('input', function() {
+    const raw    = input.value;
+    const digits = cnicDigitsOnly(raw);
+    const result = validateCNIC(raw);
 
-  const enriched    = EnrolmentService.getEnriched().find(x => x.id === enrolmentId);
-  const studentName = enriched?.studentName || '—';
+    if (!raw.includes('-') && digits.length >= 5) {
+      let f = digits.slice(0, 5);
+      if (digits.length > 5)  f += '-' + digits.slice(5, 12);
+      if (digits.length > 12) f += '-' + digits.slice(12, 13);
+      if (f !== raw) input.value = f;
+    }
 
-  const overlay = document.createElement('div');
-  overlay.className = 'enr-overlay';
+    if (!digits.length) {
+      previewEl.textContent = ''; previewEl.className = 'cnic-preview';
+      hintEl.textContent = 'Format: XXXXX-XXXXXXX-X  (13 digits)';
+    } else if (result.valid) {
+      previewEl.textContent = '✓ ' + result.formatted;
+      previewEl.className   = 'cnic-preview ok';
+      hintEl.textContent    = '';
+      input.value           = result.formatted;
+      input.classList.remove('inp-err');
+    } else {
+      previewEl.textContent = digits.length + '/13';
+      previewEl.className   = 'cnic-preview bad';
+      hintEl.textContent    = digits.length < 13 ? 'Keep typing…' : result.message;
+    }
+  });
 
-  const ENR_SUBJ_STATUS_OPTS = [
-    { value: 'active',        label: 'Active' },
-    { value: 'dormant',       label: 'Dormant' },
-    { value: 'exempt',        label: 'Exempt' },
-    { value: 'change_campus', label: 'Change Campus' },
-    { value: 'left_study',    label: 'Left Study' },
-    { value: 'left_campus',   label: 'Left Campus' },
-  ];
+  input.addEventListener('blur', function() {
+    const raw = input.value.trim();
+    if (!raw) { input.classList.remove('inp-err'); return; }
+    const result = validateCNIC(raw);
+    if (result.valid) {
+      input.value = result.formatted;
+      input.classList.remove('inp-err');
+      previewEl.textContent = '✓ ' + result.formatted;
+      previewEl.className   = 'cnic-preview ok';
+      hintEl.textContent    = '';
+    } else {
+      input.classList.add('inp-err');
+      previewEl.textContent = '✗ Invalid';
+      previewEl.className   = 'cnic-preview bad';
+      hintEl.textContent    = result.message;
+    }
+  });
+}
 
-  const statusOpts = ENR_SUBJ_STATUS_OPTS
-    .map(o => `<option value="${o.value}" ${enrolment.status === o.value ? 'selected' : ''}>${o.label}</option>`)
-    .join('');
+// ── Form HTML ─────────────────────────────────────────────────
+function _buildFormHTML(existing) {
+  existing = existing || null;
+  const disciplines = AppState.get('disciplines') || [];
+  const cnicVal     = existing?.cnic || '';
+  const admDate     = existing?.dateOfAdmission || '';
+  const session     = existing ? existing.session : (admDate ? sessionFromDate(admDate) : '');
 
-  overlay.innerHTML = `
-<div class="enr-modal" style="max-width:480px">
-  <div class="enr-modal-hdr">
-    <span class="enr-modal-title">Edit Enrolment</span>
-    <button class="enr-modal-close" id="enrEditClose">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  return `
+  <div class="stu-form">
+
+    <!-- Student ID (read-only, auto-generated) -->
+    ${existing ? `
+    <div class="form-group">
+      <label class="form-label">Student ID
+        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(system-generated)</span>
+      </label>
+      <div class="readonly-field">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--violet)" stroke-width="2.5">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <span style="font-family:'Inter','Segoe UI',system-ui,sans-serif;font-weight:700;color:var(--violet);letter-spacing:.03em">${existing.studentId || '—'}</span>
+      </div>
+    </div>` : `
+    <div class="form-group" style="padding:8px 12px;background:var(--blue-dim);border-radius:var(--r-sm);
+         font-size:12px;color:var(--blue);display:flex;align-items:center;gap:8px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-    </button>
-  </div>
-  <div class="enr-modal-body">
-    <div class="enr-field">
-      <label class="enr-label">Student</label>
-      <input class="enr-input" value="${studentName}" disabled style="opacity:.6;cursor:not-allowed"/>
-    </div>
-    <div class="enr-field">
-      <label class="enr-label">Enrolment Date</label>
-      <input id="enrEditDate" type="date" class="enr-input" value="${enrolment.enrolmentDate || ''}"/>
-    </div>
-    <div class="enr-field">
-      <label class="enr-label">Status</label>
-      <select id="enrEditStatus" class="enr-input">${statusOpts}</select>
-    </div>
-    <div class="enr-field">
-      <label class="enr-label">Notes</label>
-      <textarea id="enrEditNotes" class="enr-input" rows="3" style="resize:vertical">${enrolment.notes || ''}</textarea>
-    </div>
-  </div>
-  <div class="enr-modal-footer">
-    <button class="enr-btn enr-btn-ghost" id="enrEditCancel">Cancel</button>
-    <button class="enr-btn enr-btn-primary" id="enrEditSave">Save Changes</button>
-  </div>
-</div>`;
+      Student ID will be auto-generated on save (10-digit: Discipline + Month + Year + Sequence + Gender)
+    </div>`}
 
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+    <!-- CNIC -->
+    <div class="form-group">
+      <label class="form-label">CNIC
+        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional — can be added later)</span>
+      </label>
+      <div class="cnic-wrap">
+        <input name="cnicRaw" id="frmCNIC" class="form-input"
+               placeholder="3520212345678  or  35202-1234567-8"
+               value="${cnicVal}" autocomplete="off" maxlength="15"/>
+        <span class="cnic-preview" id="cnicPreview">${cnicVal ? '✓ ' + cnicVal : ''}</span>
+      </div>
+      <span class="cnic-hint" id="cnicHint">Format: XXXXX-XXXXXXX-X &nbsp;(dashes auto-added)</span>
+    </div>
 
-  overlay.querySelector('#enrEditClose').addEventListener('click', close);
-  overlay.querySelector('#enrEditCancel').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    <!-- Name -->
+    <div class="form-group">
+      <label class="form-label">Full Name <span class="req">*</span></label>
+      <input name="studentName" class="form-input" placeholder="e.g. Muhammad Ali"
+             value="${existing?.studentName || ''}"/>
+    </div>
 
-  overlay.querySelector('#enrEditSave').addEventListener('click', () => {
-    const status        = overlay.querySelector('#enrEditStatus').value;
-    const enrolmentDate = overlay.querySelector('#enrEditDate').value;
-    const notes         = overlay.querySelector('#enrEditNotes').value;
-    const user          = AppState.get('currentUser')?.username || null;
+    <!-- Father Name -->
+    <div class="form-group">
+      <label class="form-label">Father's Name</label>
+      <input name="fatherName" class="form-input" placeholder="e.g. Ahmad Ali"
+             value="${existing?.fatherName || ''}"/>
+    </div>
 
-    const result = EnrolmentService.update(enrolmentId, { status, enrolmentDate, notes }, user);
-    if (result.success) {
-      Toast.success('Enrolment updated.');
-      close();
-      renderTable();
-      renderSummary();
-    } else {
-      Toast.error(result.message || 'Update failed.');
-    }
-  });
+    <!-- Phone Numbers -->
+    <div class="form-row-2">
+      <div class="form-group">
+        <label class="form-label">Student Phone</label>
+        <input name="studentPhone" class="form-input" placeholder="e.g. 0300-1234567"
+               value="${existing?.studentPhone || ''}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Guardian Phone</label>
+        <input name="guardianPhone" class="form-input" placeholder="e.g. 0321-9876543"
+               value="${existing?.guardianPhone || ''}"/>
+      </div>
+    </div>
+
+    <!-- Qualification + District + Province -->
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Qualification</label>
+        <input name="qualification" class="form-input" placeholder="e.g. Matric, FA, BA"
+               value="${existing?.qualification || ''}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">District</label>
+        <input name="district" class="form-input" placeholder="e.g. Rawalpindi"
+               value="${existing?.district || ''}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Province</label>
+        <input name="province" class="form-input" placeholder="e.g. Punjab, Sindh"
+               value="${existing?.province || ''}"/>
+      </div>
+    </div>
+
+    <!-- Gender + Discipline (side by side) -->
+    <div class="form-row-2">
+      <div class="form-group">
+        <label class="form-label">Gender <span class="req">*</span></label>
+        <select name="gender" class="form-select">
+          <option value="">Select gender…</option>
+          <option value="male"   ${(existing?.gender || '') === 'male'   ? 'selected' : ''}>Male</option>
+          <option value="female" ${(existing?.gender || '') === 'female' ? 'selected' : ''}>Female</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Discipline <span class="req">*</span></label>
+        <select name="disciplineId" class="form-select">
+          <option value="">Select discipline…</option>
+          ${disciplines.map(function(d) {
+            return '<option value="' + d.id + '"' + (d.id === existing?.disciplineId ? ' selected' : '') + '>' +
+                   d.abbreviation + ' — ' + d.fullName + '</option>';
+          }).join('')}
+        </select>
+      </div>
+    </div>
+
+    <!-- Date of Admission + Session (auto) -->
+    <div class="form-row-2">
+      <div class="form-group">
+        <label class="form-label">Date of Admission <span class="req">*</span></label>
+        <input type="date" name="dateOfAdmission" id="frmAdmDate" class="form-input"
+               value="${admDate}"/>
+        <span class="form-hint">Session is auto-detected from this date</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Session
+          <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(auto)</span>
+        </label>
+        <div class="readonly-field" id="frmSession">
+          ${session
+            ? '<span class="session-badge">' + session + '</span><span style="font-size:11px;color:var(--t3);margin-left:6px">' + sessionLabel(session) + '</span>'
+            : '<span style="color:var(--t4);font-style:italic">Fill admission date</span>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Admission Batch -->
+    <div class="form-group">
+      <label class="form-label">Admission Batch
+        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional)</span>
+      </label>
+      <input name="admissionBatch" class="form-input" placeholder="e.g. Batch-1, Fall-2025, Morning"
+             value="${existing?.admissionBatch || ''}"/>
+      <span class="form-hint">Group students by batch for easy filtering and reporting</span>
+    </div>
+
+    <!-- Campus -->
+    <div class="form-group">
+      <label class="form-label">Campus
+        <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(optional)</span>
+      </label>
+      <select name="campusId" class="form-select">
+        <option value="">Select campus…</option>
+        ${(AppState.get('campuses') || []).map(function(c) {
+          return '<option value="' + c.id + '"' + (c.id === (existing?.campusId || '') ? ' selected' : '') + '>' + c.campusName + '</option>';
+        }).join('')}
+      </select>
+      <span class="form-hint">Campus name is saved as a snapshot — safe even if the campus is renamed later</span>
+    </div>
+
+    <!-- Route (shown only when discipline has routes) -->
+    <div class="form-group" id="frmRouteGroup" style="display:none">
+      <label class="form-label">Route <span class="req">*</span></label>
+      <select name="route" id="frmRoute" class="form-select">
+        <option value="">Select route…</option>
+      </select>
+      <span class="form-hint" id="frmRouteHint">Routes are defined in the discipline settings.</span>
+    </div>
+
+    <!-- Exemption checkbox (shown after route is selected) -->
+    <div class="form-group" id="frmExemptChkGroup" style="display:none">
+      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="frmExemptChk"
+               style="width:14px;height:14px;accent-color:#4f85f7"/>
+        <span class="form-label" style="margin:0">Has Exemption</span>
+      </label>
+      <span class="form-hint" style="margin-top:4px;display:block">
+        Tick if this student has subject exemptions based on their route.
+      </span>
+    </div>
+
+    <!-- Exemption paper selects (one per exemption type, shown when checkbox ticked) -->
+    <div class="form-group" id="frmExemptGroup" style="display:none">
+      <label class="form-label">Exempted Subjects
+        <span id="frmExemptCountBadge" style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none;margin-left:4px"></span>
+      </label>
+      <!-- Exemption count input -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <label style="font-size:12px;color:var(--t2);font-weight:600;white-space:nowrap">Number of Exemptions:</label>
+        <input type="number" id="frmExemptCount" min="1" max="20"
+               value="${existing?.exemptedPapers?.count || 1}"
+               style="width:70px;height:34px;padding:0 10px;background:var(--surface2);
+                      border:1px solid var(--border);border-radius:var(--r-sm);
+                      color:var(--t1);font-size:13px;font-weight:700;outline:none;
+                      text-align:center"/>
+        <span style="font-size:11.5px;color:var(--t3)">Type a number — selects will update automatically</span>
+      </div>
+      <div id="frmExemptSelects" style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+        <!-- Dynamically populated: one select per exemption count -->
+      </div>
+      <span class="form-hint" style="margin-top:6px;display:block">
+        Each row is one exempt subject slot. Each subject can only be selected once.
+      </span>
+      <div id="frmExemptSelected" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;min-height:0"></div>
+    </div>
+
+    <span id="frmErrMsg" class="err-msg" style="display:none"></span>
+  </div>`;
 }
 
-// ══════════════════════════════════════════════════════════════
-// MODAL — Add / Edit (bulk enrolment wizard)
-// ══════════════════════════════════════════════════════════════
-function openModal(enrolmentId = null) {
-  const isEdit   = !!enrolmentId;
-  const existing = isEdit ? EnrolmentService.getById(enrolmentId) : null;
+// Wire date → session auto-fill + discipline → route options + route → exemption paper picker
+function _wireForm(modalEl, existing) {
+  const cnicInput    = modalEl.querySelector('#frmCNIC');
+  const cnicPrev     = modalEl.querySelector('#cnicPreview');
+  const cnicHint     = modalEl.querySelector('#cnicHint');
+  const admDate      = modalEl.querySelector('#frmAdmDate');
+  const sessionDiv   = modalEl.querySelector('#frmSession');
+  const discSel      = modalEl.querySelector('[name="disciplineId"]');
+  const routeGroup   = modalEl.querySelector('#frmRouteGroup');
+  const routeSel     = modalEl.querySelector('#frmRoute');
+  const routeHint    = modalEl.querySelector('#frmRouteHint');
+  const exemptGrp    = modalEl.querySelector('#frmExemptGroup');
+  const selectedWrap = modalEl.querySelector('#frmExemptSelected');
 
-  // ── Local form state ──────────────────────────────────────
-  let _selCampus   = existing?.campusId       || '';
-  let _selSession  = existing?.session        || '';
-  let _selAdmBatch = existing?.admissionBatch || '';
+  // Currently selected paper snapshots
+  let selectedPapers = (existing?.exemptedPapers?.papers || []).slice();
 
-  // _selectedSubjects: array of subjectId strings (order matters — becomes column order)
-  let _selectedSubjects = existing?.subjects
-    ? existing.subjects.map(x => x.subjectId)
-    : [];
-
-  // _studentRows: array of student objects, each has:
-  //   { ...studentData, _enrolled: bool, _subjectData: { [subjectId]: { session, batchNo, batchId } } }
-  let _studentRows = [];
-
-  // _firstRowSet: tracks if first-row auto-fill has been triggered per subject
-  // { [subjectId]: { session: str, batchNo: str } }
-  let _firstRowData = {};
-
-  // ── Inject modal-specific styles once ────────────────────
-  if (!document.getElementById('enr-modal-css')) {
-    const st = document.createElement('style');
-    st.id = 'enr-modal-css';
-    st.textContent = `
-      /* Conflict modal */
-      .enr-conflict-wrap{display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;padding-right:4px}
-      .enr-conflict-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
-        padding:10px 14px;border-radius:var(--r-sm);border:1px solid var(--red-dim);
-        background:color-mix(in srgb,var(--red-dim) 40%,transparent)}
-      .enr-conflict-info{display:flex;flex-direction:column;gap:3px}
-      .enr-conflict-name{font-size:13px;font-weight:600;color:var(--t1)}
-      .enr-conflict-detail{font-size:11.5px;color:var(--t3)}
-      .enr-conflict-remove{border:none;background:var(--red-dim);color:var(--red);
-        border-radius:var(--r-sm);padding:5px 12px;font-size:12px;font-weight:600;
-        cursor:pointer;white-space:nowrap;flex-shrink:0;transition:opacity .15s}
-      .enr-conflict-remove:hover{opacity:.75}
-      .enr-conflict-remove.removed{background:var(--surface3);color:var(--t3);cursor:default;opacity:.5}
-
-      /* Section boxes */
-      .enrs-box{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px 16px}
-      .enrs-box-title{font-size:11.5px;font-weight:700;color:var(--t2);text-transform:uppercase;
-        letter-spacing:.06em;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-      .enrs-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
-        border-radius:50%;background:var(--blue);color:#fff;font-size:11px;font-weight:800;flex-shrink:0}
-
-      /* Multi-select subject dropdown */
-      .enrs-subj-dropdown{position:relative}
-      .enrs-subj-trigger{display:flex;align-items:center;gap:8px;padding:9px 12px;
-        background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm);
-        cursor:pointer;color:var(--t1);font-size:13px;min-height:40px;flex-wrap:wrap}
-      .enrs-subj-trigger:hover{border-color:var(--blue)}
-      .enrs-subj-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;
-        background:var(--blue-dim);color:var(--blue);border-radius:10px;font-size:11.5px;font-weight:600}
-      .enrs-subj-chip-x{border:none;background:none;color:var(--blue);cursor:pointer;
-        font-size:13px;line-height:1;padding:0 0 0 2px;display:flex;align-items:center}
-      .enrs-subj-chip-x:hover{color:var(--red)}
-      .enrs-subj-placeholder{color:var(--t4);font-size:13px}
-      .enrs-subj-panel{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1000;
-        background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm);
-        box-shadow:var(--shadow-lg);max-height:240px;overflow-y:auto}
-      .enrs-subj-panel-item{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;
-        font-size:13px;color:var(--t1);border-bottom:1px solid var(--border)}
-      .enrs-subj-panel-item:last-child{border-bottom:none}
-      .enrs-subj-panel-item:hover{background:var(--surface2)}
-      .enrs-subj-panel-item.selected{background:var(--blue-dim)}
-      .enrs-subj-panel-item input[type=checkbox]{accent-color:var(--blue);width:15px;height:15px;cursor:pointer}
-      .enrs-subj-code{font-family:var(--font-mono);font-size:11.5px;font-weight:700;
-        color:var(--violet);min-width:48px}
-      .enrs-subj-name{flex:1;color:var(--t2);font-size:12px}
-
-      /* Student matrix table */
-      .enrs-matrix-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-sm)}
-      .enrs-matrix{border-collapse:collapse;font-size:12px;width:100%;min-width:500px}
-      .enrs-matrix th{background:var(--surface3);color:var(--t3);font-size:10px;font-weight:700;
-        text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid var(--border);
-        white-space:nowrap;text-align:left}
-      .enrs-matrix th.subj-col-hdr{background:var(--blue-dim);color:var(--blue);
-        border-bottom:2px solid var(--blue);min-width:220px;vertical-align:top}
-      .enrs-matrix td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
-      .enrs-matrix tbody tr:last-child td{border-bottom:none}
-      .enrs-matrix tbody tr:hover td{background:var(--surface2)}
-
-      /* Cell inputs inside matrix */
-      .enrs-cell-input{background:var(--surface);border:1px solid var(--border2);border-radius:5px;
-        color:var(--t1);font-size:12px;padding:4px 7px;outline:none;width:100%;box-sizing:border-box;
-        transition:border-color .15s}
-      .enrs-cell-input:focus{border-color:var(--blue)}
-      .enrs-cell-select{background:var(--surface);border:1px solid var(--border2);border-radius:5px;
-        color:var(--t1);font-size:12px;padding:4px 7px;outline:none;width:100%;box-sizing:border-box;
-        cursor:pointer}
-      .enrs-cell-select:focus{border-color:var(--blue)}
-
-      /* Subject column sub-header (session + batch fields row) */
-      .enrs-subj-cell{display:flex;flex-direction:column;gap:4px}
-      .enrs-subj-cell-row{display:flex;gap:4px;align-items:center}
-      .enrs-subj-cell-lbl{font-size:9.5px;font-weight:700;color:var(--t4);
-        text-transform:uppercase;letter-spacing:.05em;min-width:38px}
-
-      /* Batch info pill inside cell */
-      .enrs-batch-info{font-size:10px;color:var(--t3);margin-top:2px;display:flex;gap:6px;flex-wrap:wrap}
-      .enrs-batch-info span{background:var(--surface3);padding:1px 6px;border-radius:8px}
-
-      /* Add student row */
-      .enrs-add-row{display:flex;gap:8px;align-items:center;margin-top:10px}
-
-      /* Remove student button */
-      .enrs-rm-btn{width:22px;height:22px;border:none;border-radius:4px;cursor:pointer;
-        background:var(--red-dim);color:var(--red);display:inline-flex;align-items:center;
-        justify-content:center;flex-shrink:0}
-      .enrs-rm-btn:hover{opacity:.75}
-
-      /* Student id mono */
-      .enrs-sid{font-family:var(--font-mono);font-size:10.5px;color:var(--violet)}
-    `;
-    document.head.appendChild(st);
+  // ── CNIC ──
+  if (cnicInput && cnicPrev && cnicHint) {
+    _wireCNICInput(cnicInput, cnicPrev, cnicHint);
+    if (cnicInput.value) cnicInput.dispatchEvent(new Event('input'));
   }
 
-  // ── Overlay ───────────────────────────────────────────────
-  const overlay = document.createElement('div');
-  overlay.className = 'enr-overlay';
-  document.body.appendChild(overlay);
-
-  // ── Shorthand querySelector inside overlay ────────────────
-  function G(id) { return overlay.querySelector('#' + id); }
-
-  // ── Data helpers ──────────────────────────────────────────
-  function getUniqueSessions() {
-    // Sessions from students
-    const fromStudents = (AppState.get('students') || []).map(s => s.session).filter(Boolean);
-    // Sessions from batches
-    const fromBatches  = (AppState.get('batches')  || []).map(b => b.sessionPeriod).filter(Boolean);
-    const all = [...new Set([...fromStudents, ...fromBatches])];
-    return all.sort((a, b) => {
-      const p = v => { const [n, yy] = v.split('-'); return parseInt(yy) * 2 + (n === 'June' ? 1 : 0); };
-      return p(b) - p(a);
+  // ── Session auto-detect ──
+  if (admDate && sessionDiv) {
+    admDate.addEventListener('change', function() {
+      const s = sessionFromDate(admDate.value);
+      sessionDiv.innerHTML = s
+        ? '<span class="session-badge">' + s + '</span><span style="font-size:11px;color:var(--t3);margin-left:6px">' + sessionLabel(s) + '</span>'
+        : '<span style="color:var(--t4);font-style:italic">Fill admission date</span>';
     });
   }
 
-  function getAdmBatches(sess) {
-    if (!sess) return [];
-    return [...new Set((AppState.get('students') || [])
-      .filter(s => s.session === sess && (!_selCampus || s.campusId === _selCampus))
-      .map(s => s.admissionBatch).filter(Boolean))].sort();
-  }
 
-  function getAllSubjects() { return AppState.get('subjects') || []; }
-
-  // Get batches available for a given subjectId (optionally filtered by session)
-  function getBatchesForSubject(subjectId, session) {
-    let batches = AppState.get('batches') || [];
-    if (subjectId) batches = batches.filter(b => b.subjectId === subjectId);
-    if (session)   batches = batches.filter(b => b.sessionPeriod === session);
-    return batches;
-  }
-
-  // Find a batch by subjectId + sessionPeriod + batchNo
-  function findBatch(subjectId, sessionPeriod, batchNo) {
-    if (!subjectId || !sessionPeriod || !batchNo) return null;
-    const no = String(batchNo).trim();
-    return (AppState.get('batches') || []).find(b =>
-      b.subjectId === subjectId &&
-      b.sessionPeriod === sessionPeriod &&
-      (String(b.batchNo) === no || String(b.batchNo).padStart(2,'0') === no.padStart(2,'0'))
-    ) || null;
-  }
-
-  function filterStudents() {
-    let list = AppState.get('students') || [];
-    if (_selCampus)   list = list.filter(s => s.campusId        === _selCampus);
-    if (_selSession)  list = list.filter(s => s.session         === _selSession);
-    if (_selAdmBatch) list = list.filter(s => s.admissionBatch  === _selAdmBatch);
-    // Preserve _enrolled state and _subjectData for already-loaded students
-    _studentRows = list.map(s => {
-      const existing = _studentRows.find(r => r.id === s.id);
-      return existing || { ...s, _enrolled: true, _subjectData: {} };
-    });
-  }
-
-  // ── Subject multi-select dropdown ─────────────────────────
-  let _subjPanelOpen = false;
-
-  function renderSubjectDropdown() {
-    const wrap = G('enrSubjDropWrap');
-    if (!wrap) return;
-    const allSubjs = getAllSubjects();
-
-    const chipsHtml = _selectedSubjects.map(sid => {
-      const sub = allSubjs.find(s => s.id === sid);
-      if (!sub) return '';
-      const code = sub.subjectCode || sub.abbreviation || sub.abbr || sid;
-      return `<span class="enrs-subj-chip">
-        ${code}
-        <button class="enrs-subj-chip-x" data-sid="${sid}" title="Remove">×</button>
-      </span>`;
+    function renderSelectedTags() {
+    if (!selectedWrap) return;
+    if (!selectedPapers.length) {
+      selectedWrap.innerHTML = '<span style="font-size:11.5px;color:var(--t4);font-style:italic">No papers selected yet</span>';
+      return;
+    }
+    selectedWrap.innerHTML = selectedPapers.map(function(p) {
+      return '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;' +
+        'background:var(--blue-dim);border:1px solid var(--blue);border-radius:12px;' +
+        'font-size:11.5px;font-weight:700;color:var(--blue)">' +
+        p.subjectCode +
+        '<button type="button" data-id="' + p.id + '" style="background:none;border:none;' +
+          'cursor:pointer;color:var(--blue);padding:0;line-height:1;font-size:13px" title="Remove">×</button>' +
+        '</span>';
     }).join('');
+    // Wire remove buttons
+    selectedWrap.querySelectorAll('button[data-id]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        selectedPapers = selectedPapers.filter(function(p) { return p.id !== btn.dataset.id; });
+        renderSelectedTags();
+        const discId = discSel?.value;
+        if (discId) renderPicker(discId);
+      });
+    });
+  }
 
-    wrap.innerHTML = `
-      <div class="enrs-subj-dropdown">
-        <div class="enrs-subj-trigger" id="enrSubjTrigger">
-          ${chipsHtml || '<span class="enrs-subj-placeholder">— Select subjects to enrol —</span>'}
-          <svg style="margin-left:auto;flex-shrink:0;color:var(--t3)" width="12" height="12"
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </div>
-        <div class="enrs-subj-panel" id="enrSubjPanel" style="display:${_subjPanelOpen?'block':'none'}">
-          ${allSubjs.map(sub => {
-            const code = sub.subjectCode || sub.abbreviation || sub.abbr || sub.id;
-            const name = sub.name || sub.fullName || sub.title || '';
-            const sel  = _selectedSubjects.includes(sub.id);
-            return `<label class="enrs-subj-panel-item ${sel?'selected':''}" data-sid="${sub.id}">
-              <input type="checkbox" data-sid="${sub.id}" ${sel?'checked':''} />
-              <span class="enrs-subj-code">${code}</span>
-              <span class="enrs-subj-name">${name}</span>
-            </label>`;
-          }).join('')}
-        </div>
-      </div>`;
+  // ── Route options (dynamic from discipline.routes[]) ──
+  function updateRouteOptions(discId) {
+    if (!routeGroup || !routeSel) return;
+    const routes = getDiscRoutes(discId);
+    if (!routes.length) {
+      routeGroup.style.display = 'none';
+      routeSel.innerHTML = '<option value="">Select route…</option>';
+      _hideExemptChk();
+      _hideExemptGroup();
+      return;
+    }
+    routeGroup.style.display = '';
+    // Snapshot: on edit use saved route value, but rebuild options from live discipline
+    const savedRoute = existing?.route || '';
+    routeSel.innerHTML = '<option value="">Select route…</option>' +
+      routes.map(function(r) {
+        return '<option value="' + r + '"' + (r === savedRoute ? ' selected' : '') + '>' + r + '</option>';
+      }).join('');
+    // Restore exemption state if editing
+    _onRouteChange(routeSel.value, discId);
+  }
 
-    // Toggle panel
-    G('enrSubjTrigger').addEventListener('click', e => {
-      _subjPanelOpen = !_subjPanelOpen;
-      const panel = G('enrSubjPanel');
-      if (panel) panel.style.display = _subjPanelOpen ? 'block' : 'none';
+  function _hideExemptChk() {
+    const chkGrp = modalEl.querySelector('#frmExemptChkGroup');
+    if (chkGrp) chkGrp.style.display = 'none';
+    const chk = modalEl.querySelector('#frmExemptChk');
+    if (chk) chk.checked = false;
+  }
+
+  function _hideExemptGroup() {
+    if (exemptGrp) exemptGrp.style.display = 'none';
+    selectedPapers = [];
+  }
+
+  // Build <select>s — count driven by frmExemptCount input
+  function _buildExemptSelects(discId, routeName) {
+    const selectsWrap  = modalEl.querySelector('#frmExemptSelects');
+    const countInput   = modalEl.querySelector('#frmExemptCount');
+    if (!selectsWrap) return;
+
+    // Get subjects that belong to this discipline AND have this route assigned
+    const levels = AppState.get('levels') || [];
+    const discLevelIds = levels
+      .filter(function(l) { return l.disciplineId === discId; })
+      .map(function(l) { return l.id; });
+    const allSubjects = (AppState.get('subjects') || [])
+      .filter(function(s) { return discLevelIds.includes(s.levelId); });
+
+    // Filter: subjects whose routes[] includes the selected route
+    const routeSubjects = allSubjects.filter(function(s) {
+      return Array.isArray(s.routes) && s.routes.includes(routeName);
     });
 
-    // Close panel on outside click
-    document.addEventListener('click', function outsideClick(e) {
-      if (!wrap.contains(e.target)) {
-        _subjPanelOpen = false;
-        const panel = G('enrSubjPanel');
-        if (panel) panel.style.display = 'none';
-        document.removeEventListener('click', outsideClick);
+    // Pool used to populate the dropdowns. If this route doesn't have enough
+    // subjects tagged for it to fill all requested exemption slots, fall back
+    // to ALL of the discipline's subjects so extra slots are still usable.
+    // Route-tagged subjects are listed first.
+    const pickPool = routeSubjects.length
+      ? (function() {
+          const routeIds = routeSubjects.map(function(s) { return s.id; });
+          const rest = allSubjects.filter(function(s) { return !routeIds.includes(s.id); });
+          return routeSubjects.concat(rest);
+        })()
+      : allSubjects;
+
+    // Determine how many selects to show
+    const count = countInput ? Math.max(1, Math.min(20, parseInt(countInput.value) || 1)) : 1;
+
+    function buildSelects() {
+      // Always read the live input from the DOM. The count input gets
+      // replaced (cloneNode/replaceChild) below to re-wire its listener,
+      // so the original `countInput` reference becomes a detached node
+      // whose .value never updates again — using it here would freeze
+      // currentCount at its initial value forever.
+      const liveCountInput = modalEl.querySelector('#frmExemptCount');
+      const currentCount = liveCountInput ? Math.max(1, Math.min(20, parseInt(liveCountInput.value) || 1)) : count;
+      const savedPapers  = existing?.exemptedPapers?.papers || [];
+
+      if (!pickPool.length) {
+        selectsWrap.innerHTML = '<span style="font-size:12px;color:var(--t4);padding:4px 0;display:block">' +
+          'No subjects found for this discipline. Add subjects first.</span>';
+        return;
       }
-    });
 
-    // Checkbox toggles
-    wrap.querySelectorAll('.enrs-subj-panel-item input[type=checkbox]').forEach(cb => {
-      cb.addEventListener('change', e => {
-        e.stopPropagation();
-        const sid = cb.dataset.sid;
-        if (cb.checked) {
-          if (!_selectedSubjects.includes(sid)) _selectedSubjects.push(sid);
-        } else {
-          _selectedSubjects = _selectedSubjects.filter(x => x !== sid);
-          // Clear first-row data for removed subject
-          delete _firstRowData[sid];
-          // Clear all student subject data for this subject
-          _studentRows.forEach(s => { delete s._subjectData[sid]; });
-        }
-        _subjPanelOpen = true; // keep panel open after selection
-        renderSubjectDropdown();
-        renderStudentMatrix();
-      });
-    });
+      const hint = (routeSubjects.length && currentCount > routeSubjects.length)
+        ? '<div style="font-size:11px;color:var(--t4);padding:2px 0 6px 30px">' +
+            'Only ' + routeSubjects.length + ' subject(s) are tagged for route "' + routeName + '". ' +
+            'Showing other discipline subjects for the remaining slot(s).' +
+          '</div>'
+        : '';
 
-    // Chip remove buttons
-    wrap.querySelectorAll('.enrs-subj-chip-x').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const sid = btn.dataset.sid;
-        _selectedSubjects = _selectedSubjects.filter(x => x !== sid);
-        delete _firstRowData[sid];
-        _studentRows.forEach(s => { delete s._subjectData[sid]; });
-        renderSubjectDropdown();
-        renderStudentMatrix();
-      });
-    });
-  }
-
-  // ── Admission batch dropdown ──────────────────────────────
-  function renderAdmBatchOpts() {
-    const sel = G('enrFldAdmBatch');
-    if (!sel) return;
-    const batches = getAdmBatches(_selSession);
-    sel.innerHTML = '<option value="">— All / Any —</option>' +
-      batches.map(b => `<option value="${b}" ${b===_selAdmBatch?'selected':''}>${b}</option>`).join('');
-  }
-
-  // ── Student matrix table ──────────────────────────────────
-  // Columns: # | Name | Disc | [per-subject: Session + BatchNo + BatchName] | Remove
-  function renderStudentMatrix() {
-    const wrap = G('enrMatrixWrap');
-    const countEl = G('enrStudentCount');
-    if (!wrap) return;
-
-    const allSubjs  = getAllSubjects();
-    const selSubjs  = _selectedSubjects.map(sid => allSubjs.find(s => s.id === sid)).filter(Boolean);
-    const discs     = AppState.get('disciplines') || [];
-    const sessions  = getUniqueSessions();
-
-    if (!_selSession) {
-      wrap.innerHTML = `<div style="text-align:center;color:var(--t3);padding:32px;font-size:13px">
-        Select a session above to load students.</div>`;
-      if (countEl) countEl.textContent = '';
-      return;
-    }
-
-    if (!_studentRows.length) {
-      wrap.innerHTML = `<div style="text-align:center;color:var(--t3);padding:32px;font-size:13px">
-        No students found for this session${_selAdmBatch ? ' / '+_selAdmBatch : ''}.</div>`;
-      if (countEl) countEl.textContent = '0 students';
-      return;
-    }
-
-    if (countEl) countEl.textContent = _studentRows.length + ' student' + (_studentRows.length!==1?'s':'') + ' loaded';
-
-    // Build column headers
-    const subjColHeaders = selSubjs.map(sub => {
-      const code = sub.subjectCode || sub.abbreviation || sub.abbr || sub.id;
-      const name = sub.name || sub.fullName || '';
-      return `<th class="subj-col-hdr">
-        <div style="font-size:11px;font-weight:800;color:var(--blue)">${code}</div>
-        ${name ? `<div style="font-size:10px;font-weight:400;color:var(--blue);opacity:.75;margin-top:1px">${name}</div>` : ''}
-      </th>`;
-    }).join('');
-
-    // Build rows
-    const rowsHtml = _studentRows.map((s, idx) => {
-      const disc    = discs.find(d => d.id === s.disciplineId);
-      const discAbbr = disc?.abbreviation || '—';
-
-      const subjCells = selSubjs.map(sub => {
-        const sd       = s._subjectData[sub.id] || {};
-        const sess     = sd.session  || _firstRowData[sub.id]?.session  || '';
-        const bno      = sd.batchNo  || _firstRowData[sub.id]?.batchNo  || '';
-        const matched  = findBatch(sub.id, sess, bno);
-
-        // Build session options
-        const sessOpts = sessions.map(sv =>
-          `<option value="${sv}" ${sv===sess?'selected':''}>${sv}</option>`
-        ).join('');
-
-        // Batch info display — removed for cleaner UI
-        const batchInfoHtml = '';
-
-        return `<td>
-          <div class="enrs-subj-cell">
-            <div class="enrs-subj-cell-row">
-              <span class="enrs-subj-cell-lbl">Session</span>
-              <select class="enrs-cell-select enrs-sess-sel"
-                data-idx="${idx}" data-sid="${sub.id}">
-                <option value="">—</option>
-                ${sessOpts}
-              </select>
-              <span class="enrs-subj-cell-lbl" style="margin-left:6px">Batch #</span>
-              <input type="text" class="enrs-cell-input enrs-bno-inp"
-                data-idx="${idx}" data-sid="${sub.id}"
-                placeholder="e.g. 1" value="${bno}"
-                style="width:56px;flex-shrink:0"/>
-            </div>
-            ${batchInfoHtml}
-          </div>
-        </td>`;
+      // Build N selects based on count
+      selectsWrap.innerHTML = hint + Array.from({ length: currentCount }, function(_, i) {
+        const savedForSlot = savedPapers[i];
+        const selectedId   = savedForSlot ? savedForSlot.id : '';
+        return '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:11px;color:var(--t3);min-width:22px;text-align:right">' + (i + 1) + '.</span>' +
+          '<select data-slot="' + i + '" class="frm-exempt-sel form-select" ' +
+            'style="flex:1;height:36px;background:var(--surface2);border:1px solid var(--border);' +
+            'border-radius:var(--r-sm);color:var(--t1);font-size:12.5px;outline:none">' +
+            '<option value="">— select subject —</option>' +
+            pickPool.map(function(s) {
+              return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
+                s.subjectCode + ' — ' + s.subjectName + '</option>';
+            }).join('') +
+          '</select>' +
+        '</div>';
       }).join('');
 
-      return `<tr data-idx="${idx}">
-        <td style="color:var(--t3);font-size:11px;text-align:center">${idx+1}</td>
-        <td>
-          <div style="font-weight:600;color:var(--t1);font-size:12.5px">${s.studentName}</div>
-          <div class="enrs-sid">${s.studentId || s.id || ''}</div>
-        </td>
-        <td>
-          <span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-dim);
-            padding:2px 7px;border-radius:10px">${discAbbr}</span>
-        </td>
-        ${subjCells}
-        <td style="text-align:center">
-          <button class="enrs-rm-btn" data-idx="${idx}" title="Remove student">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </td>
-      </tr>`;
-    }).join('');
+      // After building, disable already-chosen options in other selects
+      _refreshSelectOptions();
 
-    wrap.innerHTML = `
-      <div class="enrs-matrix-wrap">
-        <table class="enrs-matrix">
-          <thead>
-            <tr>
-              <th style="width:32px">#</th>
-              <th>Student</th>
-              <th>Disc.</th>
-              ${subjColHeaders}
-              <th style="width:32px"></th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>`;
+      // Sync selectedPapers
+      _syncSelectedFromSelects(pickPool);
 
-    // ── Wire session selects ──────────────────────────────
-    wrap.querySelectorAll('.enrs-sess-sel').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const idx = parseInt(sel.dataset.idx);
-        const sid = sel.dataset.sid;
-        const val = sel.value;
+      // Wire change on each select
+      selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
+        sel.addEventListener('change', function() {
+          _refreshSelectOptions();
+          _syncSelectedFromSelects(pickPool);
+          renderSelectedTags();
+        });
+      });
 
-        if (!_studentRows[idx]._subjectData[sid]) _studentRows[idx]._subjectData[sid] = {};
-        _studentRows[idx]._subjectData[sid].session = val;
+      renderSelectedTags();
+    }
 
-        // Auto-fill first-row data
-        if (idx === 0) {
-          if (!_firstRowData[sid]) _firstRowData[sid] = {};
-          _firstRowData[sid].session = val;
-          // Apply to all subsequent rows that haven't been individually set
-          _studentRows.forEach((s, i) => {
-            if (i === 0) return;
-            if (!s._subjectData[sid]) s._subjectData[sid] = {};
-            if (!s._subjectData[sid]._sessionOverride) {
-              s._subjectData[sid].session = val;
-            }
+    // Disable in each select the options that are already chosen in OTHER selects
+    function _refreshSelectOptions() {
+      const allSelects = Array.from(selectsWrap.querySelectorAll('.frm-exempt-sel'));
+      // Collect currently chosen IDs per slot
+      const chosenIds = allSelects.map(function(s) { return s.value; });
+
+      allSelects.forEach(function(sel, idx) {
+        Array.from(sel.options).forEach(function(opt) {
+          if (!opt.value) return; // keep the blank "— select —" always enabled
+          // Disable if another slot (not this one) has already chosen this subject
+          const usedElsewhere = chosenIds.some(function(id, i) {
+            return i !== idx && id === opt.value;
           });
-        } else {
-          // Mark as manually overridden
-          _studentRows[idx]._subjectData[sid]._sessionOverride = true;
-        }
-
-        renderStudentMatrix();
+          opt.disabled = usedElsewhere;
+          opt.style.color = usedElsewhere ? 'var(--t4)' : '';
+        });
       });
-    });
+    }
 
-    // ── Wire batch number inputs ──────────────────────────
-    wrap.querySelectorAll('.enrs-bno-inp').forEach(inp => {
-      inp.addEventListener('input', () => {
-        const idx = parseInt(inp.dataset.idx);
-        const sid = inp.dataset.sid;
-        const val = inp.value.trim();
+    // Initial render
+    buildSelects();
 
-        if (!_studentRows[idx]._subjectData[sid]) _studentRows[idx]._subjectData[sid] = {};
-        _studentRows[idx]._subjectData[sid].batchNo = val;
-
-        // Auto-fill first-row data to subsequent rows
-        if (idx === 0) {
-          if (!_firstRowData[sid]) _firstRowData[sid] = {};
-          _firstRowData[sid].batchNo = val;
-          _studentRows.forEach((s, i) => {
-            if (i === 0) return;
-            if (!s._subjectData[sid]) s._subjectData[sid] = {};
-            if (!s._subjectData[sid]._batchNoOverride) {
-              s._subjectData[sid].batchNo = val;
-            }
-          });
-          // Re-render to show batch info updates downstream
-          // Use debounce-like approach: only re-render if user paused
-          clearTimeout(inp._rt);
-          inp._rt = setTimeout(() => renderStudentMatrix(), 400);
-        } else {
-          _studentRows[idx]._subjectData[sid]._batchNoOverride = true;
-          clearTimeout(inp._rt);
-          inp._rt = setTimeout(() => renderStudentMatrix(), 400);
-        }
+    // Wire count input to rebuild selects dynamically
+    if (countInput) {
+      // Remove old listeners by cloning
+      const newCountInput = countInput.cloneNode(true);
+      countInput.parentNode.replaceChild(newCountInput, countInput);
+      newCountInput.addEventListener('input', function() {
+        buildSelects();
       });
-    });
-
-    // ── Wire remove buttons ───────────────────────────────
-    wrap.querySelectorAll('.enrs-rm-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        _studentRows.splice(parseInt(btn.dataset.idx), 1);
-        renderStudentMatrix();
-        renderAddStudentRow();
-      });
-    });
+    }
   }
 
-  // ── Add individual student row (searchable combobox) ─────
-  function renderAddStudentRow() {
-    const wrap = G('enrAddStudentWrap');
-    if (!wrap) return;
-    const shown = new Set(_studentRows.map(s => s.id));
-    const avail = (AppState.get('students') || []).filter(s => !shown.has(s.id));
-
-    // Inject searchable combobox styles once
-    if (!document.getElementById('enrs-search-sel-css')) {
-      const st = document.createElement('style');
-      st.id = 'enrs-search-sel-css';
-      st.textContent = `
-        .enrs-search-sel-wrap{position:relative;flex:1;min-width:0}
-        .enrs-search-input{width:100%;background:var(--surface2);border:1px solid var(--border2);
-          border-radius:var(--r-sm);color:var(--t1);font-size:13px;padding:8px 32px 8px 10px;
-          outline:none;transition:border-color .15s;box-sizing:border-box}
-        .enrs-search-input:focus{border-color:var(--blue)}
-        .enrs-search-input::placeholder{color:var(--t4)}
-        .enrs-search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);
-          background:none;border:none;cursor:pointer;color:var(--t3);padding:0;
-          display:none;align-items:center;justify-content:center;width:16px;height:16px}
-        .enrs-search-clear:hover{color:var(--t1)}
-        .enrs-search-dropdown{position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:2000;
-          background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm);
-          box-shadow:var(--shadow-lg);max-height:220px;overflow-y:auto;display:none}
-        .enrs-search-dropdown.open{display:block}
-        .enrs-search-item{padding:8px 12px;cursor:pointer;font-size:13px;color:var(--t1);
-          border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:2px}
-        .enrs-search-item:last-child{border-bottom:none}
-        .enrs-search-item:hover,.enrs-search-item.highlighted{background:var(--blue-dim);color:var(--blue)}
-        .enrs-search-item-sub{font-size:11px;color:var(--t3);font-family:var(--font-mono)}
-        .enrs-search-item.highlighted .enrs-search-item-sub{color:var(--blue);opacity:.75}
-        .enrs-search-empty{padding:12px;text-align:center;font-size:12px;color:var(--t3)}
-        .enrs-search-highlight{background:var(--yellow-dim);color:var(--t1);border-radius:2px;
-          font-weight:700;padding:0 1px}
-      `;
-      document.head.appendChild(st);
-    }
-
-    wrap.innerHTML = `
-      <div class="enrs-add-row">
-        <div class="enrs-search-sel-wrap">
-          <input type="text" id="enrAddStudentSearch" class="enrs-search-input"
-            placeholder="— Add individual student — (type to search)" autocomplete="off"/>
-          <button id="enrAddStudentClear" class="enrs-search-clear" tabindex="-1" title="Clear">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-          <div id="enrAddStudentDropdown" class="enrs-search-dropdown"></div>
-        </div>
-        <button id="enrAddStudentBtn" class="enr-btn enr-btn-ghost" style="flex-shrink:0">+ Add</button>
-      </div>`;
-
-    let _selectedStudentId = null;
-    let _highlightIdx = -1;
-
-    const searchInp  = G('enrAddStudentSearch');
-    const dropdown   = G('enrAddStudentDropdown');
-    const clearBtn   = G('enrAddStudentClear');
-    const addBtn     = G('enrAddStudentBtn');
-
-    function highlight(text, query) {
-      if (!query) return text;
-      const idx = text.toLowerCase().indexOf(query.toLowerCase());
-      if (idx === -1) return text;
-      return text.slice(0, idx) +
-        `<mark class="enrs-search-highlight">${text.slice(idx, idx + query.length)}</mark>` +
-        text.slice(idx + query.length);
-    }
-
-    function getFiltered(q) {
-      if (!q.trim()) return avail.slice(0, 50); // show first 50 when empty
-      const ql = q.trim().toLowerCase();
-      return avail.filter(s =>
-        s.studentName.toLowerCase().includes(ql) ||
-        (s.cnic || '').toLowerCase().includes(ql) ||
-        (s.studentId || s.id || '').toLowerCase().includes(ql)
-      ).slice(0, 50);
-    }
-
-    function renderDropdown(q) {
-      const filtered = getFiltered(q);
-      _highlightIdx = -1;
-      if (!filtered.length) {
-        dropdown.innerHTML = `<div class="enrs-search-empty">No students found</div>`;
-      } else {
-        dropdown.innerHTML = filtered.map((s, i) => `
-          <div class="enrs-search-item" data-id="${s.id}" data-idx="${i}">
-            <span>${highlight(s.studentName, q)}</span>
-            ${s.cnic || s.studentId ? `<span class="enrs-search-item-sub">${s.studentId || s.id}${s.cnic ? ' · ' + s.cnic : ''}</span>` : ''}
-          </div>`).join('');
-
-        // Wire click on each item
-        dropdown.querySelectorAll('.enrs-search-item').forEach(item => {
-          item.addEventListener('mousedown', e => {
-            e.preventDefault(); // prevent blur before click
-            const id = item.dataset.id;
-            const st = avail.find(s => s.id === id);
-            if (st) {
-              _selectedStudentId = st.id;
-              searchInp.value = st.studentName + (st.cnic ? ' (' + st.cnic + ')' : '');
-              clearBtn.style.display = 'flex';
-              dropdown.classList.remove('open');
-            }
-          });
+  function _syncSelectedFromSelects(subjectPool) {
+    selectedPapers = [];
+    const selectsWrap = modalEl.querySelector('#frmExemptSelects');
+    if (!selectsWrap) return;
+    selectsWrap.querySelectorAll('.frm-exempt-sel').forEach(function(sel) {
+      const subId = sel.value;
+      if (!subId) return;
+      const sub  = subjectPool.find(function(s) { return s.id === subId; });
+      const live = AppState.findById('subjects', subId);
+      if (sub && !selectedPapers.some(function(p) { return p.id === subId; })) {
+        selectedPapers.push({
+          id:          subId,
+          subjectCode: (live?.subjectCode || sub.subjectCode || '').toUpperCase(),
+          subjectName:  live?.subjectName  || sub.subjectName || '',
         });
       }
-      dropdown.classList.add('open');
-    }
-
-    function moveHighlight(dir) {
-      const items = dropdown.querySelectorAll('.enrs-search-item');
-      if (!items.length) return;
-      items.forEach(i => i.classList.remove('highlighted'));
-      _highlightIdx = (_highlightIdx + dir + items.length) % items.length;
-      const target = items[_highlightIdx];
-      if (target) {
-        target.classList.add('highlighted');
-        target.scrollIntoView({ block: 'nearest' });
-      }
-    }
-
-    function selectHighlighted() {
-      const items = dropdown.querySelectorAll('.enrs-search-item');
-      if (_highlightIdx >= 0 && items[_highlightIdx]) {
-        const id = items[_highlightIdx].dataset.id;
-        const st = avail.find(s => s.id === id);
-        if (st) {
-          _selectedStudentId = st.id;
-          searchInp.value = st.studentName + (st.cnic ? ' (' + st.cnic + ')' : '');
-          clearBtn.style.display = 'flex';
-          dropdown.classList.remove('open');
-        }
-      }
-    }
-
-    searchInp.addEventListener('input', () => {
-      _selectedStudentId = null;
-      const q = searchInp.value;
-      clearBtn.style.display = q ? 'flex' : 'none';
-      renderDropdown(q);
-    });
-
-    searchInp.addEventListener('focus', () => {
-      renderDropdown(searchInp.value);
-    });
-
-    searchInp.addEventListener('blur', () => {
-      // slight delay so mousedown on items fires first
-      setTimeout(() => dropdown.classList.remove('open'), 150);
-    });
-
-    searchInp.addEventListener('keydown', e => {
-      if (!dropdown.classList.contains('open')) return;
-      if (e.key === 'ArrowDown') { e.preventDefault(); moveHighlight(1); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); moveHighlight(-1); }
-      else if (e.key === 'Enter') { e.preventDefault(); selectHighlighted(); }
-      else if (e.key === 'Escape') { dropdown.classList.remove('open'); }
-    });
-
-    clearBtn.addEventListener('click', () => {
-      _selectedStudentId = null;
-      searchInp.value = '';
-      clearBtn.style.display = 'none';
-      searchInp.focus();
-    });
-
-    addBtn.addEventListener('click', () => {
-      if (!_selectedStudentId) { Toast.error('Pehle student select karein.'); return; }
-      const st = (AppState.get('students') || []).find(s => s.id === _selectedStudentId);
-      if (st) {
-        _studentRows.push({ ...st, _enrolled: true, _subjectData: {} });
-        renderStudentMatrix();
-        renderAddStudentRow();
-      }
     });
   }
 
-  // ── Collect subject assignments from student rows ─────────
-  // Returns array of subject records for saving
-  function collectSubjectsForStudent(studentRow) {
-    const allSubjs = getAllSubjects();
-    return _selectedSubjects.map(sid => {
-      const sd      = studentRow._subjectData[sid] || {};
-      const sess    = sd.session || _firstRowData[sid]?.session || '';
-      const bno     = sd.batchNo || _firstRowData[sid]?.batchNo || '';
-      const matched = findBatch(sid, sess, bno);
-      const sub     = allSubjs.find(s => s.id === sid);
+  function _onRouteChange(routeName, discId) {
+    const chkGrp = modalEl.querySelector('#frmExemptChkGroup');
+    const chk    = modalEl.querySelector('#frmExemptChk');
+    if (!routeName || !discId) {
+      _hideExemptChk();
+      _hideExemptGroup();
+      return;
+    }
+    // Show exemption checkbox for any route
+    if (chkGrp) chkGrp.style.display = '';
+    // Restore checked state on edit
+    const hadExemption = !!(existing?.exemptedPapers?.count);
+    if (chk && hadExemption && existing?.route === routeName) {
+      chk.checked = true;
+      if (exemptGrp) exemptGrp.style.display = '';
+      _buildExemptSelects(discId, routeName);
+    } else if (chk && !hadExemption) {
+      chk.checked = false;
+      _hideExemptGroup();
+    }
+    if (chk) {
+      // Re-wire checkbox (remove old listener first by cloning)
+      const newChk = chk.cloneNode(true);
+      chk.parentNode.replaceChild(newChk, chk);
+      newChk.addEventListener('change', function() {
+        if (newChk.checked) {
+          if (exemptGrp) exemptGrp.style.display = '';
+          _buildExemptSelects(discId, routeName);
+        } else {
+          _hideExemptGroup();
+        }
+      });
+    }
+  }
+
+  if (discSel) {
+    discSel.addEventListener('change', function() {
+      selectedPapers = [];
+      updateRouteOptions(discSel.value);
+    });
+    if (discSel.value) updateRouteOptions(discSel.value);
+  }
+
+  if (routeSel) {
+    routeSel.addEventListener('change', function() {
+      _onRouteChange(routeSel.value, discSel?.value);
+    });
+  }
+
+  // Expose selectedPapers to _collectForm via the DOM
+  modalEl._getSelectedPapers = function() { return selectedPapers; };
+}
+
+function _collectForm(modalEl) {
+  const g = function(name) {
+    const el = modalEl.querySelector('[name="' + name + '"]');
+    return el ? el.value.trim() : '';
+  };
+  const route = g('route');
+  let exemptedPapers = null;
+  const exemptChk = modalEl.querySelector('#frmExemptChk');
+  const hasExemption = !!(exemptChk && exemptChk.checked);
+  if (hasExemption) {
+    const papers = modalEl._getSelectedPapers ? modalEl._getSelectedPapers() : [];
+    // Save as snapshot: { id, subjectCode, subjectName } so future subject edits don't corrupt data
+    const snapshots = papers.map(function(p) {
+      const live = AppState.findById('subjects', p.id);
       return {
-        subjectId:  sid,
-        session:    sess,
-        batchNo:    bno,
-        batchId:    matched?.id        || '',
-        batchName:  matched?.batchName || '',
-        startDate:  matched?.startDate || '',
-        endDate:    matched?.endDate   || '',
-        status:     'active',
+        id:          p.id,
+        subjectCode: (live?.subjectCode || p.subjectCode || '').toUpperCase(),
+        subjectName:  live?.subjectName  || p.subjectName  || '',
       };
-    }).filter(x => x.subjectId);
+    }).filter(function(p) { return p.id; });
+    exemptedPapers = {
+      count:  snapshots.length,
+      codes:  snapshots.map(function(p) { return p.subjectCode; }),
+      papers: snapshots,
+    };
   }
+  return {
+    cnicRaw:         g('cnicRaw'),
+    studentName:     g('studentName'),
+    fatherName:      g('fatherName'),
+    gender:          g('gender'),
+    studentPhone:    g('studentPhone'),
+    guardianPhone:   g('guardianPhone'),
+    qualification:   g('qualification'),
+    district:        g('district'),
+    province:        g('province'),
+    campusId:        g('campusId'),
+    disciplineId:    g('disciplineId'),
+    dateOfAdmission: g('dateOfAdmission'),
+    admissionBatch:  g('admissionBatch'),
+    route,
+    exemptedPapers,
+  };
+}
 
-  // ── Build modal HTML ──────────────────────────────────────
-  const sessions = getUniqueSessions();
-  const campuses = (AppState.get('campuses') || []);
+function _showFormErr(modalEl, msg) {
+  const el = modalEl.querySelector('#frmErrMsg');
+  if (!el) return;
+  el.textContent   = msg;
+  el.style.display = 'block';
+}
 
-  overlay.innerHTML = `
-<div class="enr-modal" style="max-width:900px;width:100%;margin:auto" role="dialog" aria-modal="true">
+// ── Open Add / Edit modal ─────────────────────────────────────
+function _openForm(existing, container) {
+  existing = existing || null;
+  const isEdit = !!existing;
+  let _mid;
 
-  <!-- Header -->
-  <div class="enr-modal-hdr">
-    <span class="enr-modal-title">${isEdit ? 'Edit Enrolment' : 'Add Enrolment'}</span>
-    <button class="enr-modal-close" id="enrModalClose" title="Close">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>
-  </div>
+  _mid = Modal.open({
+    title:   isEdit ? 'Edit Student — ' + existing.studentName : 'Add New Student',
+    size:    'md',
+    body:    _buildFormHTML(existing),
+    actions: [
+      { label: 'Cancel', variant: 'ghost', close: true },
+      {
+        label:   isEdit ? 'Save Changes' : 'Add Student',
+        variant: 'primary',
+        close:   false,
+        handler: function(modalEl) {
+          const errEl = modalEl.querySelector('#frmErrMsg');
+          if (errEl) errEl.style.display = 'none';
 
-  <div class="enr-modal-body">
+          const data   = _collectForm(modalEl);
+          const result = isEdit
+            ? StudentService.updateStudent(existing.id, data)
+            : StudentService.addStudent(data);
 
-    <!-- ① Campus, Session & Admission Batch -->
-    <div class="enrs-box">
-      <div class="enrs-box-title"><span class="enrs-badge">1</span>Session &amp; Admission Batch</div>
-      <div class="enr-form-row" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="enr-field" style="margin-bottom:0">
-          <label class="enr-label">Campus <span style="color:var(--red)">*</span></label>
-          <select id="enrFldCampus" class="enr-select">
-            <option value="">— Select campus —</option>
-            ${campuses.map(c => `<option value="${c.id}" ${c.id===_selCampus?'selected':''}>${c.campusName || c.name || c.id}</option>`).join('')}
-          </select>
-        </div>
-        <div class="enr-field" style="margin-bottom:0">
-          <label class="enr-label">Session <span style="color:var(--red)">*</span></label>
-          <select id="enrFldSession" class="enr-select">
-            <option value="">— Select session —</option>
-            ${sessions.map(sv => `<option value="${sv}" ${sv===_selSession?'selected':''}>${sv}</option>`).join('')}
-          </select>
-        </div>
-        <div class="enr-field" style="margin-bottom:0">
-          <label class="enr-label">Admission Batch
-            <span style="font-size:10px;color:var(--t4);font-weight:400;text-transform:none">(filter students)</span>
-          </label>
-          <select id="enrFldAdmBatch" class="enr-select"><option value="">— All / Any —</option></select>
-        </div>
-      </div>
-    </div>
-
-    <!-- ② Subjects multi-select -->
-    <div class="enrs-box">
-      <div class="enrs-box-title"><span class="enrs-badge">2</span>Subjects
-        <span style="font-size:10.5px;font-weight:400;color:var(--t3);text-transform:none;margin-left:6px">
-          — select all subjects students will be enrolled in
-        </span>
-      </div>
-      <div id="enrSubjDropWrap"></div>
-    </div>
-
-    <!-- ③ Students + Subject-Batch matrix -->
-    <div class="enrs-box">
-      <div class="enrs-box-title" style="justify-content:space-between">
-        <span><span class="enrs-badge">3</span>Students &amp; Subject Batches</span>
-        <span id="enrStudentCount" style="font-size:11px;color:var(--t3);font-weight:400;text-transform:none"></span>
-      </div>
-      <p style="font-size:11.5px;color:var(--t3);margin:0 0 10px">
-        For each student, select the <b>session</b> and type the <b>batch number</b> for each subject.
-        The first student's values auto-fill all others — override individually if needed.
-      </p>
-      <div id="enrMatrixWrap"></div>
-      <div id="enrAddStudentWrap" style="margin-top:10px"></div>
-    </div>
-
-  </div><!-- /body -->
-
-  <div class="enr-modal-footer">
-    <button class="enr-btn enr-btn-ghost"   id="enrModalCancel">Cancel</button>
-    <button class="enr-btn enr-btn-primary" id="enrModalSave">
-      ${isEdit ? 'Save Changes' : 'Enrol Students'}
-    </button>
-  </div>
-
-</div>`;
-
-  // ── Wire close ────────────────────────────────────────────
-  const close = () => overlay.remove();
-  G('enrModalClose').addEventListener('click', close);
-  G('enrModalCancel').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-  // ── Wire campus change ────────────────────────────────────
-  G('enrFldCampus').addEventListener('change', e => {
-    _selCampus   = e.target.value;
-    _selAdmBatch = '';
-    _firstRowData = {};
-    renderAdmBatchOpts();
-    filterStudents();
-    renderStudentMatrix();
-    renderAddStudentRow();
-  });
-
-  // ── Wire session change ───────────────────────────────────
-  G('enrFldSession').addEventListener('change', e => {
-    _selSession  = e.target.value;
-    _selAdmBatch = '';
-    _firstRowData = {}; // reset auto-fill on session change
-    renderAdmBatchOpts();
-    filterStudents();
-    renderStudentMatrix();
-    renderAddStudentRow();
-  });
-
-  G('enrFldAdmBatch').addEventListener('change', e => {
-    _selAdmBatch = e.target.value;
-    filterStudents();
-    renderStudentMatrix();
-    renderAddStudentRow();
-  });
-
-  // ── Initial renders ───────────────────────────────────────
-  renderSubjectDropdown();
-  renderAdmBatchOpts();
-  if (_selSession) {
-    filterStudents();
-  }
-  renderStudentMatrix();
-  renderAddStudentRow();
-
-  // ── Save ──────────────────────────────────────────────────
-  G('enrModalSave').addEventListener('click', () => {
-    const enrolmentDate = new Date().toISOString().slice(0, 10);
-    const status        = 'active';
-    const feeStatus     = 'unpaid';
-    const notes         = '';
-    const user          = AppState.get('currentUser')?.username || null;
-
-    if (isEdit) {
-      // In edit mode, update the single enrolment record
-      const subjects = collectSubjectsForStudent(_studentRows[0] || {});
-      const r = EnrolmentService.update(enrolmentId,
-        { status, feeStatus, enrolmentDate, notes, subjects,
-          session: _selSession, admissionBatch: _selAdmBatch }, user);
-      if (r.success) { Toast.success('Enrolment updated.'); close(); renderTable(); renderSummary(); }
-      else Toast.error(r.message || 'Update failed.');
-      return;
-    }
-
-    // Add mode — enrol each student
-    const toEnrol = _studentRows.filter(s => s._enrolled !== false);
-    if (!toEnrol.length) { Toast.error('No students to enrol. Load students first.'); return; }
-    if (!_selCampus)     { Toast.error('Please select a campus.'); return; }
-    if (!_selSession)    { Toast.error('Please select a session.'); return; }
-
-    // ── Pre-check: find duplicates before saving ──────────────
-    const existingEnrolments = EnrolmentService.getAll();
-    const students           = AppState.get('students') || [];
-    const conflicts = [];
-
-    toEnrol.forEach(s => {
-      const subjects   = collectSubjectsForStudent(s);
-      const primaryBid = subjects[0]?.batchId || '';
-      const isDup = existingEnrolments.some(e =>
-        e.studentId === s.id && e.batchId === primaryBid
-      );
-      if (isDup) {
-        const stu     = students.find(st => st.id === s.id);
-        const existE  = existingEnrolments.find(e => e.studentId === s.id && e.batchId === primaryBid);
-        const enriched = EnrolmentService.getEnriched().find(x => x.id === existE?.id);
-        conflicts.push({
-          studentId:   s.id,
-          studentName: stu?.studentName || s.id,
-          studentCnic: stu?.cnic || '',
-          batchName:   enriched?.batchName || primaryBid,
-          existingId:  existE?.id || '',
-        });
-      }
-    });
-
-    // ── If conflicts found → show conflict modal ──────────────
-    if (conflicts.length) {
-      showConflictModal({
-        conflicts,
-        onProceed: (removedIds) => {
-          // removedIds = studentIds user ne remove kiye
-          const finalList = toEnrol.filter(s => !removedIds.includes(s.id));
-          if (!finalList.length) { Toast.error('No students left to enrol.'); return; }
-          let added = 0, skipped = 0;
-          finalList.forEach(s => {
-            const subjects = collectSubjectsForStudent(s);
-            const r = EnrolmentService.add({
-              studentId: s.id, enrolmentDate, status, feeStatus, notes, subjects,
-              campusId: _selCampus,
-              session: _selSession, admissionBatch: _selAdmBatch,
-              batchId: subjects[0]?.batchId || '',
-            }, user);
-            if (r.success) added++; else skipped++;
-          });
-          close(); renderTable(); renderSummary();
-          if (skipped) Toast.error(added + ' enrolled, ' + skipped + ' skipped.');
-          else Toast.success(added + ' student' + (added !== 1 ? 's' : '') + ' enrolled successfully.');
+          if (!result.success) { _showFormErr(modalEl, result.message); return; }
+          Modal.close(_mid);
+          _rerender(container);
+          Toast.success(isEdit ? 'Student updated.' : 'Student added successfully.');
         },
-      });
-      return;
-    }
-
-    // ── No conflicts — save directly ──────────────────────────
-    let added = 0, skipped = 0;
-    toEnrol.forEach(s => {
-      const subjects = collectSubjectsForStudent(s);
-      const r = EnrolmentService.add({
-        studentId:      s.id,
-        enrolmentDate,
-        status,
-        feeStatus,
-        notes,
-        subjects,
-        campusId:       _selCampus,
-        session:        _selSession,
-        admissionBatch: _selAdmBatch,
-        batchId:        subjects[0]?.batchId || '',
-      }, user);
-      if (r.success) added++; else skipped++;
-    });
-
-    close(); renderTable(); renderSummary();
-    if (skipped) Toast.error(added + ' enrolled, ' + skipped + ' skipped (duplicate or error).');
-    else Toast.success(added + ' student' + (added !== 1 ? 's' : '') + ' enrolled successfully.');
+      },
+    ],
+    onOpen: function(modalEl) { _wireForm(modalEl, existing); },
   });
 }
 
-// ── Conflict Modal — duplicate students dikhao, remove karne do ─
-function showConflictModal({ conflicts, onProceed }) {
-  const removedIds = new Set();
+// ── Delete ────────────────────────────────────────────────────
+function _delete(student, container) {
+  Modal.confirm({
+    title:        'Delete Student',
+    message:      'Delete <strong>' + student.studentName + '</strong>' +
+                  ' (CNIC: ' + (student.cnic || '—') + ')? This cannot be undone.',
+    confirmLabel: 'Delete',
+    danger:       true,
+  }).then(function(confirmed) {
+    if (!confirmed) return;
+    StudentService.deleteStudent(student.id);
+    _rerender(container);
+    Toast.success('Student deleted.');
+  });
+}
 
-  const overlay = document.createElement('div');
-  overlay.className = 'enr-overlay';
+// ── CSV Import modal ──────────────────────────────────────────
+function _openImportModal(container) {
+  let parsedData = null;
+  let _mid;
 
-  function buildRows() {
-    return conflicts.map(c => `
-      <div class="enr-conflict-row" id="crow-${c.studentId}">
-        <div class="enr-conflict-info">
-          <div class="enr-conflict-name">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2.5" style="color:var(--red);margin-right:5px;vertical-align:-1px">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            ${c.studentName}
-          </div>
-          <div class="enr-conflict-detail">
-            ${c.studentCnic ? 'CNIC: ' + c.studentCnic + ' &nbsp;|&nbsp; ' : ''}
-            Pehle se enrolled in: <b>${c.batchName}</b>
-          </div>
-        </div>
-        <button class="enr-conflict-remove" data-sid="${c.studentId}">
-          List se Hata Do
-        </button>
+  const bodyHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="import-drop" id="dropZone">
+        ${ICONS.upload}
+        <p style="margin:10px 0 4px;font-size:13.5px;font-weight:600;color:var(--t1)">
+          Drop CSV file here or click to browse
+        </p>
+        <span style="font-size:12px;color:var(--t3)">
+          Required columns: cnic, studentName, discipline, dateOfAdmission &nbsp;|&nbsp; Optional: admissionBatch
+        </span>
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none"/>
       </div>
-    `).join('');
-  }
+      <div id="importResult"></div>
+    </div>`;
 
-  overlay.innerHTML = `
-<div class="enr-modal" style="max-width:560px">
-  <div class="enr-modal-hdr">
-    <span class="enr-modal-title" style="color:var(--red)">
-      ⚠️ ${conflicts.length} Duplicate Student${conflicts.length > 1 ? 's' : ''} Mili ${conflicts.length > 1 ? 'Hain' : 'Hai'}
-    </span>
-    <button class="enr-modal-close" id="enrCnfClose">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>
-  </div>
-  <div class="enr-modal-body">
-    <p style="font-size:13px;color:var(--t2);margin:0 0 12px;line-height:1.6">
-      Neeche diye gaye students <b>pehle se enrol</b> hain. Inhe list se hata kar baaki students ko 
-      enrol kar sakte hain, ya Cancel karke dobara check kar sakte hain.
-    </p>
-    <div class="enr-conflict-wrap" id="enrConflictList">
-      ${buildRows()}
-    </div>
-  </div>
-  <div class="enr-modal-footer" style="justify-content:space-between">
-    <div style="font-size:12px;color:var(--t3)" id="enrCnfCounter">
-      ${conflicts.length} conflict(s) found — none removed yet
-    </div>
-    <div style="display:flex;gap:10px">
-      <button class="enr-btn enr-btn-ghost" id="enrCnfCancel">Cancel</button>
-      <button class="enr-btn enr-btn-primary" id="enrCnfProceed">
-        Enrol Remaining Students
-      </button>
-    </div>
-  </div>
-</div>`;
+  _mid = Modal.open({
+    title:   'Import Students from CSV',
+    size:    'lg',
+    body:    bodyHTML,
+    actions: [
+      { label: 'Cancel', variant: 'ghost', close: true },
+      {
+        label:   'Import Students',
+        variant: 'primary',
+        close:   false,
+        handler: function() {
+          const valid      = parsedData?.valid      || [];
+          const duplicates = parsedData?.duplicates || [];
 
-  document.body.appendChild(overlay);
+          if (!valid.length && !duplicates.length) {
+            Toast.error('No valid rows to import.'); return;
+          }
 
-  const closeModal = () => overlay.remove();
+          // If there are duplicate rows — show confirm dialog before saving
+          if (duplicates.length) {
+            const dupList = duplicates.map(function(d) {
+              return '<li style="margin-bottom:4px"><b>' + d.studentName + '</b>'
+                + (d.cnic ? ' — ' + d.cnic : '')
+                + ' <span style="color:var(--t3);font-size:11px">(Row ' + d._rowNum + ')</span></li>';
+            }).join('');
 
-  overlay.querySelector('#enrCnfClose').addEventListener('click', closeModal);
-  overlay.querySelector('#enrCnfCancel').addEventListener('click', closeModal);
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+            const confirmOverlay = document.createElement('div');
+            confirmOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+            confirmOverlay.innerHTML = \`
+              <div style="background:var(--surface1);border:1px solid var(--border);border-radius:10px;
+                          padding:28px 28px 22px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <div style="font-size:15px;font-weight:700;color:var(--t1)">${duplicates.length} Student${duplicates.length !== 1 ? 's' : ''} Already Exist</div>
+                </div>
+                <p style="font-size:13px;color:var(--t2);margin:0 0 12px">
+                  The following student${duplicates.length !== 1 ? 's are' : ' is'} already registered in the system (matched by CNIC).
+                  Do you want to import them again or skip?
+                </p>
+                <ul style="margin:0 0 18px;padding-left:18px;max-height:160px;overflow-y:auto;
+                           background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);
+                           border-radius:6px;padding:10px 10px 10px 26px;list-style:disc">
+                  \${dupList}
+                </ul>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <button id="dupSkip"   style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t1);font-size:13px;font-weight:600;cursor:pointer">
+                    Skip Duplicates (${valid.length} new only)
+                  </button>
+                  <button id="dupImport" style="height:36px;padding:0 16px;border-radius:6px;border:none;background:#f59e0b;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+                    Import All (${valid.length + duplicates.length} total)
+                  </button>
+                  <button id="dupCancel" style="height:36px;padding:0 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--t3);font-size:13px;cursor:pointer">
+                    Cancel
+                  </button>
+                </div>
+              </div>\`;
 
-  // ── Wire remove buttons ────────────────────────────────────
-  function updateCounter() {
-    const el = overlay.querySelector('#enrCnfCounter');
-    if (!el) return;
-    const total   = conflicts.length;
-    const removed = removedIds.size;
-    const left    = total - removed;
-    el.textContent = removed === 0
-      ? `${total} conflict — none removed yet`
-      : `${removed} hataye gaye, ${left} baki hain`;
-  }
+            document.body.appendChild(confirmOverlay);
 
-  overlay.querySelectorAll('.enr-conflict-remove').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const sid = btn.dataset.sid;
-      if (removedIds.has(sid)) return;
-      removedIds.add(sid);
+            confirmOverlay.querySelector('#dupCancel').onclick = function() {
+              document.body.removeChild(confirmOverlay);
+            };
+            confirmOverlay.querySelector('#dupSkip').onclick = function() {
+              document.body.removeChild(confirmOverlay);
+              if (!valid.length) { Toast.error('No new students to import.'); return; }
+              const count = StudentService.importStudents(valid);
+              Modal.close(_mid);
+              _rerender(container);
+              Toast.success(count + ' new student' + (count !== 1 ? 's' : '') + ' imported. ' + duplicates.length + ' duplicate' + (duplicates.length !== 1 ? 's' : '') + ' skipped.');
+            };
+            confirmOverlay.querySelector('#dupImport').onclick = function() {
+              document.body.removeChild(confirmOverlay);
+              const count = StudentService.importStudents([...valid, ...duplicates]);
+              Modal.close(_mid);
+              _rerender(container);
+              Toast.success(count + ' student' + (count !== 1 ? 's' : '') + ' imported (including ' + duplicates.length + ' duplicate' + (duplicates.length !== 1 ? 's' : '') + ').');
+            };
+            return;
+          }
 
-      // Visual feedback
-      const row = overlay.querySelector('#crow-' + sid);
-      if (row) {
-        row.style.opacity = '0.45';
-        row.style.textDecoration = 'line-through';
+          // No duplicates — import directly
+          const count = StudentService.importStudents(valid);
+          Modal.close(_mid);
+          _rerender(container);
+          Toast.success(count + ' student' + (count !== 1 ? 's' : '') + ' imported successfully.');
+        },
+      },
+    ],
+    onOpen: function(modalEl) {
+      const dropZone  = modalEl.querySelector('#dropZone');
+      const csvInput  = modalEl.querySelector('#csvFileInput');
+      const resultDiv = modalEl.querySelector('#importResult');
+
+      dropZone.addEventListener('click', function() { csvInput.click(); });
+      dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault(); dropZone.classList.add('drag-over');
+      });
+      dropZone.addEventListener('dragleave', function() {
+        dropZone.classList.remove('drag-over');
+      });
+      dropZone.addEventListener('drop', function(e) {
+        e.preventDefault(); dropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+      });
+      csvInput.addEventListener('change', function() {
+        if (csvInput.files[0]) processFile(csvInput.files[0]);
+      });
+
+      function processFile(file) {
+        if (!file.name.endsWith('.csv')) { Toast.error('Please select a .csv file.'); return; }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          parsedData = StudentService.parseCSV(e.target.result);
+          _renderImportPreview(resultDiv, parsedData, file.name);
+        };
+        reader.readAsText(file);
       }
-      btn.textContent = '✓ Removed';
-      btn.classList.add('removed');
-      btn.disabled = true;
-      updateCounter();
-    });
-  });
-
-  // ── Proceed button ─────────────────────────────────────────
-  overlay.querySelector('#enrCnfProceed').addEventListener('click', () => {
-    closeModal();
-    onProceed([...removedIds]);
+    },
   });
 }
 
-// ── Bulk Delete confirmation ─────────────────────────────────
-function confirmBulkDelete(ids) {
-  if (!ids.length) return;
+function _renderImportPreview(el, data, fileName) {
+  const valid  = data.valid  || [];
+  const errors = data.errors || [];
+  let html = '';
 
-  // collect unique enrolment IDs (multiple rows can share one enrolmentId)
-  const uniqueIds = [...new Set(ids)];
-  const enriched  = EnrolmentService.getEnriched();
+  if (!valid.length && !errors.length) {
+    html = '<p style="color:var(--t3);font-size:13px;padding:12px 0">No data found in file.</p>';
+    el.innerHTML = html;
+    return;
+  }
 
-  // build a readable list — one entry per unique enrolment
-  const names = uniqueIds.map(id => {
-    const e = enriched.find(x => x.id === id);
-    return e ? e.studentName : id;
-  });
+  // ── File info card ──
+  html += `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;
+      background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.8">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:var(--t1)">${fileName || 'File selected'}</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">File loaded and ready to import</div>
+    </div>
+  </div>`;
 
-  const overlay = document.createElement('div');
-  overlay.className = 'enr-overlay';
-  overlay.innerHTML = `
-<div class="enr-modal" style="max-width:460px">
-  <div class="enr-modal-hdr">
-    <span class="enr-modal-title" style="color:var(--red)">
-      Delete ${uniqueIds.length} Enrolment${uniqueIds.length > 1 ? 's' : ''}?
-    </span>
-    <button class="enr-modal-close" id="enrBDClose">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  // ── Summary counts ──
+  html += `<div style="display:flex;gap:10px;margin-bottom:${errors.length ? '10px' : '0'}">`;
+
+  if (valid.length) {
+    html += `<div style="flex:1;display:flex;align-items:center;gap:10px;padding:12px 16px;
+        background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:var(--r-sm)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
       </svg>
-    </button>
-  </div>
-  <div class="enr-modal-body">
-    <p style="font-size:13px;color:var(--t2);margin:0 0 12px;line-height:1.6">
-      The following <b>${uniqueIds.length} enrolment${uniqueIds.length > 1 ? 's' : ''}</b> will be permanently deleted.
-      This action cannot be undone.
-    </p>
-    <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--r-sm);
-      padding:10px 14px;max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-      ${names.map(n => `
-        <div style="font-size:12.5px;color:var(--red);display:flex;align-items:center;gap:6px">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-          </svg>
-          ${n}
-        </div>`).join('')}
+      <div>
+        <div style="font-size:18px;font-weight:800;color:#059669;line-height:1">${valid.length}</div>
+        <div style="font-size:11px;color:#059669;margin-top:1px">new student${valid.length !== 1 ? 's' : ''} ready to import</div>
+      </div>
+    </div>`;
+  }
+
+  const duplicates = data.duplicates || [];
+  if (duplicates.length) {
+    html += `<div style="flex:1;display:flex;align-items:center;gap:10px;padding:12px 16px;
+        background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:var(--r-sm)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <div>
+        <div style="font-size:18px;font-weight:800;color:#d97706;line-height:1">${duplicates.length}</div>
+        <div style="font-size:11px;color:#d97706;margin-top:1px">already exist (will ask before saving)</div>
+      </div>
+    </div>`;
+  }
+
+  if (errors.length) {
+    html += `<div style="flex:1;display:flex;align-items:center;gap:10px;padding:12px 16px;
+        background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <div>
+        <div style="font-size:18px;font-weight:800;color:#ef4444;line-height:1">${errors.length}</div>
+        <div style="font-size:11px;color:#ef4444;margin-top:1px">row${errors.length !== 1 ? 's' : ''} with errors</div>
+      </div>
+    </div>`;
+  }
+
+  html += '</div>';
+
+  // ── Errors detail (collapsible) ──
+  if (errors.length) {
+    html += `<div class="import-err-list" style="margin-top:10px;max-height:140px;overflow-y:auto">
+      <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:6px">
+        Fix these rows and re-upload:
+      </div>
+      <ul style="margin:0;padding-left:16px">`;
+    errors.forEach(function(e) { html += '<li style="font-size:11.5px;margin-bottom:3px">' + e + '</li>'; });
+    html += '</ul></div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// ── PDF Export ────────────────────────────────────────────────
+function _exportPDF(rows, filterLabels) {
+  if (!rows.length) { Toast.error('No students to export.'); return; }
+
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+  const filterHTML = filterLabels.length
+    ? filterLabels.map(function(f) { return '<span class="chip">' + f + '</span>'; }).join('')
+    : '<span class="chip no-filter">No filters applied — showing all students</span>';
+
+  const tbody = rows.map(function(s, i) {
+    const disc   = AppState.findById('disciplines', s.disciplineId);
+    const [y, m, d] = (s.dateOfAdmission || '').split('-');
+    const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const admLabel  = (y && m && d) ? parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y : '—';
+
+    return '<tr class="' + (i % 2 === 0 ? 'even' : 'odd') + '">' +
+      '<td class="mono">' + (s.studentId || '—') + '</td>' +
+      '<td class="mono">' + (s.cnic      || '—') + '</td>' +
+      '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
+      '<td>' + (s.fatherName   || '—') + '</td>' +
+      '<td>' + (s.studentPhone  || '—') + '</td>' +
+      '<td>' + (s.guardianPhone || '—') + '</td>' +
+      '<td>' + (s.qualification || '—') + '</td>' +
+      '<td>' + (s.district      || '—') + '</td>' +
+      '<td>' + (s.province      || '—') + '</td>' +
+      '<td>' + (s.campusSnapshot?.name || s.campus || '—') + '</td>' +
+      '<td>' + (disc?.abbreviation || '—') + '</td>' +
+      '<td>' + (s.route || '—') +
+        (s.route === 'Exemption' && s.exemptedPapers?.count
+          ? '<br><small style="color:#64748b">' + s.exemptedPapers.count + ' exempt' +
+            (s.exemptedPapers.codes?.length ? ': ' + s.exemptedPapers.codes.join(', ') : '') + '</small>'
+          : '') +
+      '</td>' +
+      '<td>' + admLabel + '</td>' +
+      '<td><strong>' + (s.session || '—') + '</strong></td>' +
+      '<td>' + (s.admissionBatch || '—') + '</td>' +
+    '</tr>';
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Student Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1e293b;background:#fff;padding:20px 24px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;
+    border-bottom:2.5px solid #2563eb;padding-bottom:12px;margin-bottom:14px}
+  .header-left .title{font-size:20px;font-weight:700;color:#1e40af}
+  .header-left .subtitle{font-size:11px;color:#64748b;margin-top:2px}
+  .header-right{text-align:right;font-size:10.5px;color:#64748b;line-height:1.6}
+  .header-right .date{font-weight:600;color:#1e293b;font-size:11px}
+  .stat-row{display:flex;gap:12px;margin-bottom:12px}
+  .stat{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:6px 16px;text-align:center}
+  .stat .num{font-size:18px;font-weight:700;color:#2563eb;font-family:'Segoe UI',Arial,sans-serif}
+  .stat .lbl{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
+  .filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;
+    background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px}
+  .filters-lbl{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;
+    letter-spacing:.5px;white-space:nowrap;margin-right:4px}
+  .chip{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:600;
+    padding:2px 9px;border-radius:10px}
+  .no-filter{background:#f1f5f9;color:#64748b}
+  table{width:100%;border-collapse:collapse;font-size:10.5px}
+  thead tr{background:#1e40af}
+  thead th{color:#fff;font-weight:600;padding:7px 9px;text-align:left;
+    font-size:10px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+  tbody tr.even{background:#fff}
+  tbody tr.odd{background:#f8faff}
+  tbody td{padding:6px 9px;border-bottom:1px solid #e2e8f0;color:#334155;vertical-align:middle}
+  td.mono{font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.03em}
+  .footer{margin-top:16px;padding-top:10px;border-top:1px solid #e2e8f0;
+    display:flex;justify-content:space-between;font-size:9.5px;color:#94a3b8}
+  .brand{margin-top:10px;text-align:center;font-size:10px;color:#94a3b8}
+  @media print{body{padding:12px 14px} @page{size:A4 landscape;margin:10mm} .no-print{display:none}}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="title">Student Register</div>
+      <div class="subtitle">Academic Student Records</div>
+    </div>
+    <div class="header-right">
+      <div class="date">${dateStr}</div>
+      <div>${timeStr}</div>
     </div>
   </div>
-  <div class="enr-modal-footer">
-    <button class="enr-btn enr-btn-ghost"  id="enrBDCancel">Cancel</button>
-    <button class="enr-btn enr-btn-danger" id="enrBDConfirm">
-      Yes, Delete (${uniqueIds.length})
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="num">${rows.length}</div>
+      <div class="lbl">Total Students</div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <span class="filters-lbl">▾ Filters</span>
+    ${filterHTML}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Student ID</th>
+        <th>CNIC</th>
+        <th>Student Name</th>
+        <th>Father Name</th>
+        <th>Student Phone</th>
+        <th>Guardian Phone</th>
+        <th>Qualification</th>
+        <th>District</th>
+        <th>Province</th>
+        <th>Campus</th>
+        <th>Discipline</th>
+        <th>Route</th>
+        <th>Date of Admission</th>
+        <th>Session</th>
+        <th>Admission Batch</th>
+      </tr>
+    </thead>
+    <tbody>${tbody}</tbody>
+  </table>
+
+  <div class="footer">
+    <span>Learnomist — Exported on ${dateStr} at ${timeStr}</span>
+    <span>Total: ${rows.length} student${rows.length !== 1 ? 's' : ''}</span>
+  </div>
+  <div class="brand">Powered by <strong style="color:#2563eb">Learnomist</strong></div>
+
+  <div class="no-print" style="margin-top:18px;text-align:center">
+    <button onclick="window.print()"
+      style="padding:9px 28px;background:#2563eb;color:#fff;border:none;
+             border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+      Print / Save as PDF
     </button>
   </div>
-</div>`;
+</body>
+</html>`;
 
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-
-  overlay.querySelector('#enrBDClose').addEventListener('click', close);
-  overlay.querySelector('#enrBDCancel').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-  overlay.querySelector('#enrBDConfirm').addEventListener('click', () => {
-    let deleted = 0, failed = 0;
-    uniqueIds.forEach(id => {
-      const r = EnrolmentService.remove(id);
-      if (r.success) deleted++; else failed++;
-    });
-    _selected.clear();
-    close();
-    renderTable();
-    renderSummary();
-    if (failed) Toast.error(deleted + ' deleted, ' + failed + ' failed.');
-    else Toast.success(deleted + ' enrolment' + (deleted > 1 ? 's' : '') + ' deleted.');
-  });
+  const w = window.open('', '_blank');
+  if (!w) { Toast.error('Allow pop-ups to export PDF.'); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(function() { w.print(); }, 600);
 }
 
-// ── Delete confirmation ───────────────────────────────────────
-function confirmDelete(id) {
-  const e = EnrolmentService.getById(id);
-  if (!e) return;
+// ── Helpers ───────────────────────────────────────────────────
+function _getFilters(container) {
+  return {
+    search:  (container.querySelector('#stuSearch')?.value        || '').toLowerCase(),
+    disc:     container.querySelector('#stuFilterDisc')?.value    || '',
+    session:  container.querySelector('#stuFilterSession')?.value || '',
+    campus:   container.querySelector('#stuFilterCampus')?.value  || '',
+  };
+}
 
-  const enriched = EnrolmentService.getEnriched().find(x => x.id === id);
-  const name     = enriched?.studentName || 'this student';
+function _rerender(container) {
+  const f = _getFilters(container);
+  _render(container, f.search, f.disc, f.session, f.campus);
+}
 
-  const overlay = document.createElement('div');
-  overlay.className = 'enr-overlay';
-  overlay.innerHTML = `
-<div class="enr-modal" style="max-width:400px">
-  <div class="enr-modal-hdr">
-    <span class="enr-modal-title">Remove Enrolment</span>
-    <button class="enr-modal-close" id="enrDelClose">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>
-  </div>
-  <div class="enr-modal-body" style="color:var(--t2);font-size:13.5px;line-height:1.6">
-    Are you sure you want to remove the enrolment for
-    <strong style="color:var(--t1)">${name}</strong>?
-    This action cannot be undone.
-  </div>
-  <div class="enr-modal-footer">
-    <button class="enr-btn enr-btn-ghost" id="enrDelCancel">Cancel</button>
-    <button class="enr-btn enr-btn-danger" id="enrDelConfirm">Yes, Remove</button>
-  </div>
-</div>`;
+// ── Column Manager ────────────────────────────────────────────
+function _wireColManager(container) {
+  const btn   = container.querySelector('#stuColMgrBtn');
+  const panel = container.querySelector('#stuColMgrPanel');
+  const list  = container.querySelector('#colMgrList');
+  if (!btn || !panel || !list) return;
 
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+  // Position the (position:fixed) panel directly under the toggle button
+  function _positionPanel() {
+    const r = btn.getBoundingClientRect();
+    const panelW = 270;
+    let left = r.right - panelW;
+    left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+    panel.style.left = left + 'px';
+    panel.style.top  = (r.bottom + 6) + 'px';
+  }
 
-  overlay.querySelector('#enrDelClose').addEventListener('click', close);
-  overlay.querySelector('#enrDelCancel').addEventListener('click', close);
-  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-  overlay.querySelector('#enrDelConfirm').addEventListener('click', () => {
-    const result = EnrolmentService.remove(id);
-    if (result.success) {
-      Toast.success('Enrolment removed.');
-      close();
-      renderTable();
-      renderSummary();
+  // Toggle panel open/close
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+      panel.classList.remove('open');
     } else {
-      Toast.error(result.message || 'Could not remove enrolment.');
+      _renderColList(list, container);
+      _positionPanel();
+      panel.classList.add('open');
     }
   });
+
+  // Keep aligned with the button while open
+  window.addEventListener('scroll', function() {
+    if (panel.classList.contains('open')) _positionPanel();
+  }, true);
+  window.addEventListener('resize', function() {
+    if (panel.classList.contains('open')) _positionPanel();
+  });
+
+  // Close on outside click
+  document.addEventListener('click', function(e) {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.remove('open');
+    }
+  });
+
+  // Show All
+  container.querySelector('#colMgrShowAll')?.addEventListener('click', function() {
+    const prefs = _getColPrefs();
+    prefs.hidden = [];
+    _saveColPrefs(prefs);
+    _renderColList(list, container);
+    _rerender(container);
+  });
+
+  // Reset to default
+  container.querySelector('#colMgrReset')?.addEventListener('click', function() {
+    _saveColPrefs({
+      order:  ALL_COLUMNS.map(function(c) { return c.key; }),
+      hidden: [],
+    });
+    _renderColList(list, container);
+    _rerender(container);
+  });
 }
+
+function _renderColList(listEl, container) {
+  const prefs = _getColPrefs();
+  listEl.innerHTML = '';
+
+  prefs.order.forEach(function(key) {
+    const colDef = ALL_COLUMNS.find(function(c) { return c.key === key; });
+    if (!colDef) return;
+
+    const isVisible = !prefs.hidden.includes(key);
+    const item = document.createElement('div');
+    item.className = 'col-mgr-item' + (isVisible ? '' : ' col-hidden');
+    item.draggable = true;
+    item.dataset.key = key;
+
+    item.innerHTML =
+      '<span class="col-mgr-drag">' + ICONS.drag + '</span>' +
+      '<input type="checkbox" class="col-mgr-chk" id="chk_' + key + '"' + (isVisible ? ' checked' : '') + '/>' +
+      '<label class="col-mgr-lbl" for="chk_' + key + '">' + colDef.label + '</label>';
+
+    // Checkbox toggle
+    item.querySelector('.col-mgr-chk').addEventListener('change', function(e) {
+      const p = _getColPrefs();
+      if (e.target.checked) {
+        p.hidden = p.hidden.filter(function(h) { return h !== key; });
+        item.classList.remove('col-hidden');
+      } else {
+        if (!p.hidden.includes(key)) p.hidden.push(key);
+        item.classList.add('col-hidden');
+      }
+      _saveColPrefs(p);
+      _rerender(container);
+    });
+
+    // ── Drag & Drop ──
+    let dragSrc = null;
+
+    item.addEventListener('dragstart', function(e) {
+      dragSrc = item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', key);
+    });
+
+    item.addEventListener('dragend', function() {
+      item.classList.remove('dragging');
+      listEl.querySelectorAll('.col-mgr-item').forEach(function(el) {
+        el.classList.remove('drag-over');
+      });
+    });
+
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      listEl.querySelectorAll('.col-mgr-item').forEach(function(el) {
+        el.classList.remove('drag-over');
+      });
+      if (dragSrc && dragSrc !== item) item.classList.add('drag-over');
+    });
+
+    item.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!dragSrc || dragSrc === item) return;
+      item.classList.remove('drag-over');
+
+      const srcKey  = dragSrc.dataset.key;
+      const tgtKey  = item.dataset.key;
+      const p       = _getColPrefs();
+      const srcIdx  = p.order.indexOf(srcKey);
+      const tgtIdx  = p.order.indexOf(tgtKey);
+      if (srcIdx === -1 || tgtIdx === -1) return;
+
+      p.order.splice(srcIdx, 1);
+      p.order.splice(tgtIdx, 0, srcKey);
+      _saveColPrefs(p);
+
+      // Re-render the list and the table
+      _renderColList(listEl, container);
+      _rerender(container);
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+// ── Toolbar wiring ────────────────────────────────────────────
+function _attachToolbar(container) {
+  const search    = container.querySelector('#stuSearch');
+  const discSel   = container.querySelector('#stuFilterDisc');
+  const sessSel   = container.querySelector('#stuFilterSession');
+  const campusSel = container.querySelector('#stuFilterCampus');
+
+  const rerender = function() { _rerender(container); };
+  search?.addEventListener('input',    rerender);
+  discSel?.addEventListener('change',  rerender);
+  sessSel?.addEventListener('change',  rerender);
+  campusSel?.addEventListener('change', rerender);
+
+  container.querySelector('#stuAddBtn')?.addEventListener('click', function() {
+    _openForm(null, container);
+  });
+
+  container.querySelector('#stuImportBtn')?.addEventListener('click', function() {
+    _openImportModal(container);
+  });
+
+  container.querySelector('#stuExportCSVBtn')?.addEventListener('click', function() {
+    const rows = container._filteredRows || AppState.get(KEY) || [];
+    if (!rows.length) { Toast.error('No students to export.'); return; }
+    StudentService.exportCSV(rows);
+    Toast.success('Exported ' + rows.length + ' student' + (rows.length !== 1 ? 's' : '') + '.');
+  });
+
+  container.querySelector('#stuExportPDFBtn')?.addEventListener('click', function() {
+    const rows   = container._filteredRows || AppState.get(KEY) || [];
+    const f      = _getFilters(container);
+    const labels = [];
+    if (f.disc) {
+      const d = AppState.findById('disciplines', f.disc);
+      if (d) labels.push('Discipline: ' + d.abbreviation);
+    }
+    if (f.campus) {
+      const c = AppState.findById('campuses', f.campus);
+      if (c) labels.push('Campus: ' + (c.campusName || c.name));
+    }
+    if (f.session) labels.push('Session: ' + f.session);
+    if (f.search)  labels.push('Search: "' + f.search + '"');
+    _exportPDF(rows, labels);
+  });
+
+  container.querySelector('#stuTemplateBtn')?.addEventListener('click', function() {
+    StudentService.downloadTemplate();
+  });
+
+  AppState.subscribe(KEY, rerender);
+  _wireColManager(container);
+}
+
+// ── Module entry point ────────────────────────────────────────
+export const StudentModule = {
+  mount: function(container) {
+    injectUIStyles();
+    injectStudentStyles();
+    const el = typeof container === 'string' ? document.querySelector(container) : container;
+    if (!el) { console.error('[StudentModule] Container not found'); return; }
+
+    // Render page immediately — do not block on migration
+    el.innerHTML = _pageTemplate();
+    _render(el, '', '', '');
+    _attachToolbar(el);
+
+    // Run migration after first paint (deferred) so UI opens instantly.
+    // migrateStudentIds() has a run-once guard — it is a no-op on
+    // subsequent mounts once the flag is set in AppState.
+    setTimeout(function() {
+      const migrated = migrateStudentIds();
+      if (migrated > 0) {
+        console.info('[StudentModule] Migrated ' + migrated + ' student ID(s) to new format.');
+        _render(el, '', '', '');   // re-render once with updated IDs
+      }
+    }, 0);
+  },
+};
