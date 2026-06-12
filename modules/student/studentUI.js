@@ -44,7 +44,7 @@ function injectStudentStyles() {
   s.textContent = `
     /* ── Toolbar ── */
     .stu-page{display:flex;flex-direction:column;height:100%;min-height:0;
-      width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+      width:100%;max-width:100%;min-width:0}
     .stu-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
       margin-bottom:12px;flex-shrink:0}
     .stu-search{flex:1;min-width:180px;max-width:300px;height:36px;padding:0 12px 0 36px;
