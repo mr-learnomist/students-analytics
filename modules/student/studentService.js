@@ -739,6 +739,36 @@ export const StudentService = {
 
       const admissionBatch = colIdx.admissionBatch !== -1 ? get(colIdx.admissionBatch) : '';
       const route          = colIdx.route          !== -1 ? get(colIdx.route).trim()   : '';
+
+      // ── Duplicate check: Name + Discipline + Session + Admission Batch ──
+      // (used when CNIC is absent)
+      if (!_isDupSystem) {
+        const sess = sessionFromDate(dateStr);
+        const nameLower = studentName.toLowerCase().replace(/\s+/g, ' ').trim();
+        const systemDup = (AppState.get('students') || []).some(function(s) {
+          return s.studentName && s.studentName.toLowerCase().replace(/\s+/g, ' ').trim() === nameLower
+              && s.disciplineId    === (disc ? disc.id : '')
+              && s.session         === sess
+              && s.admissionBatch  === admissionBatch;
+        });
+        const fileDup = valid.some(function(v) {
+          return v.studentName && v.studentName.toLowerCase().replace(/\s+/g, ' ').trim() === nameLower
+              && v.disciplineId   === (disc ? disc.id : '')
+              && v.session        === sess
+              && v.admissionBatch === admissionBatch;
+        }) || duplicates.some(function(v) {
+          return v.studentName && v.studentName.toLowerCase().replace(/\s+/g, ' ').trim() === nameLower
+              && v.disciplineId   === (disc ? disc.id : '')
+              && v.session        === sess
+              && v.admissionBatch === admissionBatch;
+        });
+
+        if (systemDup) {
+          _isDupSystem = true;
+        } else if (fileDup) {
+          _isDupInFile = true;
+        }
+      }
       let exemptedPapers   = null;
       if (route === 'Exemption' && colIdx.exemptedCodes !== -1) {
         const codesRaw = get(colIdx.exemptedCodes);
@@ -771,10 +801,15 @@ export const StudentService = {
 
       if (_isDupSystem) {
         // Already exists in system — put in duplicates for user to review
-        duplicates.push(Object.assign(rowData, { _dupReason: 'system' }));
+        duplicates.push(Object.assign(rowData, {
+          _dupReason: formattedCNIC ? 'CNIC already registered' : 'Same name + discipline + session + batch already exists',
+        }));
       } else if (_isDupInFile) {
         // Same CNIC twice in this file — treat as hard error
-        errors.push('Row ' + rowNum + ' (' + studentName + '): CNIC ' + formattedCNIC + ' appears more than once in this file');
+        errors.push('Row ' + rowNum + ' (' + studentName + '): ' +
+            (formattedCNIC
+              ? 'CNIC ' + formattedCNIC + ' appears more than once in this file'
+              : 'Same student (name + discipline + session + batch) appears more than once in this file'));
       } else {
         valid.push(rowData);
       }
