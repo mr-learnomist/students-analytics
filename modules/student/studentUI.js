@@ -276,11 +276,53 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
         },
       },
       {
+        key: 'fatherName', label: 'Father Name', width: '150px',
+        render: function(v) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+        },
+      },
+      {
         key: 'gender', label: 'Gender', width: '100px',
         render: function(v) {
           if (!v) return '<span style="color:var(--t4)">—</span>';
           return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
             (v === 'male' ? 'Male' : 'Female') + '</span>';
+        },
+      },
+      {
+        key: 'studentPhone', label: 'Student Phone', width: '140px',
+        render: function(v) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+        },
+      },
+      {
+        key: 'guardianPhone', label: 'Guardian Phone', width: '140px',
+        render: function(v) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
+        },
+      },
+      {
+        key: 'qualification', label: 'Qualification', width: '120px',
+        render: function(v) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+        },
+      },
+      {
+        key: 'district', label: 'District', width: '120px',
+        render: function(v) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+        },
+      },
+      {
+        key: 'province', label: 'Province', width: '110px',
+        render: function(v) {
+          if (!v) return '<span style="color:var(--t4)">—</span>';
+          return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
         },
       },
       {
@@ -451,6 +493,46 @@ function _buildFormHTML(existing) {
       <label class="form-label">Full Name <span class="req">*</span></label>
       <input name="studentName" class="form-input" placeholder="e.g. Muhammad Ali"
              value="${existing?.studentName || ''}"/>
+    </div>
+
+    <!-- Father Name -->
+    <div class="form-group">
+      <label class="form-label">Father's Name</label>
+      <input name="fatherName" class="form-input" placeholder="e.g. Ahmad Ali"
+             value="${existing?.fatherName || ''}"/>
+    </div>
+
+    <!-- Phone Numbers -->
+    <div class="form-row-2">
+      <div class="form-group">
+        <label class="form-label">Student Phone</label>
+        <input name="studentPhone" class="form-input" placeholder="e.g. 0300-1234567"
+               value="${existing?.studentPhone || ''}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Guardian Phone</label>
+        <input name="guardianPhone" class="form-input" placeholder="e.g. 0321-9876543"
+               value="${existing?.guardianPhone || ''}"/>
+      </div>
+    </div>
+
+    <!-- Qualification + District + Province -->
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Qualification</label>
+        <input name="qualification" class="form-input" placeholder="e.g. Matric, FA, BA"
+               value="${existing?.qualification || ''}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">District</label>
+        <input name="district" class="form-input" placeholder="e.g. Rawalpindi"
+               value="${existing?.district || ''}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Province</label>
+        <input name="province" class="form-input" placeholder="e.g. Punjab, Sindh"
+               value="${existing?.province || ''}"/>
+      </div>
     </div>
 
     <!-- Gender + Discipline (side by side) -->
@@ -890,7 +972,13 @@ function _collectForm(modalEl) {
   return {
     cnicRaw:         g('cnicRaw'),
     studentName:     g('studentName'),
+    fatherName:      g('fatherName'),
     gender:          g('gender'),
+    studentPhone:    g('studentPhone'),
+    guardianPhone:   g('guardianPhone'),
+    qualification:   g('qualification'),
+    district:        g('district'),
+    province:        g('province'),
     campusId:        g('campusId'),
     disciplineId:    g('disciplineId'),
     dateOfAdmission: g('dateOfAdmission'),
@@ -1123,6 +1211,12 @@ function _exportPDF(rows, filterLabels) {
       '<td class="mono">' + (s.studentId || '—') + '</td>' +
       '<td class="mono">' + (s.cnic      || '—') + '</td>' +
       '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
+      '<td>' + (s.fatherName   || '—') + '</td>' +
+      '<td>' + (s.studentPhone  || '—') + '</td>' +
+      '<td>' + (s.guardianPhone || '—') + '</td>' +
+      '<td>' + (s.qualification || '—') + '</td>' +
+      '<td>' + (s.district      || '—') + '</td>' +
+      '<td>' + (s.province      || '—') + '</td>' +
       '<td>' + (s.campusSnapshot?.name || s.campus || '—') + '</td>' +
       '<td>' + (disc?.abbreviation || '—') + '</td>' +
       '<td>' + (s.route || '—') +
@@ -1206,6 +1300,12 @@ function _exportPDF(rows, filterLabels) {
         <th>Student ID</th>
         <th>CNIC</th>
         <th>Student Name</th>
+        <th>Father Name</th>
+        <th>Student Phone</th>
+        <th>Guardian Phone</th>
+        <th>Qualification</th>
+        <th>District</th>
+        <th>Province</th>
         <th>Campus</th>
         <th>Discipline</th>
         <th>Route</th>
