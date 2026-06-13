@@ -207,6 +207,10 @@ svg{display:block;flex-shrink:0}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           Bank
         </button>
+        <button class="tab-btn" data-tab="backup">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Backup
+        </button>
       </nav>
 
       <!-- Panels — lazily mounted by JS -->
@@ -218,6 +222,7 @@ svg{display:block;flex-shrink:0}
       <div id="panel-policies"   class="module-panel fade-up"></div>
       <div id="panel-rooms"      class="module-panel fade-up"></div>
       <div id="panel-bank"       class="module-panel fade-up"></div>
+      <div id="panel-backup"     class="module-panel fade-up"></div>
     </main>
   </div>
 </div>
@@ -234,6 +239,7 @@ import { SubjectsModule }   from '../modules/subjects.js';
 import { PoliciesModule }   from '../modules/policies.js';
 import { BankModule }       from '../modules/bank.js';
 import { RoomsModule }      from '../modules/Room.js';
+import { BackupModule }     from '../modules/backupUi.js';
 
 // 1. Boot
 AppState.loadState();
@@ -275,6 +281,7 @@ const MODULE_MAP = {
   policies:    (el) => PoliciesModule.mount(el),
   rooms:       (el) => RoomsModule.mount(el),
   bank:        (el) => BankModule.mount(el),
+  backup:      (el) => BackupModule.mount(el),
 };
 const mounted = new Set();
 
