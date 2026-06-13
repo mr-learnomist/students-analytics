@@ -11,6 +11,28 @@ import { Auth } from '../utils/auth.js';
 
 const KEY = 'levels';
 
+// Whether the "Show Archived" toggle is currently on (per page session)
+let _showArchived = false;
+
+/**
+ * Get levels selectable in a dropdown (e.g. Add/Edit Subject, Add/Edit Batch).
+ * Excludes archived levels by default, but ALWAYS includes `currentLevelId`
+ * (the level already saved on the record being edited) even if archived —
+ * so editing an existing record never shows a blank/missing selection.
+ *
+ * @param {string} [disciplineId] — restrict to a discipline (optional)
+ * @param {string} [currentLevelId] — level already assigned to the record being edited
+ * @returns {Array} levels
+ */
+export function getSelectableLevels(disciplineId = '', currentLevelId = '') {
+  const levels = AppState.get('levels') || [];
+  return levels.filter(l => {
+    if (disciplineId && l.disciplineId !== disciplineId) return false;
+    if (l.isArchived && l.id !== currentLevelId) return false;
+    return true;
+  });
+}
+
 const RULES = {
   disciplineId:     { required: true, message: 'Select a discipline.' },
   levelName:        { required: true, minLen: 2, message: 'Enter a level name (e.g. Semester 1).' },
@@ -44,6 +66,7 @@ export const LevelsModule = {
 
     if (discFilter) rows = rows.filter(l => l.disciplineId === discFilter);
     if (filter)     rows = rows.filter(l => l.levelName.toLowerCase().includes(filter));
+    if (!_showArchived) rows = rows.filter(l => !l.isArchived);
 
     const countEl = el.querySelector('.record-count');
     if (countEl) countEl.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''}`;
@@ -57,6 +80,11 @@ export const LevelsModule = {
         label: 'Edit',
         icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
         handler: (row) => this._openForm(row, el)
+      });
+      actions.push({
+        label: 'Archive/Restore',
+        icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`,
+        handler: (row) => this._toggleArchive(row, el)
       });
     }
     if (canDelete) {
@@ -78,6 +106,11 @@ export const LevelsModule = {
           }
         },
         { key: 'levelName', label: 'Level Name' },
+        { key: 'isArchived', label: 'Status', width: '100px',
+          render: (val) => val
+            ? `<span class="badge badge--grey">Archived</span>`
+            : `<span class="badge badge--green">Active</span>`
+        },
         { key: 'compulsoryPapers', label: 'Compulsory', width: '100px',
           render: (val) => `<span style="font-family:var(--font-mono);font-size:13px;color:var(--t1)">${val ?? 0}</span>`
         },
@@ -179,6 +212,26 @@ export const LevelsModule = {
     this._render(container);
   },
 
+  async _toggleArchive(row, container) {
+    if (!Auth.can('levels:edit')) return Toast.warning('Permission denied.');
+
+    if (!row.isArchived) {
+      // Archiving — safe regardless of dependents; historic records keep referencing this level.
+      const ok = await Modal.confirm({
+        title: 'Archive Level',
+        message: `Archive <strong>${row.levelName}</strong>? It will be hidden from selection in new records (Subjects, Batches), but existing records and history stay unaffected. You can restore it anytime.`,
+        confirmLabel: 'Archive'
+      });
+      if (!ok) return;
+      AppState.update(KEY, row.id, { isArchived: true });
+      Toast.success(`Level "${row.levelName}" archived.`);
+    } else {
+      AppState.update(KEY, row.id, { isArchived: false });
+      Toast.success(`Level "${row.levelName}" restored.`);
+    }
+    this._render(container);
+  },
+
   _attachToolbar(container) {
     const el = typeof container === 'string' ? document.querySelector(container) : container;
 
@@ -198,6 +251,15 @@ export const LevelsModule = {
       discVal = e.target.value;
       this._render(el, searchVal, discVal);
     });
+
+    const showArchivedChk = el.querySelector('#levelsShowArchived');
+    if (showArchivedChk) {
+      showArchivedChk.checked = _showArchived;
+      showArchivedChk.addEventListener('change', (e) => {
+        _showArchived = e.target.checked;
+        this._render(el, searchVal, discVal);
+      });
+    }
   },
 
   _pageTemplate() {
@@ -218,6 +280,10 @@ export const LevelsModule = {
             ${discOptions}
           </select>
           <span class="record-count">— records</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--t2);cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="levelsShowArchived" style="width:14px;height:14px;accent-color:#4f85f7"/>
+            Show Archived
+          </label>
           <button id="levelsAddBtn" class="add-btn" style="margin-left:auto">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Level
