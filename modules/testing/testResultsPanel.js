@@ -1583,7 +1583,68 @@ export const TestResultsPanel = {
           (subject ? ' · ' + (subject.subjectCode || subject.subjectName) : '');
       }
 
-      // ── Build hierarchical dropdown: original → its retests nested ──
+      // ── Build hierarchical dropdown: original → its retests nested → Add Retest ──
+
+      // Helper: select an entry programmatically (used by radio + "Add Retest" button)
+      const selectEntry = (entry, isRetestMode, retestDateValue) => {
+        _selectedEntry = entry;
+        _isRetest      = isRetestMode || false;
+        _retestDate    = retestDateValue || '';
+
+        testTriggerLbl.textContent = _selectedEntry
+          ? `${_selectedEntry.testName}${_isRetest ? ' (New Retest)' : ''}${_selectedEntry.date && !_isRetest ? '  —  ' + formatDate(_selectedEntry.date) : ''}`
+          : 'Select a test…';
+        testTrigger.style.borderColor = 'var(--blue)';
+
+        // Highlight selected radio
+        testCheckList.querySelectorAll('label').forEach(lbl => {
+          const inp = lbl.querySelector('input[type="radio"]');
+          lbl.style.background = inp?.checked ? 'var(--blue-dim)' : 'transparent';
+        });
+
+        closeTestDropdown();
+
+        // Auto-fill totalMarks
+        let autoTotalMarks = _selectedEntry?.totalMarks || '';
+        if (!autoTotalMarks) {
+          const savedForEntry = (AppState.get('testResults') || [])
+            .find(r => r.scheduleEntryId === _selectedEntry?.id && r.totalMarks);
+          if (savedForEntry) autoTotalMarks = savedForEntry.totalMarks;
+        }
+        if (autoTotalMarks && totalMarksInp) {
+          totalMarksInp.value = autoTotalMarks;
+          const _pm = Math.ceil(parseFloat(autoTotalMarks) * 0.5);
+          if (passingDisplay) passingDisplay.textContent = _pm;
+        }
+
+        marksSettings.style.display = '';
+
+        // Retest UI state
+        if (_isRetest) {
+          // "Add Retest" clicked — show retest date row, pre-fill if date provided
+          if (retestCb)      { retestCb.checked = true; }
+          if (retestRow)     { retestRow.style.display = ''; }
+          if (retestDateRow) { retestDateRow.style.display = 'flex'; }
+          if (retestDateInp && retestDateValue) { retestDateInp.value = retestDateValue; }
+        } else if (_selectedEntry?.isRetest) {
+          // Existing retest selected — treat as normal edit, hide retest toggle
+          _isRetest = false;
+          if (retestCb)      { retestCb.checked = false; }
+          if (retestRow)     { retestRow.style.display = 'none'; }
+          if (retestDateRow) { retestDateRow.style.display = 'none'; }
+        } else {
+          // Original test selected — show retest toggle (unchecked)
+          if (retestCb)      { retestCb.checked = false; }
+          if (retestRow)     { retestRow.style.display = ''; }
+          if (retestDateRow) { retestDateRow.style.display = 'none'; }
+          _retestDate = '';
+          if (retestDateInp) { retestDateInp.value = ''; }
+        }
+
+        if (totalMarksInp?.value?.trim()) refreshGrid();
+      };
+
+      // Build one test/retest row
       const buildItem = (e, indent = false) => {
         const typeMeta  = TEST_TYPE_META[e.testType] || {};
         const dateLabel = e.date       ? ` — ${formatDate(e.date)}` : '';
@@ -1591,14 +1652,14 @@ export const TestResultsPanel = {
         const retestBadgeHtml = e.isRetest
           ? `<span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:5px;
                background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);flex-shrink:0">
-               Retest ${e.retestIndex > 1 ? '#'+e.retestIndex : ''}</span>`
+               Retest #${e.retestIndex}</span>`
           : '';
         return `
-          <label style="display:flex;align-items:center;gap:8px;padding:7px ${indent ? '22px' : '10px'} 7px ${indent ? '22px' : '10px'};
+          <label style="display:flex;align-items:center;gap:8px;padding:7px ${indent ? '28px' : '10px'} 7px ${indent ? '28px' : '10px'};
             border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--t1);
-            transition:background .1s;user-select:none;${indent ? 'border-left:2px solid var(--border2);margin-left:12px;margin-right:4px;' : ''}"
+            transition:background .1s;user-select:none;${indent ? 'border-left:2px solid var(--violet,#7c3aed);margin-left:16px;margin-right:4px;' : ''}"
             onmouseover="this.style.background='var(--surface2)'"
-            onmouseout="this.style.background=this.querySelector('input').checked?'var(--blue-dim)':'transparent'">
+            onmouseout="this.style.background=this.querySelector('input[type=radio]').checked?'var(--blue-dim)':'transparent'">
             <input type="radio" name="trTestRadio" class="tr-test-rb" value="${e.id}"
               style="accent-color:var(--blue);width:14px;height:14px;cursor:pointer;flex-shrink:0"/>
             <span style="display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:700;
@@ -1610,74 +1671,66 @@ export const TestResultsPanel = {
           </label>`;
       };
 
+      // Build "Add Retest N" button (nested under parent)
+      const buildAddRetestBtn = (parentEntry, nextIndex) => {
+        return `
+          <div class="tr-add-retest-btn" data-parent-id="${parentEntry.id}"
+            style="display:flex;align-items:center;gap:7px;
+              padding:6px 28px 6px 28px;
+              margin-left:16px;margin-right:4px;
+              border-left:2px solid var(--violet,#7c3aed);
+              border-radius:0 7px 7px 0;
+              cursor:pointer;font-size:11.5px;font-weight:600;
+              color:var(--violet,#7c3aed);
+              transition:background .1s;user-select:none"
+            onmouseover="this.style.background='var(--violet-dim,#ede9fe)'"
+            onmouseout="this.style.background='transparent'">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Retest #${nextIndex}
+          </div>`;
+      };
+
       let html = '';
       originalEntries.forEach(e => {
         html += buildItem(e, false);
-        // Nested retests
+        // Nested saved retests (sorted by index)
         const myRetests = retestEntries
           .filter(r => r.retestOf === e.id)
           .sort((a, b) => (a.retestIndex || 0) - (b.retestIndex || 0));
         myRetests.forEach(r => {
           html += buildItem(r, true);
         });
+        // "Add Retest #N" button always shown under each original test
+        const nextRetestIndex = (myRetests.length ? myRetests[myRetests.length - 1].retestIndex : 0) + 1;
+        html += buildAddRetestBtn(e, nextRetestIndex);
       });
 
       testCheckList.innerHTML = html;
 
-      // Wire radio buttons
+      // Wire radio buttons (existing test/retest rows)
       testCheckList.querySelectorAll('.tr-test-rb').forEach(rb => {
         rb.addEventListener('change', () => {
-          _selectedEntry = _batchEntries.find(e => e.id === rb.value) || null;
+          const entry = _batchEntries.find(e => e.id === rb.value) || null;
+          selectEntry(entry, false, '');
+        });
+      });
 
-          const typeMeta = _selectedEntry ? (TEST_TYPE_META[_selectedEntry.testType] || {}) : {};
-          testTriggerLbl.textContent = _selectedEntry
-            ? `${_selectedEntry.testName}${_selectedEntry.date ? '  —  ' + formatDate(_selectedEntry.date) : ''}`
-            : 'Select a test…';
-          testTrigger.style.borderColor = 'var(--blue)';
-
-          // Highlight selected row
-          testCheckList.querySelectorAll('label').forEach(lbl => {
-            const inp = lbl.querySelector('input');
-            lbl.style.background = inp?.checked ? 'var(--blue-dim)' : 'transparent';
-          });
-
-          closeTestDropdown();
-
-          // ── Auto-fill totalMarks ──────────────────────────────────
-          // Priority: 1) entry.totalMarks  2) saved result record  3) blank
-          let autoTotalMarks = _selectedEntry?.totalMarks || '';
-          if (!autoTotalMarks) {
-            const savedForEntry = (AppState.get('testResults') || [])
-              .find(r => r.scheduleEntryId === _selectedEntry?.id && r.totalMarks);
-            if (savedForEntry) autoTotalMarks = savedForEntry.totalMarks;
-          }
-          if (autoTotalMarks && totalMarksInp) {
-            totalMarksInp.value = autoTotalMarks;
-            const _pm = Math.ceil(parseFloat(autoTotalMarks) * 0.5);
-            if (passingDisplay) passingDisplay.textContent = _pm;
-          }
-
-          // Show marks settings
-          marksSettings.style.display = '';
-
-          // If this is already a retest entry (selected from hierarchy), lock retest mode
-          if (_selectedEntry?.isRetest) {
-            // Pre-set retest mode as read-only context (editing existing retest)
-            _isRetest   = false; // it's already saved as retest, treat as normal edit
-            _retestDate = '';
-            if (retestCb)      { retestCb.checked = false; }
-            if (retestRow)     { retestRow.style.display = 'none'; }
-            if (retestDateRow) { retestDateRow.style.display = 'none'; }
-          } else {
-            // Original test: show retest option
-            _isRetest   = false;
-            _retestDate = '';
-            if (retestCb)      { retestCb.checked = false; }
-            if (retestRow)     { retestRow.style.display = ''; }
-            if (retestDateRow) { retestDateRow.style.display = 'none'; }
-          }
-
-          if (totalMarksInp?.value?.trim()) refreshGrid();
+      // Wire "Add Retest #N" buttons
+      testCheckList.querySelectorAll('.tr-add-retest-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const parentId = btn.dataset.parentId;
+          const parentEntry = _batchEntries.find(e => e.id === parentId) || null;
+          if (!parentEntry) return;
+          // Uncheck any selected radio
+          testCheckList.querySelectorAll('.tr-test-rb').forEach(rb => { rb.checked = false; });
+          testCheckList.querySelectorAll('label').forEach(lbl => { lbl.style.background = 'transparent'; });
+          // Highlight the add-retest button
+          testCheckList.querySelectorAll('.tr-add-retest-btn').forEach(b => { b.style.background = 'transparent'; });
+          btn.style.background = 'var(--violet-dim,#ede9fe)';
+          selectEntry(parentEntry, true, '');
         });
       });
     });
