@@ -8,6 +8,7 @@ import { AppState }                     from '../../utils/state.js';
 import { Modal, Table, injectUIStyles } from '../../utils/ui.js';
 import { Toast }                        from '../../utils/helpers.js';
 import { Auth }                         from '../../utils/auth.js';
+import { getSelectableSubjects }        from '../subjects.js';
 import {
   StudentService,
   sessionFromDate,
@@ -861,13 +862,24 @@ function _wireForm(modalEl, existing) {
     const countInput   = modalEl.querySelector('#frmExemptCount');
     if (!selectsWrap) return;
 
-    // Get subjects that belong to this discipline AND have this route assigned
+    // Get subjects that belong to this discipline AND have this route assigned.
+    // Active subjects only — archived subjects cannot be assigned in new exemptions.
+    // Exception: subjects already saved in this student's exemption are always
+    // included (via getSelectableSubjects currentSubjectId logic applied per-subject).
     const levels = AppState.get('levels') || [];
     const discLevelIds = levels
       .filter(function(l) { return l.disciplineId === discId; })
       .map(function(l) { return l.id; });
-    const allSubjects = (AppState.get('subjects') || [])
-      .filter(function(s) { return discLevelIds.includes(s.levelId); });
+
+    const savedExemptIds = (existing?.exemptedPapers?.papers || []).map(function(p) { return p.id; });
+
+    // Build pool: active subjects + any already-saved exempted subject (even if archived)
+    const allSubjectsRaw = AppState.get('subjects') || [];
+    const allSubjects = allSubjectsRaw.filter(function(s) {
+      if (!discLevelIds.includes(s.levelId)) return false;
+      if (savedExemptIds.includes(s.id)) return true; // always keep saved
+      return !s.isArchived;
+    });
 
     // Filter: subjects whose routes[] includes the selected route
     const routeSubjects = allSubjects.filter(function(s) {
@@ -924,7 +936,7 @@ function _wireForm(modalEl, existing) {
             '<option value="">— select subject —</option>' +
             pickPool.map(function(s) {
               return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
-                s.subjectCode + ' — ' + s.subjectName + '</option>';
+                s.subjectCode + ' — ' + s.subjectName + (s.isArchived ? ' [archived]' : '') + '</option>';
             }).join('') +
           '</select>' +
         '</div>';
