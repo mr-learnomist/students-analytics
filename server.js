@@ -127,25 +127,121 @@ app.post('/api/data', async (req, res) => {
   }
 });
 
-// ── GET /api/backup — Latest backup dekho ────────────────────
-app.get('/api/backup', async (req, res) => {
+// ── Backup helpers ────────────────────────────────────────────
+const BACKUP_COL    = 'appstate_backup';
+const MAX_BACKUPS   = 20; // zyada ho jayein to purane auto-backups delete hote hain
+
+/** Record counts from appState for backup metadata */
+function _countRecords(appState = {}) {
+  const keys = ['students','batches','teachers','attendanceRecords',
+                 'lecturePlans','subjects','levels','disciplines','campuses','users'];
+  const counts = {};
+  keys.forEach(k => {
+    const v = appState[k];
+    counts[k] = Array.isArray(v) ? v.length
+              : (v && typeof v === 'object') ? Object.keys(v).length
+              : 0;
+  });
+  return counts;
+}
+
+// ── POST /api/backup/create — Named backup banao ──────────────
+app.post('/api/backup/create', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'DB not connected' });
-    const doc = await db.collection('appstate_backup').findOne({ _id: 'backup_latest' });
-    if (!doc) return res.status(404).json({ success: false, error: 'No backup found' });
-    res.json({ success: true, savedAt: doc.savedAt, data: doc.data });
+
+    const { name } = req.body || {};
+    const backupId = (name || `backup_${Date.now()}`).slice(0, 120).replace(/\s+/g, '_');
+
+    const current = await db.collection(COL_NAME).findOne({ _id: 'main' });
+    if (!current?.data) return res.status(404).json({ success: false, error: 'No current data found' });
+
+    const appState = current.data?.appState || {};
+    const counts   = _countRecords(appState);
+    const dataStr  = JSON.stringify(current.data);
+    const sizeKB   = Math.round(Buffer.byteLength(dataStr, 'utf8') / 1024);
+
+    await db.collection(BACKUP_COL).updateOne(
+      { _id: backupId },
+      { $set: { _id: backupId, name: backupId, data: current.data, savedAt: new Date(), counts, sizeKB } },
+      { upsert: true }
+    );
+
+    // Auto-clean: agar 20+ auto backups hain to purana delete karo
+    const autoBackups = await db.collection(BACKUP_COL)
+      .find({ name: /^auto_/ }, { projection: { _id: 1, savedAt: 1 } })
+      .sort({ savedAt: 1 })
+      .toArray();
+    if (autoBackups.length > MAX_BACKUPS) {
+      const toDelete = autoBackups.slice(0, autoBackups.length - MAX_BACKUPS).map(b => b._id);
+      await db.collection(BACKUP_COL).deleteMany({ _id: { $in: toDelete } });
+      console.log(`[SMS Backup] Auto-cleaned ${toDelete.length} old auto-backups`);
+    }
+
+    console.log(`[SMS Backup] Created: ${backupId} (${sizeKB} KB)`);
+    res.json({ success: true, name: backupId, savedAt: new Date(), counts, sizeKB });
+  } catch (e) {
+    console.error('[SMS Backup] Create error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── GET /api/backup/list — Sari backups ki list ───────────────
+app.get('/api/backup/list', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'DB not connected' });
+    const backups = await db.collection(BACKUP_COL)
+      .find({}, { projection: { data: 0 } }) // data exclude — sirf metadata
+      .sort({ savedAt: -1 })
+      .toArray();
+    const list = backups.map(b => ({
+      name:    b.name || b._id,
+      savedAt: b.savedAt,
+      counts:  b.counts || {},
+      sizeKB:  b.sizeKB || null,
+    }));
+    res.json({ success: true, backups: list });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
 
-// ── POST /api/restore — Backup se data wapas lao ─────────────
-app.post('/api/restore', async (req, res) => {
+// ── GET /api/backup/get/:name — Ek backup ka full data ────────
+app.get('/api/backup/get/:name', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'DB not connected' });
+    const doc = await db.collection(BACKUP_COL).findOne({ _id: req.params.name });
+    if (!doc) return res.status(404).json({ success: false, error: 'Backup not found' });
+    res.json({ success: true, name: doc.name || doc._id, savedAt: doc.savedAt, data: doc.data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── POST /api/backup/restore — Kisi backup se restore karo ────
+app.post('/api/backup/restore', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ success: false, error: 'DB not connected' });
 
-    const backup = await db.collection('appstate_backup').findOne({ _id: 'backup_latest' });
-    if (!backup?.data) return res.status(404).json({ success: false, error: 'No backup found' });
+    const { name } = req.body || {};
+    if (!name) return res.status(400).json({ success: false, error: 'name required' });
+
+    const backup = await db.collection(BACKUP_COL).findOne({ _id: name });
+    if (!backup?.data) return res.status(404).json({ success: false, error: 'Backup not found' });
+
+    // Restore karne se pehle current state ka quick backup banao
+    const current = await db.collection(COL_NAME).findOne({ _id: 'main' });
+    if (current?.data) {
+      const preRestoreId = `pre_restore_${Date.now()}`;
+      const appState     = current.data?.appState || {};
+      await db.collection(BACKUP_COL).updateOne(
+        { _id: preRestoreId },
+        { $set: { _id: preRestoreId, name: preRestoreId, data: current.data,
+                  savedAt: new Date(), counts: _countRecords(appState), sizeKB: null } },
+        { upsert: true }
+      );
+      console.log(`[SMS Backup] Pre-restore snapshot: ${preRestoreId}`);
+    }
 
     await db.collection(COL_NAME).updateOne(
       { _id: 'main' },
@@ -153,9 +249,61 @@ app.post('/api/restore', async (req, res) => {
       { upsert: true }
     );
 
-    console.log('[SMS] Data restored from backup, savedAt:', backup.savedAt);
-    res.json({ success: true, message: 'Data restored from backup', restoredFrom: backup.savedAt });
+    console.log(`[SMS Backup] Restored from: ${name}, savedAt: ${backup.savedAt}`);
+    res.json({ success: true, message: 'Restore complete', restoredFrom: name, savedAt: backup.savedAt });
   } catch (e) {
+    console.error('[SMS Backup] Restore error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── POST /api/backup/delete — Ek backup delete karo ──────────
+app.post('/api/backup/delete', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'DB not connected' });
+    const { name } = req.body || {};
+    if (!name) return res.status(400).json({ success: false, error: 'name required' });
+    const result = await db.collection(BACKUP_COL).deleteOne({ _id: name });
+    if (!result.deletedCount) return res.status(404).json({ success: false, error: 'Backup not found' });
+    console.log(`[SMS Backup] Deleted: ${name}`);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── POST /api/backup/import — JSON file se import karo ────────
+app.post('/api/backup/import', async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ success: false, error: 'DB not connected' });
+    const { name, data } = req.body || {};
+    if (!data) return res.status(400).json({ success: false, error: 'data required' });
+
+    // Current state ka backup banao import se pehle
+    const current = await db.collection(COL_NAME).findOne({ _id: 'main' });
+    if (current?.data) {
+      const preId    = `pre_import_${Date.now()}`;
+      const appState = current.data?.appState || {};
+      await db.collection(BACKUP_COL).updateOne(
+        { _id: preId },
+        { $set: { _id: preId, name: preId, data: current.data,
+                  savedAt: new Date(), counts: _countRecords(appState), sizeKB: null } },
+        { upsert: true }
+      );
+    }
+
+    // Import karo
+    const importId = `imported_${(name || 'file').slice(0,40)}_${Date.now()}`;
+    await db.collection(COL_NAME).updateOne(
+      { _id: 'main' },
+      { $set: { data, updatedAt: new Date() } },
+      { upsert: true }
+    );
+
+    console.log(`[SMS Backup] Imported: ${importId}`);
+    res.json({ success: true, importedName: importId });
+  } catch (e) {
+    console.error('[SMS Backup] Import error:', e.message);
     res.status(500).json({ success: false, error: e.message });
   }
 });
