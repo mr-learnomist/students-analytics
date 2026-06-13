@@ -865,11 +865,7 @@ export const TestResultsPanel = {
       displayName = `${parentName} (Retest #${retestIndex || 1})`;
     }
 
-    const testChip = `<span style="display:inline-block;padding:2px 8px;border-radius:6px;
-      font-size:10.5px;font-weight:700;
-      background:${isRetest ? 'var(--violet-dim,#ede9fe)' : (typeMeta.bg||'var(--surface3)')};
-      color:${isRetest ? 'var(--violet,#7c3aed)' : (typeMeta.color||'var(--t2)')};
-      white-space:nowrap">${displayName}</span>`;
+    const testChip = `<span style="font-size:12.5px;font-weight:600;color:var(--t1);white-space:nowrap">${displayName}</span>`;
 
     const _tm = r.totalMarks || r.entry.totalMarks || null;
     const _tmSuffix = _tm ? ` <span style="color:var(--t3);font-size:11px">/ ${_tm}</span>` : '';
