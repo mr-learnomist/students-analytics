@@ -1237,20 +1237,11 @@ export const TestResultsPanel = {
           return na.localeCompare(nb);
         });
 
-      // In retest mode: only show students who have marks on the PARENT test
-      // Students with no marks on parent = excluded (not absent, just not shown)
+      // Retest mode: show ALL batch students in grid
+      // Only rows with marks entered or absent checked will be saved (blank rows skipped on save)
       let parentEntryId = null;
-      let studentsWithParentMarks = new Set();
       if (_isRetest) {
-        // The selected entry is the original test; retestOf is that entry's id
         parentEntryId = entry.id;
-        const allSavedForParent = AppState.get('testResults') || [];
-        allSavedForParent.forEach(r => {
-          if (r.scheduleEntryId === parentEntryId && r.marks != null && !r.absent) {
-            studentsWithParentMarks.add(r.studentId);
-          }
-        });
-        students = students.filter(s => studentsWithParentMarks.has(s.id));
       }
 
       if (!students.length) {
@@ -1750,7 +1741,9 @@ export const TestResultsPanel = {
       const absent = cb?.checked || false;
       const marks  = absent ? null : (input.value !== '' ? parseFloat(input.value) : null);
 
-      // Always upsert — even blank rows — so totalMarks/subjectId is stored on every student record
+      // Skip blank rows (no marks entered, not absent) — prevents pending entries in main table
+      if (marks === null && !absent) return;
+
       _upsertMark({
         scheduleEntryId: entryId,
         studentId,
@@ -1765,7 +1758,7 @@ export const TestResultsPanel = {
         retestIndex:  retestIndex     || undefined,
       });
 
-      if (marks !== null || absent) saved++;
+      saved++;
     });
 
     Toast.success(saved
