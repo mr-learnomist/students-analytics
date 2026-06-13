@@ -1,6 +1,15 @@
 // ============================================================
 // modules/subjects.js — Subjects Module (CRUD)
 // Fields: id, levelId (FK → levels → disciplines), subjectCode, subjectName, paperType, routes[]
+// v2: Archive support added — same strategy as levels.js
+//   - isArchived flag on each subject
+//   - getSelectableSubjects() exported for batch.js, lecturePlanUI.js
+//     (active only by default; always includes the currently-saved subject
+//      so editing an existing record never shows a blank/missing selection)
+//   - Archive/Restore action in table
+//   - "Show Archived" toggle in toolbar
+//   - Historic records (batches, LPs) continue referencing archived subjects
+//     via snapshots — no data loss
 // ============================================================
 
 import { AppState, generateID } from '../utils/state.js';
@@ -9,6 +18,28 @@ import { Toast } from '../utils/helpers.js';
 import { getSelectableLevels } from './levels.js';
 
 const KEY = 'subjects';
+
+// Whether the "Show Archived" toggle is currently on (per page session)
+let _showArchived = false;
+
+/**
+ * Get subjects selectable in a dropdown (e.g. Add/Edit Batch, Add/Edit LP).
+ * Excludes archived subjects by default, but ALWAYS includes `currentSubjectId`
+ * (the subject already saved on the record being edited) even if archived —
+ * so editing an existing record never shows a blank/missing selection.
+ *
+ * @param {string} [levelId]          — restrict to a level (optional)
+ * @param {string} [currentSubjectId] — subject already assigned to the record being edited
+ * @returns {Array} subjects
+ */
+export function getSelectableSubjects(levelId = '', currentSubjectId = '') {
+  const subjects = AppState.get('subjects') || [];
+  return subjects.filter(s => {
+    if (levelId && s.levelId !== levelId) return false;
+    if (s.isArchived && s.id !== currentSubjectId) return false;
+    return true;
+  });
+}
 
 const RULES = {
   levelId:     { required: true, message: 'Select a level.' },
@@ -36,6 +67,7 @@ export const SubjectsModule = {
       s.subjectCode.toLowerCase().includes(filter) ||
       s.subjectName.toLowerCase().includes(filter)
     );
+    if (!_showArchived) rows = rows.filter(s => !s.isArchived);
 
     const countEl = el.querySelector('.record-count');
     if (countEl) countEl.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''}`;
@@ -46,6 +78,11 @@ export const SubjectsModule = {
           render: (val) => `<code style="font-family:var(--font-mono);font-size:12px;color:var(--cyan)">${val}</code>`
         },
         { key: 'subjectName', label: 'Subject Name' },
+        { key: 'isArchived', label: 'Status', width: '90px',
+          render: (val) => val
+            ? `<span class="badge badge--grey">Archived</span>`
+            : `<span class="badge badge--green">Active</span>`
+        },
         { key: 'levelId', label: 'Level', width: '160px',
           render: (id) => {
             const level = AppState.findById('levels', id);
@@ -82,6 +119,11 @@ export const SubjectsModule = {
           label: 'Edit',
           icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
           handler: (row) => this._openForm(row, el)
+        },
+        {
+          label: 'Archive/Restore',
+          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`,
+          handler: (row) => this._toggleArchive(row, el)
         },
         {
           label: 'Delete', danger: true,
@@ -250,6 +292,27 @@ export const SubjectsModule = {
     });
   },
 
+  async _toggleArchive(row, container) {
+    if (!row.isArchived) {
+      // Archiving — safe regardless of dependents; historic records keep
+      // referencing this subject via snapshots (batch.js, lecturePlanService.js).
+      const ok = await Modal.confirm({
+        title: 'Archive Subject',
+        message: `Archive <strong>${row.subjectCode} — ${row.subjectName}</strong>?
+          It will be hidden from selection in new records (Batches, Lecture Plans),
+          but existing records and history stay unaffected. You can restore it anytime.`,
+        confirmLabel: 'Archive'
+      });
+      if (!ok) return;
+      AppState.update(KEY, row.id, { isArchived: true });
+      Toast.success(`Subject "${row.subjectCode}" archived.`);
+    } else {
+      AppState.update(KEY, row.id, { isArchived: false });
+      Toast.success(`Subject "${row.subjectCode}" restored.`);
+    }
+    this._render(container);
+  },
+
   async _delete(row, container) {
     const deps = AppState.getDependents(KEY, row.id);
     if (deps.length) {
@@ -283,17 +346,28 @@ export const SubjectsModule = {
       levelVal = e.target.value;
       this._render(el, searchVal, levelVal);
     });
+
+    const showArchivedChk = el.querySelector('#subjectsShowArchived');
+    if (showArchivedChk) {
+      showArchivedChk.checked = _showArchived;
+      showArchivedChk.addEventListener('change', (e) => {
+        _showArchived = e.target.checked;
+        this._render(el, searchVal, levelVal);
+      });
+    }
   },
 
   _pageTemplate() {
     const levels = AppState.get('levels') || [];
     const disciplines = AppState.get('disciplines') || [];
 
+    // Toolbar level filter shows ALL levels (including archived) so user can
+    // still view/manage archived subjects that belong to archived levels.
     const levelOptions = disciplines.map(disc => {
       const dLevels = levels.filter(l => l.disciplineId === disc.id);
       if (!dLevels.length) return '';
       return `<optgroup label="${disc.abbreviation}">
-        ${dLevels.map(l => `<option value="${l.id}">${l.levelName}</option>`).join('')}
+        ${dLevels.map(l => `<option value="${l.id}">${l.levelName}${l.isArchived ? ' (archived)' : ''}</option>`).join('')}
       </optgroup>`;
     }).join('');
 
@@ -309,6 +383,10 @@ export const SubjectsModule = {
             ${levelOptions}
           </select>
           <span class="record-count">— records</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--t2);cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="subjectsShowArchived" style="width:14px;height:14px;accent-color:#4f85f7"/>
+            Show Archived
+          </label>
           <button id="subjectsAddBtn" class="add-btn" style="margin-left:auto">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Subject
