@@ -5,6 +5,7 @@
 
 import { AppState } from '../../utils/state.js';
 import { _avatarHTML } from './teacherUI.js';
+import { getSelectableSubjects } from '../subjects.js';
 
 /**
  * Render the full teacher form HTML
@@ -14,7 +15,6 @@ import { _avatarHTML } from './teacherUI.js';
 export function renderTeacherForm(existing = null) {
   const disciplines      = AppState.get('disciplines') || [];
   const campuses         = AppState.get('campuses')    || [];
-  const allSubjects      = AppState.get('subjects')    || [];
   const allLevels        = AppState.get('levels')      || [];
 
   const selDiscs  = existing?.disciplines     || [];
@@ -203,8 +203,25 @@ export function renderTeacherForm(existing = null) {
       ${disciplines.map(disc => {
         const isSelected     = selDiscs.includes(disc.id);
         const discLevelIds   = allLevels.filter(l => l.disciplineId === disc.id).map(l => l.id);
-        const discSubjects   = allSubjects.filter(s => discLevelIds.includes(s.levelId));
-        const subjectsJson   = JSON.stringify(discSubjects.map(s => ({ id: s.id, code: s.subjectCode, name: s.subjectName })));
+
+        // Active subjects only in the search pool.
+        // BUT: for each subject the teacher currently teaches, always include it
+        // even if archived — so editing doesn't silently drop their assignment.
+        // We pass each selSubs id as currentSubjectId to ensure inclusion.
+        const allDiscSubjects = AppState.get('subjects') || [];
+        const discSubjects = allDiscSubjects.filter(s => {
+          if (!discLevelIds.includes(s.levelId)) return false;
+          // Always include already-assigned subjects even if archived
+          if (selSubs.includes(s.id)) return true;
+          return !s.isArchived;
+        });
+
+        const subjectsJson   = JSON.stringify(discSubjects.map(s => ({
+          id:   s.id,
+          code: s.subjectCode,
+          name: s.subjectName,
+          archived: !!s.isArchived,
+        })));
 
         // Pre-selected for edit mode
         const preSelected = discSubjects.filter(s => selSubs.includes(s.id));
@@ -239,8 +256,8 @@ export function renderTeacherForm(existing = null) {
             <!-- Selected tags -->
             <div class="ts-tags-wrap" id="tsTags_${disc.id}">
               ${preSelected.map(s => `
-                <span class="ts-tag" data-sub-id="${s.id}" title="${s.subjectName}">
-                  <span class="ts-tag-code">${s.subjectCode}</span>
+                <span class="ts-tag${s.isArchived ? ' ts-tag--archived' : ''}" data-sub-id="${s.id}" title="${s.subjectName}${s.isArchived ? ' (archived)' : ''}">
+                  <span class="ts-tag-code">${s.subjectCode}${s.isArchived ? ' <span style="font-size:9px;opacity:.7">[archived]</span>' : ''}</span>
                   <button type="button" class="ts-tag-remove" data-remove="${s.id}" data-disc="${disc.id}" title="Remove">✕</button>
                   <input type="hidden" class="ts-subject-cb" value="${s.id}"/>
                 </span>`).join('')}
