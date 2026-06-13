@@ -1,15 +1,15 @@
 // ============================================================
 // modules/backupUI.js — Backup & Restore UI Module
-// Admin Panel ke "Backup" tab mein mount hota hai.
+// Mounts into the Admin Panel "Backup" tab.
 //
 // FEATURES:
-//  - Manual backup (optional label ke saath)
+//  - Manual backup (with optional label)
 //  - Auto backup on/off toggle + interval setting
 //  - Backup list: name, date, record counts, size
-//  - Restore kisi bhi backup se (confirm modal)
+//  - Restore from any backup (with confirm modal)
 //  - Download backup as JSON (offline copy)
 //  - Upload/Import JSON file
-//  - Live state seedha download
+//  - Direct live state download
 // ============================================================
 
 import { BackupManager } from '../utils/backupManager.js';
@@ -41,7 +41,7 @@ function _pageTemplate() {
           Backup &amp; Restore
         </h2>
         <p style="font-size:12.5px;color:var(--t3);margin:0">
-          Data MongoDB mein save hota hai. Backup se purana data wapas laya ja sakta hai.
+          Data is stored in MongoDB. Restore any backup to recover previous data.
         </p>
       </div>
 
@@ -55,17 +55,17 @@ function _pageTemplate() {
           Manual Backup
         </div>
         <p class="bk-hint">
-          Abhi ka sara data ek naam de ke save karo. Important changes se pehle karo.
+          Save a named snapshot of all current data. Recommended before important changes.
         </p>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="bkLabelInput" class="form-input"
-                 placeholder="Backup ka naam (optional) — e.g. Before Term Change"
+                 placeholder="Backup name (optional) — e.g. Before Term Change"
                  style="flex:1;min-width:220px;max-width:380px"/>
           <button id="bkCreateBtn" class="add-btn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            Backup Banao
+            Create Backup
           </button>
           <button id="bkDownloadLive"
                   style="display:inline-flex;align-items:center;gap:6px;padding:0 14px;height:34px;
@@ -89,7 +89,7 @@ function _pageTemplate() {
           </svg>
           Auto Backup
         </div>
-        <p class="bk-hint">Browser tab khula rahe to automatically backup hota rahega.</p>
+        <p class="bk-hint">Automatically creates backups at a set interval while the browser tab is open.</p>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--t1)">
             <input type="checkbox" id="bkAutoEnabled"
@@ -97,7 +97,7 @@ function _pageTemplate() {
             Auto Backup On
           </label>
           <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--t2)">
-            Har
+            Every
             <select id="bkAutoInterval" class="form-select form-input"
                     style="width:90px;height:32px;padding:0 8px">
               <option value="15">15 min</option>
@@ -106,7 +106,7 @@ function _pageTemplate() {
               <option value="120">2 hours</option>
               <option value="360">6 hours</option>
             </select>
-            baad
+            interval
           </div>
           <span id="bkAutoStatus" class="bk-status-badge bk-status--off">Off</span>
         </div>
@@ -122,8 +122,8 @@ function _pageTemplate() {
           JSON File Import
         </div>
         <p class="bk-hint">
-          Pehle download ki hui SMS backup file (.json) wapas import karo.
-          Import karne se pehle automatic backup ban jayega.
+          Re-import a previously downloaded SMS backup file (.json).
+          A backup will be created automatically before importing.
         </p>
         <div style="display:flex;gap:8px;align-items:center">
           <label class="add-btn" style="cursor:pointer;background:var(--surface2);border:1px solid var(--border);color:var(--t1)">
@@ -131,10 +131,10 @@ function _pageTemplate() {
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
-            JSON File Select Karo
+            Select JSON File
             <input type="file" id="bkImportFile" accept=".json" style="display:none"/>
           </label>
-          <span id="bkImportFileName" style="font-size:12px;color:var(--t3)">Koi file select nahi</span>
+          <span id="bkImportFileName" style="font-size:12px;color:var(--t3)">No file selected</span>
         </div>
       </div>
 
@@ -295,7 +295,7 @@ function _attachEvents(el) {
       Toast.error(`Backup failed: ${e.message}`);
     } finally {
       btn.disabled    = false;
-      btn.innerHTML   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Backup Banao`;
+      btn.innerHTML   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Create Backup`;
     }
   });
 
@@ -345,27 +345,27 @@ function _attachEvents(el) {
     el.querySelector('#bkImportFileName').textContent = file.name;
 
     const ok = await Modal.confirm({
-      title:        'File Import — Data Replace Hoga',
-      message:      `<strong>${file.name}</strong> import karne se <strong>poora current data replace</strong> ho jayega.<br><br>Import se pehle automatic backup ban jayega. Phir bhi continue karein?`,
-      confirmLabel: 'Haan, Import Karo',
+      title:        'File Import — Current Data Will Be Replaced',
+      message:      `<strong>${file.name}</strong> will <strong>replace all current data</strong> when imported.<br><br>A backup will be created automatically before importing. Do you want to continue?`,
+      confirmLabel: 'Yes, Import',
       danger:       true,
     });
     if (!ok) {
       e.target.value = '';
-      el.querySelector('#bkImportFileName').textContent = 'Koi file select nahi';
+      el.querySelector('#bkImportFileName').textContent = 'No file selected';
       return;
     }
 
     try {
-      Toast.info('Import ho raha hai…');
+      Toast.info('Importing…');
       const r = await BackupManager.importFromFile(file);
-      Toast.success(`Import complete. Backup bana: "${r.importedName}". Page refresh karein.`);
+      Toast.success(`Import complete. Backup created: "${r.importedName}". Please refresh the page.`);
       _loadBackupList(el);
     } catch (err) {
       Toast.error(`Import failed: ${err.message}`);
     } finally {
       e.target.value = '';
-      el.querySelector('#bkImportFileName').textContent = 'Koi file select nahi';
+      el.querySelector('#bkImportFileName').textContent = 'No file selected';
     }
   });
 }
@@ -380,12 +380,12 @@ async function _loadBackupList(el) {
   try {
     backups = await BackupManager.listBackups();
   } catch (e) {
-    wrap.innerHTML = `<div class="bk-empty" style="color:var(--red)">List load nahi hui: ${e.message}</div>`;
+    wrap.innerHTML = `<div class="bk-empty" style="color:var(--red)">Failed to load list: ${e.message}</div>`;
     return;
   }
 
   if (!backups.length) {
-    wrap.innerHTML = '<div class="bk-empty">Koi backup nahi — pehla backup banao.</div>';
+    wrap.innerHTML = '<div class="bk-empty">No backups found — create your first backup.</div>';
     return;
   }
 
@@ -446,16 +446,16 @@ async function _handleAction(action, name, el) {
   if (action === 'restore') {
     const ok = await Modal.confirm({
       title:        'Restore Confirm',
-      message:      `<strong>"${name}"</strong> se data restore karna chahte hain?<br><br>
-                     Current data <strong>replace ho jayega</strong>. Page automatically reload hoga.`,
-      confirmLabel: 'Haan, Restore Karo',
+      message:      `Are you sure you want to restore from <strong>"${name}"</strong>?<br><br>
+                     Current data will be <strong>replaced</strong>. The page will reload automatically.`,
+      confirmLabel: 'Yes, Restore',
       danger:       true,
     });
     if (!ok) return;
     try {
-      Toast.info('Restore ho raha hai…');
+      Toast.info('Restoring…');
       await BackupManager.restoreBackup(name);
-      Toast.success('Restore complete! Page reload ho raha hai…');
+      Toast.success('Restore complete! Reloading page…');
       setTimeout(() => location.reload(), 1500);
     } catch (e) {
       Toast.error(`Restore failed: ${e.message}`);
@@ -471,8 +471,8 @@ async function _handleAction(action, name, el) {
 
   } else if (action === 'delete') {
     const ok = await Modal.confirm({
-      title:        'Backup Delete Karo',
-      message:      `<strong>"${name}"</strong> backup permanently delete ho jayega.`,
+      title:        'Delete Backup',
+      message:      `<strong>"${name}"</strong> backup will be permanently deleted.`,
       confirmLabel: 'Delete',
       danger:       true,
     });
@@ -497,7 +497,7 @@ function _syncAutoUI(el) {
   if (chk)    chk.checked    = s.enabled;
   if (intSel) intSel.value   = String(s.intervalMinutes || 30);
   if (badge) {
-    badge.textContent = s.enabled ? `On — har ${s.intervalMinutes} min` : 'Off';
+    badge.textContent = s.enabled ? `On — every ${s.intervalMinutes} min` : 'Off';
     badge.className   = `bk-status-badge ${s.enabled ? 'bk-status--on' : 'bk-status--off'}`;
   }
 }
