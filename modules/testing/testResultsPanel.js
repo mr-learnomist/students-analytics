@@ -1069,12 +1069,13 @@ export const TestResultsPanel = {
     // Wire retest checkbox
     retestCb?.addEventListener('change', () => {
       _isRetest = retestCb.checked;
-      retestDateRow.style.display = _isRetest ? 'flex' : 'none';
-      if (!_isRetest) { _retestDate = ''; retestDateInp.value = ''; }
-      // Reset grid when toggling
+      if (retestRow)     retestRow.style.display = '';
+      if (retestDateRow) retestDateRow.style.display = _isRetest ? 'flex' : 'none';
+      if (!_isRetest) { _retestDate = ''; if (retestDateInp) retestDateInp.value = ''; }
+      // Rebuild grid on toggle
       marksGrid.style.display = 'none';
       if (saveBtn) saveBtn.disabled = true;
-      if (_isRetest && totalMarksInp?.value?.trim()) refreshGrid();
+      if (_selectedEntry && totalMarksInp?.value?.trim()) refreshGrid();
     });
 
     // Wire retest date input
@@ -1622,7 +1623,7 @@ export const TestResultsPanel = {
         // Retest UI state
         if (_isRetest) {
           // "Add Retest" clicked — show retest date row, pre-fill if date provided
-          if (retestCb)      { retestCb.checked = true; }
+          if (retestCb)      { retestCb.checked = true; retestCb.dispatchEvent(new Event('change')); }
           if (retestRow)     { retestRow.style.display = ''; }
           if (retestDateRow) { retestDateRow.style.display = 'flex'; }
           if (retestDateInp && retestDateValue) { retestDateInp.value = retestDateValue; }
@@ -1644,66 +1645,104 @@ export const TestResultsPanel = {
         if (totalMarksInp?.value?.trim()) refreshGrid();
       };
 
-      // Build one test/retest row
-      const buildItem = (e, indent = false) => {
+      // ── Build hierarchical tree: original → retests → Add Retest button ──
+
+      // Original test row
+      const buildOriginalItem = (e) => {
         const typeMeta  = TEST_TYPE_META[e.testType] || {};
         const dateLabel = e.date       ? ` — ${formatDate(e.date)}` : '';
-        const mrkLabel  = e.totalMarks ? ` [${e.totalMarks} marks]` : '';
-        const retestBadgeHtml = e.isRetest
-          ? `<span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:5px;
-               background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);flex-shrink:0">
-               Retest #${e.retestIndex}</span>`
-          : '';
+        const mrkLabel  = e.totalMarks ? ` · ${e.totalMarks} marks` : '';
         return `
-          <label style="display:flex;align-items:center;gap:8px;padding:7px ${indent ? '28px' : '10px'} 7px ${indent ? '28px' : '10px'};
-            border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--t1);
-            transition:background .1s;user-select:none;${indent ? 'border-left:2px solid var(--violet,#7c3aed);margin-left:16px;margin-right:4px;' : ''}"
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+            border-radius:8px;cursor:pointer;font-size:12.5px;color:var(--t1);
+            transition:background .1s;user-select:none;"
             onmouseover="this.style.background='var(--surface2)'"
             onmouseout="this.style.background=this.querySelector('input[type=radio]').checked?'var(--blue-dim)':'transparent'">
             <input type="radio" name="trTestRadio" class="tr-test-rb" value="${e.id}"
               style="accent-color:var(--blue);width:14px;height:14px;cursor:pointer;flex-shrink:0"/>
-            <span style="display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:700;
-              background:${typeMeta.bg||'var(--surface3)'};color:${typeMeta.color||'var(--t2)'};flex-shrink:0">
-              ${e.testName}
+            <span style="display:inline-flex;align-items:center;gap:5px;flex:1;min-width:0">
+              <span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10.5px;font-weight:700;
+                background:${typeMeta.bg||'var(--surface3)'};color:${typeMeta.color||'var(--t2)'};flex-shrink:0">
+                ${e.testName}
+              </span>
+              <span style="color:var(--t3);font-size:11.5px;white-space:nowrap">${dateLabel}${mrkLabel}</span>
             </span>
-            ${retestBadgeHtml}
-            <span style="color:var(--t3);font-size:11.5px">${dateLabel}${mrkLabel}</span>
           </label>`;
       };
 
-      // Build "Add Retest N" button (nested under parent)
+      // Retest child row (tree branch style)
+      const buildRetestItem = (e, isLast) => {
+        const dateLabel = e.date ? formatDate(e.date) : '—';
+        const mrkLabel  = e.totalMarks ? ` · ${e.totalMarks} marks` : '';
+        const branchIcon = isLast ? '└─' : '├─';
+        return `
+          <div style="display:flex;align-items:stretch;margin-left:10px">
+            <div style="display:flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;padding-top:2px">
+              <div style="width:1px;flex:1;background:var(--border2)"></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px 6px 0;flex:1;
+              border-radius:7px;cursor:pointer;font-size:12px;color:var(--t1);
+              transition:background .1s;user-select:none;"
+              onmouseover="this.style.background='var(--surface2)'"
+              onmouseout="this.style.background=this.querySelector('input[type=radio]').checked?'var(--blue-dim)':'transparent'">
+              <span style="color:var(--t4);font-size:11px;font-family:monospace;flex-shrink:0;margin-left:2px">${branchIcon}</span>
+              <input type="radio" name="trTestRadio" class="tr-test-rb" value="${e.id}"
+                style="accent-color:var(--violet,#7c3aed);width:13px;height:13px;cursor:pointer;flex-shrink:0"/>
+              <span style="display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:700;
+                background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);flex-shrink:0">
+                Retest #${e.retestIndex}
+              </span>
+              <span style="color:var(--t3);font-size:11.5px;white-space:nowrap">${dateLabel}${mrkLabel}</span>
+            </label>
+          </div>`;
+      };
+
+      // Add Retest button row (last child)
       const buildAddRetestBtn = (parentEntry, nextIndex) => {
         return `
-          <div class="tr-add-retest-btn" data-parent-id="${parentEntry.id}"
-            style="display:flex;align-items:center;gap:7px;
-              padding:6px 28px 6px 28px;
-              margin-left:16px;margin-right:4px;
-              border-left:2px solid var(--violet,#7c3aed);
-              border-radius:0 7px 7px 0;
-              cursor:pointer;font-size:11.5px;font-weight:600;
-              color:var(--violet,#7c3aed);
-              transition:background .1s;user-select:none"
-            onmouseover="this.style.background='var(--violet-dim,#ede9fe)'"
-            onmouseout="this.style.background='transparent'">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            Add Retest #${nextIndex}
+          <div style="display:flex;align-items:stretch;margin-left:10px" class="tr-add-retest-wrap">
+            <div style="display:flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;padding-top:2px">
+              <div style="width:1px;height:12px;background:var(--border2)"></div>
+            </div>
+            <div class="tr-add-retest-btn" data-parent-id="${parentEntry.id}"
+              style="display:flex;align-items:center;gap:6px;padding:6px 10px 6px 0;
+                cursor:pointer;font-size:11.5px;font-weight:600;
+                color:var(--violet,#7c3aed);border-radius:7px;flex:1;
+                transition:background .1s;user-select:none"
+              onmouseover="this.style.background='var(--violet-dim,#ede9fe)'"
+              onmouseout="this.style.background='transparent'">
+              <span style="color:var(--t4);font-size:11px;font-family:monospace;flex-shrink:0;margin-left:2px">└─</span>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" style="flex-shrink:0">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Retest #${nextIndex}
+            </div>
           </div>`;
       };
 
       let html = '';
       originalEntries.forEach(e => {
-        html += buildItem(e, false);
-        // Nested saved retests (sorted by index)
+        html += buildOriginalItem(e);
+
+        // Nested saved retests sorted by index
         const myRetests = retestEntries
           .filter(r => r.retestOf === e.id)
           .sort((a, b) => (a.retestIndex || 0) - (b.retestIndex || 0));
-        myRetests.forEach(r => {
-          html += buildItem(r, true);
+
+        // "Add Retest #N" next index — from AppState live (always accurate)
+        const savedRetestIndicesForThis = new Set(
+          (AppState.get('testResults') || [])
+            .filter(r => r.isRetest && r.retestOf === e.id)
+            .map(r => r.retestIndex)
+        );
+        const nextRetestIndex = savedRetestIndicesForThis.size > 0
+          ? Math.max(...savedRetestIndicesForThis) + 1
+          : (myRetests.length ? myRetests[myRetests.length - 1].retestIndex + 1 : 1);
+
+        myRetests.forEach((r, i) => {
+          // isLast = true only if this is last AND there's no Add button after — but we always show Add btn so never isLast
+          html += buildRetestItem(r, false);
         });
-        // "Add Retest #N" button always shown under each original test
-        const nextRetestIndex = (myRetests.length ? myRetests[myRetests.length - 1].retestIndex : 0) + 1;
         html += buildAddRetestBtn(e, nextRetestIndex);
       });
 
@@ -1818,6 +1857,14 @@ export const TestResultsPanel = {
     Toast.success(saved
       ? `${saved} record${saved !== 1 ? 's' : ''} saved successfully.`
       : 'Total Marks saved for all students.');
+
+    // Rebuild the test dropdown so "Add Retest #N" reflects new index after save
+    // (in case user saves and immediately adds another retest in same modal session)
+    const batchSelEl = modalEl.querySelector('#trModalBatch');
+    if (batchSelEl?.value) {
+      batchSelEl.dispatchEvent(new Event('change'));
+    }
+
     Modal.closeAll();
     this._renderTable(container);
   },
