@@ -128,17 +128,53 @@ function _buildCalendarEntries({ campusId, sessionId, subjectId, batchId } = {})
   });
 
   // ── 3. Saved retest virtual entries ──────────────────────────
+  // Search parent in ALL entries (no subject filter) so retests always appear
+  const allEntriesForRetestLookup = (() => {
+    const _all = [];
+    const _assignments = getAllAssignments();
+    for (const [bid, lpa] of Object.entries(_assignments)) {
+      if (!lpa?.rows?.length) continue;
+      if (batchId && bid !== batchId) continue;
+      const _batch = AppState.findById('batches', bid) || {};
+      if (campusId && _batch.campusId !== campusId) continue;
+      if (sessionId && _batch.sessionId !== sessionId && _batch.sessionPeriod !== sessionId) continue;
+      lpa.rows.forEach(row => {
+        const rowType = (row.type || '').toLowerCase();
+        if (!LP_TEST_TYPES.has(rowType) || !row.date) return;
+        const rawTopic = (row.topic || '').trim();
+        if (rawTopic && !LP_VALID_RE.test(rawTopic)) return;
+        _all.push({ id: `lp__${bid}__${row.id}`, batchId: bid, subjectId: row.subjectId || '' });
+      });
+    }
+    getSchedules().forEach(s => {
+      if (batchId && s.batchId !== batchId) return;
+      const _batch = AppState.findById('batches', s.batchId) || {};
+      if (campusId && _batch.campusId !== campusId) return;
+      if (sessionId && _batch.sessionId !== sessionId && _batch.sessionPeriod !== sessionId) return;
+      _all.push({ id: s.id, batchId: s.batchId, subjectId: s.subjectId || '' });
+    });
+    return _all;
+  })();
+
   const retestStubs = _getRetestEntries();
   retestStubs.forEach(stub => {
-    // Find parent entry in our list
-    const parent = entries.find(e => e.id === stub.retestOf);
-    if (!parent) return;
-    // Apply filters (same as parent)
-    if (batchId   && parent.batchId   !== batchId)   return;
-    if (subjectId && parent.subjectId !== subjectId)  return;
-    const retEntry = _makeRetestEntry(parent, stub.retestDate, stub.retestIndex);
-    retEntry.id = stub.scheduleEntryId; // use the stored virtual id
-    entries.push(retEntry);
+    // Find parent — first in already-filtered entries, then in full lookup
+    let parent = entries.find(e => e.id === stub.retestOf);
+    if (!parent) {
+      const lookup = allEntriesForRetestLookup.find(e => e.id === stub.retestOf);
+      if (!lookup) return;
+      // Reconstruct minimal parent from full entries (no subject filter)
+      parent = { id: lookup.id, batchId: lookup.batchId, subjectId: lookup.subjectId };
+    }
+    if (batchId && parent.batchId !== batchId) return;
+    const retEntry = _makeRetestEntry(
+      entries.find(e => e.id === stub.retestOf) || parent,
+      stub.retestDate,
+      stub.retestIndex
+    );
+    retEntry.id = stub.scheduleEntryId;
+    // Avoid duplicates
+    if (!entries.find(e => e.id === retEntry.id)) entries.push(retEntry);
   });
 
   // Sort by date ascending
@@ -1078,13 +1114,15 @@ export const TestResultsPanel = {
       if (_selectedEntry && totalMarksInp?.value?.trim()) refreshGrid();
     });
 
-    // Wire retest date input
-    retestDateInp?.addEventListener('change', () => {
+    // Wire retest date input (both 'change' and 'input' to catch all interactions)
+    const onRetestDateChange = () => {
       _retestDate = retestDateInp.value;
       retestDateErr.style.display = 'none';
       retestDateInp.style.borderColor = '';
       if (_selectedEntry && totalMarksInp?.value?.trim()) refreshGrid();
-    });
+    };
+    retestDateInp?.addEventListener('change', onRetestDateChange);
+    retestDateInp?.addEventListener('input',  onRetestDateChange);
 
     // ── helpers ──────────────────────────────────────────────────
 
