@@ -6,6 +6,7 @@
 import { AppState, generateID } from '../utils/state.js';
 import { Modal, Table, Form, injectUIStyles } from '../utils/ui.js';
 import { Toast } from '../utils/helpers.js';
+import { getSelectableLevels } from './levels.js';
 
 const KEY = 'subjects';
 
@@ -108,13 +109,14 @@ export const SubjectsModule = {
     const hasRoutes   = initDisc?.hasRoutes || false;
     const discRoutes  = initDisc?.routes    || [];
 
-    // Build grouped level options
+    // Build grouped level options — active levels only, but always include the
+    // level already saved on this subject (even if it has since been archived).
     const grouped = disciplines.map(disc => {
-      const discLevels = levels.filter(l => l.disciplineId === disc.id);
+      const discLevels = getSelectableLevels(disc.id, existing?.levelId);
       if (!discLevels.length) return '';
       const opts = discLevels.map(l =>
         `<option value="${l.id}" data-disc="${disc.id}" ${l.id === existing?.levelId ? 'selected' : ''}>
-          ${l.levelName}
+          ${l.levelName}${l.isArchived ? ' (archived)' : ''}
         </option>`
       ).join('');
       return `<optgroup label="${disc.abbreviation} — ${disc.fullName}">${opts}</optgroup>`;
