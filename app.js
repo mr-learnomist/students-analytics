@@ -30,6 +30,8 @@ import { BankModule }        from './modules/bank.js';
 import { RoomsModule }       from './modules/Room.js';
 import { EnrolmentModule }   from './modules/enrolment/enrolmentUI.js';
 import { AnalyticsModule }  from './modules/analytics/analyticsUI.js';
+import { BackupModule }     from './modules/backupUI.js';
+import { BackupManager }    from './utils/backupManager.js';
 
 // ── Boot sequence ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -38,6 +40,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // This MUST complete before any Storage.get() call — fixes the
     // "get() called before loadAll()" warning in storage.js
     await AppState.loadState();
+
+    // Resume auto backup if it was enabled in a previous session
+    BackupManager.resumeIfEnabled();
 
     injectUIStyles();
 
@@ -300,6 +305,7 @@ function activateAdminTab(tab) {
     feeStructures: () => FeeStructureModule.mount(el),
     policies:      () => PoliciesModule.mount(el),
     bank:          () => BankModule.mount(el),
+    backup:        () => BackupModule.mount(el),
   };
   mods[tab]?.();
 
