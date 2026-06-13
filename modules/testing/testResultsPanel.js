@@ -1395,9 +1395,25 @@ export const TestResultsPanel = {
           </div>
         </div>`;
 
-      // ── Live pass/fail badge on input ─────────────────────────────
+      // ── Live pass/fail badge + max enforcement on input ─────────────
       marksGrid.querySelectorAll('.tr-mark-cell').forEach(input => {
         input.addEventListener('input', () => {
+          const maxVal = parseFloat(input.dataset.total) || tm;
+
+          // ── Enforce max: trim value if exceeds totalMarks ──
+          if (input.value !== '' && parseFloat(input.value) > maxVal) {
+            input.value = maxVal;
+            input.style.borderColor = 'var(--red)';
+            setTimeout(() => { input.style.borderColor = ''; }, 800);
+          } else {
+            input.style.borderColor = '';
+          }
+
+          // ── Enforce min: no negative ──
+          if (input.value !== '' && parseFloat(input.value) < 0) {
+            input.value = 0;
+          }
+
           const badge = input.closest('td')?.querySelector('.tr-pf-badge');
           if (!badge) return;
           const v = input.value;
@@ -1446,7 +1462,20 @@ export const TestResultsPanel = {
     totalMarksInp?.addEventListener('input', () => {
       const v = parseFloat(totalMarksInp.value);
       if (passingDisplay) passingDisplay.textContent = v ? Math.ceil(v * 0.5) : '—';
-      if (_selectedEntry) refreshGrid();
+      if (_selectedEntry) {
+        refreshGrid();
+      }
+      // ── Re-validate existing mark cells if totalMarks changed ──
+      if (v) {
+        marksGrid.querySelectorAll('.tr-mark-cell').forEach(inp => {
+          if (inp.value !== '' && parseFloat(inp.value) > v) {
+            inp.value = v;
+          }
+          inp.setAttribute('max', v);
+          // Update data-total too
+          inp.dataset.total = v;
+        });
+      }
     });
 
     // ── Cascade: Campus ──────────────────────────────────────────
@@ -1623,13 +1652,18 @@ export const TestResultsPanel = {
 
           closeTestDropdown();
 
-          // Pre-fill totalMarks from entry if available
-          if (_selectedEntry?.totalMarks && totalMarksInp) {
-            totalMarksInp.value = _selectedEntry.totalMarks;
-            if (passingDisplay) {
-              passingDisplay.textContent = _selectedEntry.passingMarks ||
-                Math.ceil(parseFloat(_selectedEntry.totalMarks) * 0.5);
-            }
+          // ── Auto-fill totalMarks ──────────────────────────────────
+          // Priority: 1) entry.totalMarks  2) saved result record  3) blank
+          let autoTotalMarks = _selectedEntry?.totalMarks || '';
+          if (!autoTotalMarks) {
+            const savedForEntry = (AppState.get('testResults') || [])
+              .find(r => r.scheduleEntryId === _selectedEntry?.id && r.totalMarks);
+            if (savedForEntry) autoTotalMarks = savedForEntry.totalMarks;
+          }
+          if (autoTotalMarks && totalMarksInp) {
+            totalMarksInp.value = autoTotalMarks;
+            const _pm = Math.ceil(parseFloat(autoTotalMarks) * 0.5);
+            if (passingDisplay) passingDisplay.textContent = _pm;
           }
 
           // Show marks settings
