@@ -33,6 +33,7 @@ import { Toast } from '../utils/helpers.js';
 import { Auth } from '../utils/auth.js';
 import { getAssignmentForBatch } from './lecturePlan/lecturePlanService.js';
 import { ChangeManager } from '../utils/changeManager.js';
+import { getSelectableLevels } from './levels.js';
 import {
   applyCampusImpact,
   applyDisciplineImpact,
@@ -823,8 +824,8 @@ export const BatchModule = {
     const discOptions    = discForCampus.map(d =>
       `<option value="${d.id}" ${d.id === selDiscId ? 'selected' : ''}>${d.abbreviation} — ${d.fullName}</option>`
     ).join('');
-    const levelOptions   = allLevels.filter(l => l.disciplineId === selDiscId).map(l =>
-      `<option value="${l.id}" ${l.id === selLvlId ? 'selected' : ''}>${l.levelName}</option>`
+    const levelOptions   = getSelectableLevels(selDiscId, selLvlId).map(l =>
+      `<option value="${l.id}" ${l.id === selLvlId ? 'selected' : ''}>${l.levelName}${l.isArchived ? ' (archived)' : ''}</option>`
     ).join('');
     // Build subject dropdown.
     // On EDIT: the selected option label must show the frozen snapshot
@@ -1826,7 +1827,7 @@ export const BatchModule = {
 
     // ── Discipline change → levels + teacher filter ────────────
     discSel?.addEventListener('change', () => {
-      const levels = allLevels.filter(l => l.disciplineId === discSel.value);
+      const levels = getSelectableLevels(discSel.value);
       levelSel.innerHTML = levels.length
         ? `<option value="">Select a level…</option>` +
           levels.map(l => `<option value="${l.id}">${l.levelName}</option>`).join('')
@@ -3160,6 +3161,8 @@ export const BatchModule = {
     const icoDel   = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>`;
     const icoAdd   = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
     const icoChev  = `<svg class="ht-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="transition:transform .2s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const icoArchive = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`;
+    const icoRestore = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
 
     const actionBtns = (type, id, name) => `
       <div class="ht-actions">
@@ -3167,6 +3170,22 @@ export const BatchModule = {
           ${icoEdit}
         </button>
         <button class="ht-btn ht-del" data-ht-type="${type}" data-ht-id="${id}" data-ht-name="${esc(name)}" title="Delete ${type}">
+          ${icoDel}
+        </button>
+      </div>`;
+
+    // Levels also get an Archive/Restore toggle (keeps historic data intact
+    // while hiding the level from new Subject/Batch selections).
+    const levelActionBtns = (id, name, isArchived) => `
+      <div class="ht-actions">
+        <button class="ht-btn ht-edit" data-ht-type="level" data-ht-id="${id}" title="Edit level">
+          ${icoEdit}
+        </button>
+        <button class="ht-btn ht-archive" data-ht-id="${id}" data-ht-archived="${isArchived ? '1' : '0'}" data-ht-name="${esc(name)}"
+                title="${isArchived ? 'Restore level' : 'Archive level'}">
+          ${isArchived ? icoRestore : icoArchive}
+        </button>
+        <button class="ht-btn ht-del" data-ht-type="level" data-ht-id="${id}" data-ht-name="${esc(name)}" title="Delete level">
           ${icoDel}
         </button>
       </div>`;
@@ -3193,13 +3212,14 @@ export const BatchModule = {
             const levelsHTML = discLevels.map(lvl => {
               const bc = batchCount(lvl);
               return `
-                <div class="ht-row ht-level-row">
+                <div class="ht-row ht-level-row" style="${lvl.isArchived ? 'opacity:.55' : ''}">
                   <span class="ht-indent4"></span>
                   ${icoChev}
                   <span class="ht-icon-dot" style="background:var(--cyan)"></span>
                   <span class="ht-label">${esc(lvl.levelName)}</span>
+                  ${lvl.isArchived ? `<span class="badge badge--grey" style="font-size:10px">Archived</span>` : ''}
                   ${bc ? `<span class="ht-pill ht-pill-cyan">${bc} batch${bc!==1?'es':''}</span>` : ''}
-                  ${actionBtns('level', lvl.id, lvl.levelName)}
+                  ${levelActionBtns(lvl.id, lvl.levelName, !!lvl.isArchived)}
                 </div>`;
             }).join('');
 
@@ -3353,6 +3373,30 @@ export const BatchModule = {
         if (!ok) return;
         AppState.remove(key, id);
         Toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted.`);
+        this._refreshHierarchy(el);
+      });
+    });
+
+    // ── Archive / Restore (levels only) ──────────────────────
+    body.querySelectorAll('.ht-archive').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id         = btn.dataset.htId;
+        const name       = btn.dataset.htName;
+        const isArchived = btn.dataset.htArchived === '1';
+
+        if (!isArchived) {
+          const ok = await Modal.confirm({
+            title: 'Archive Level',
+            message: `Archive <strong>${name}</strong>? It will be hidden from selection in new Subjects/Batches, but existing records and history stay unaffected. You can restore it anytime.`,
+            confirmLabel: 'Archive'
+          });
+          if (!ok) return;
+          AppState.update('levels', id, { isArchived: true });
+          Toast.success(`Level "${name}" archived.`);
+        } else {
+          AppState.update('levels', id, { isArchived: false });
+          Toast.success(`Level "${name}" restored.`);
+        }
         this._refreshHierarchy(el);
       });
     });
@@ -3811,6 +3855,7 @@ export const BatchModule = {
         cursor:pointer; color:var(--t3); transition:all .12s;
       }
       .ht-edit:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+      .ht-archive:hover { border-color:var(--yellow); color:var(--yellow); background:var(--yellow-dim); }
       .ht-del:hover  { border-color:var(--red);  color:var(--red);  background:var(--red-dim);  }
 
       .ht-add-row-wrap { cursor:default; padding:4px 10px; }
