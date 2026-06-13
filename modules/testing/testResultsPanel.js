@@ -640,8 +640,23 @@ export const TestResultsPanel = {
     const allScheduleEntries = _buildCalendarEntries({});
     const allCampuses = AppState.get('campuses') || [];
 
+    // Build a fallback map for retest entries that _buildCalendarEntries might miss
+    // Key: scheduleEntryId (e.g. retest__parentId__1) → virtual entry object
+    const retestFallbackMap = {};
+    _getResults().forEach(r => {
+      if (!r.isRetest || !r.retestOf || !r.scheduleEntryId) return;
+      if (retestFallbackMap[r.scheduleEntryId]) return; // already built
+      // Find parent entry
+      const parentEntry = allScheduleEntries.find(e => e.id === r.retestOf);
+      if (!parentEntry) return;
+      retestFallbackMap[r.scheduleEntryId] = _makeRetestEntry(parentEntry, r.retestDate || '', r.retestIndex || 1);
+      retestFallbackMap[r.scheduleEntryId].id = r.scheduleEntryId;
+    });
+
     let rows = _getResults().map(r => {
-      const entry   = allScheduleEntries.find(e => e.id === r.scheduleEntryId);
+      const entry   = allScheduleEntries.find(e => e.id === r.scheduleEntryId)
+                   || retestFallbackMap[r.scheduleEntryId]
+                   || null;
       if (!entry) return null;
       const batch   = AppState.findById('batches',  entry.batchId)   || {};
       const student = AppState.findById('students', r.studentId)     || {};
@@ -833,31 +848,28 @@ export const TestResultsPanel = {
   _rowHTML(r, i) {
     const typeMeta    = TEST_TYPE_META[r.entry.testType] || {};
     const isRetest    = r.isRetest || r.entry?.isRetest || false;
-    const retestOf    = r.retestOf || r.entry?.retestOf || null;
     const retestIndex = r.retestIndex || r.entry?.retestIndex || null;
 
-    // Find parent test name for retest label
-    let parentTestName = '';
-    if (isRetest && retestOf) {
-      const allEntries = _buildCalendarEntries({});
-      const parent = allEntries.find(e => e.id === retestOf);
-      parentTestName = parent?.testName || '';
+    // Build display name: "Test 1" or "Test 1 (Retest #1)"
+    // For retest rows, find parent test name
+    let displayName = r.entry.testName || '—';
+    if (isRetest) {
+      const retestOf = r.retestOf || r.entry?.retestOf || null;
+      // Parent name: strip any existing retest suffix from entry.testName, or look up parent
+      let parentName = displayName.replace(/\s*\(Retest\s*#?\d*\)$/i, '').trim();
+      if (retestOf) {
+        const allEntries = _buildCalendarEntries({});
+        const parent = allEntries.find(e => e.id === retestOf);
+        if (parent?.testName) parentName = parent.testName;
+      }
+      displayName = `${parentName} (Retest #${retestIndex || 1})`;
     }
 
-    const retestBadge = isRetest
-      ? `<span style="display:inline-block;padding:1px 6px;border-radius:5px;font-size:9.5px;font-weight:700;
-           background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);margin-left:4px">
-           Retest${retestIndex > 1 ? ' #'+retestIndex : ''}</span>`
-      : '';
-
-    const testChip    = `<div style="display:flex;flex-direction:column;gap:2px">
-      <div>
-        <span style="display:inline-block;padding:2px 7px;border-radius:6px;
-          font-size:10.5px;font-weight:700;background:${typeMeta.bg||'var(--surface3)'};
-          color:${typeMeta.color||'var(--t2)'};">${r.entry.testName || '—'}</span>${retestBadge}
-      </div>
-      ${isRetest && parentTestName ? `<div style="font-size:10px;color:var(--t4);padding-left:2px">↳ Retest of ${parentTestName}</div>` : ''}
-    </div>`;
+    const testChip = `<span style="display:inline-block;padding:2px 8px;border-radius:6px;
+      font-size:10.5px;font-weight:700;
+      background:${isRetest ? 'var(--violet-dim,#ede9fe)' : (typeMeta.bg||'var(--surface3)')};
+      color:${isRetest ? 'var(--violet,#7c3aed)' : (typeMeta.color||'var(--t2)')};
+      white-space:nowrap">${displayName}</span>`;
 
     const _tm = r.totalMarks || r.entry.totalMarks || null;
     const _tmSuffix = _tm ? ` <span style="color:var(--t3);font-size:11px">/ ${_tm}</span>` : '';
@@ -1013,6 +1025,7 @@ export const TestResultsPanel = {
               <div id="trRetestDateRow" style="display:none;margin-top:8px;display:none;align-items:center;gap:8px">
                 <label style="font-size:12px;color:var(--t3);font-weight:600;white-space:nowrap">Retest Date <span style="color:var(--red)">*</span></label>
                 <input type="date" id="trRetestDate"
+                  max="${new Date().toISOString().split('T')[0]}"
                   style="height:32px;padding:0 10px;background:var(--surface);border:1px solid var(--border2);
                     border-radius:8px;color:var(--t1);font-size:12.5px;font-family:var(--font-body);outline:none;"/>
                 <span id="trRetestDateErr" style="font-size:10.5px;color:var(--red);display:none">Required</span>
@@ -1116,6 +1129,11 @@ export const TestResultsPanel = {
 
     // Wire retest date input (both 'change' and 'input' to catch all interactions)
     const onRetestDateChange = () => {
+      const today = new Date().toISOString().split('T')[0];
+      if (retestDateInp.value > today) {
+        retestDateInp.value = today;
+        Toast.error('Future date not allowed.');
+      }
       _retestDate = retestDateInp.value;
       retestDateErr.style.display = 'none';
       retestDateInp.style.borderColor = '';
@@ -1294,27 +1312,31 @@ export const TestResultsPanel = {
       }
 
       // Determine the effective entry id for retest saves
-      // For retests, we generate a virtual id based on parentEntryId + retestIndex
+      // For retests: retest__parentId__N  (N = next available index from AppState)
       let effectiveEntryId = entry.id;
       if (_isRetest) {
-        // Count existing retests for this parent
         const allSaved = AppState.get('testResults') || [];
+        // All existing retest indices for this parent
         const existingRetestIndices = new Set(
           allSaved.filter(r => r.isRetest && r.retestOf === entry.id).map(r => r.retestIndex)
         );
-        // Check if we already have a retest entry for same date (editing existing retest)
-        const matchingRetest = allSaved.find(r =>
-          r.isRetest && r.retestOf === entry.id && r.retestDate === _retestDate
-        );
+        // If retest date is set, check if a retest already exists for that exact date → edit mode
+        let matchingRetest = null;
+        if (_retestDate) {
+          matchingRetest = allSaved.find(r =>
+            r.isRetest && r.retestOf === entry.id && r.retestDate === _retestDate
+          );
+        }
         if (matchingRetest) {
-          // Re-use existing retest virtual id
+          // Editing an existing retest — re-use its virtual id and index
           effectiveEntryId = matchingRetest.scheduleEntryId;
+          entry._retestIndex = matchingRetest.retestIndex;
         } else {
-          // New retest: next index
+          // New retest — assign next sequential index
           const nextIndex = existingRetestIndices.size > 0 ? Math.max(...existingRetestIndices) + 1 : 1;
           effectiveEntryId = `retest__${entry.id}__${nextIndex}`;
+          entry._retestIndex = nextIndex;
         }
-        entry._retestIndex = parseInt(effectiveEntryId.split('__')[2]) || 1;
       }
 
       // ── Helper: pass/fail badge ───────────────────────────────────
@@ -1642,6 +1664,21 @@ export const TestResultsPanel = {
         });
 
         closeTestDropdown();
+
+        // Block future test dates
+        if (_selectedEntry?.date && !_isRetest) {
+          const today = new Date().toISOString().split('T')[0];
+          if (_selectedEntry.date > today) {
+            Toast.error(`This test is scheduled for a future date (${formatDate(_selectedEntry.date)}). Marks cannot be entered yet.`);
+            _selectedEntry = null;
+            testTriggerLbl.textContent = 'Select a test…';
+            testTrigger.style.borderColor = 'var(--red)';
+            marksSettings.style.display = 'none';
+            marksGrid.style.display = 'none';
+            if (saveBtn) saveBtn.disabled = true;
+            return;
+          }
+        }
 
         // Auto-fill totalMarks
         let autoTotalMarks = _selectedEntry?.totalMarks || '';
