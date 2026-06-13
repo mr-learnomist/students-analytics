@@ -127,6 +127,20 @@ function _buildCalendarEntries({ campusId, sessionId, subjectId, batchId } = {})
     });
   });
 
+  // ── 3. Saved retest virtual entries ──────────────────────────
+  const retestStubs = _getRetestEntries();
+  retestStubs.forEach(stub => {
+    // Find parent entry in our list
+    const parent = entries.find(e => e.id === stub.retestOf);
+    if (!parent) return;
+    // Apply filters (same as parent)
+    if (batchId   && parent.batchId   !== batchId)   return;
+    if (subjectId && parent.subjectId !== subjectId)  return;
+    const retEntry = _makeRetestEntry(parent, stub.retestDate, stub.retestIndex);
+    retEntry.id = stub.scheduleEntryId; // use the stored virtual id
+    entries.push(retEntry);
+  });
+
   // Sort by date ascending
   entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   return entries;
@@ -154,13 +168,18 @@ function _getResults() { return AppState.get(TR_KEY) || []; }
  * Upsert a single student-test mark.
  * Key: { scheduleEntryId, studentId }
  */
-function _upsertMark({ scheduleEntryId, studentId, marks, absent, subjectId, totalMarks, passingMarks }) {
+function _upsertMark({ scheduleEntryId, studentId, marks, absent, subjectId, totalMarks, passingMarks,
+                       isRetest, retestOf, retestDate, retestIndex }) {
   const all  = _getResults();
   const idx  = all.findIndex(r => r.scheduleEntryId === scheduleEntryId && r.studentId === studentId);
   const extra = {};
-  if (subjectId   != null) extra.subjectId   = subjectId;
-  if (totalMarks  != null) extra.totalMarks   = totalMarks;
+  if (subjectId    != null) extra.subjectId    = subjectId;
+  if (totalMarks   != null) extra.totalMarks   = totalMarks;
   if (passingMarks != null) extra.passingMarks = passingMarks;
+  if (isRetest     != null) extra.isRetest     = isRetest;
+  if (retestOf     != null) extra.retestOf     = retestOf;     // parent entry id
+  if (retestDate   != null) extra.retestDate   = retestDate;
+  if (retestIndex  != null) extra.retestIndex  = retestIndex;  // 1, 2, 3…
   if (idx >= 0) {
     all[idx] = { ...all[idx], marks, absent, ...extra, updatedAt: new Date().toISOString() };
   } else {
@@ -175,6 +194,45 @@ function _upsertMark({ scheduleEntryId, studentId, marks, absent, subjectId, tot
     });
   }
   AppState.set(TR_KEY, all);
+}
+
+/**
+ * Build a virtual "retest" calendar entry derived from an original entry.
+ * retestIndex: 1-based count of retest for this parent entry.
+ */
+function _makeRetestEntry(parentEntry, retestDate, retestIndex) {
+  return {
+    ...parentEntry,
+    id:          `retest__${parentEntry.id}__${retestIndex}`,
+    testName:    `${parentEntry.testName} (Retest ${retestIndex > 1 ? retestIndex : ''})`.trim(),
+    date:        retestDate,
+    isRetest:    true,
+    retestOf:    parentEntry.id,
+    retestIndex,
+    source:      'retest',
+  };
+}
+
+/**
+ * Get all saved retest virtual entries from AppState (stored alongside marks).
+ * Returns an array of virtual entry objects.
+ */
+function _getRetestEntries() {
+  const all = _getResults();
+  const map = {}; // key: `${retestOf}__${retestIndex}` → entry stub
+  all.forEach(r => {
+    if (!r.isRetest || !r.retestOf || !r.retestIndex) return;
+    const key = `${r.retestOf}__${r.retestIndex}`;
+    if (!map[key]) {
+      map[key] = {
+        retestOf:    r.retestOf,
+        retestIndex: r.retestIndex,
+        retestDate:  r.retestDate || '',
+        scheduleEntryId: r.scheduleEntryId, // the retest virtual id
+      };
+    }
+  });
+  return Object.values(map);
 }
 
 function _getMark(scheduleEntryId, studentId) {
@@ -738,9 +796,32 @@ export const TestResultsPanel = {
 
   _rowHTML(r, i) {
     const typeMeta    = TEST_TYPE_META[r.entry.testType] || {};
-    const testChip    = `<span style="display:inline-block;padding:2px 7px;border-radius:6px;
-      font-size:10.5px;font-weight:700;background:${typeMeta.bg||'var(--surface3)'};
-      color:${typeMeta.color||'var(--t2)'};">${r.entry.testName || '—'}</span>`;
+    const isRetest    = r.isRetest || r.entry?.isRetest || false;
+    const retestOf    = r.retestOf || r.entry?.retestOf || null;
+    const retestIndex = r.retestIndex || r.entry?.retestIndex || null;
+
+    // Find parent test name for retest label
+    let parentTestName = '';
+    if (isRetest && retestOf) {
+      const allEntries = _buildCalendarEntries({});
+      const parent = allEntries.find(e => e.id === retestOf);
+      parentTestName = parent?.testName || '';
+    }
+
+    const retestBadge = isRetest
+      ? `<span style="display:inline-block;padding:1px 6px;border-radius:5px;font-size:9.5px;font-weight:700;
+           background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);margin-left:4px">
+           Retest${retestIndex > 1 ? ' #'+retestIndex : ''}</span>`
+      : '';
+
+    const testChip    = `<div style="display:flex;flex-direction:column;gap:2px">
+      <div>
+        <span style="display:inline-block;padding:2px 7px;border-radius:6px;
+          font-size:10.5px;font-weight:700;background:${typeMeta.bg||'var(--surface3)'};
+          color:${typeMeta.color||'var(--t2)'};">${r.entry.testName || '—'}</span>${retestBadge}
+      </div>
+      ${isRetest && parentTestName ? `<div style="font-size:10px;color:var(--t4);padding-left:2px">↳ Retest of ${parentTestName}</div>` : ''}
+    </div>`;
 
     const _tm = r.totalMarks || r.entry.totalMarks || null;
     const _tmSuffix = _tm ? ` <span style="color:var(--t3);font-size:11px">/ ${_tm}</span>` : '';
@@ -871,17 +952,36 @@ export const TestResultsPanel = {
                   style="flex-shrink:0;color:var(--t4)"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
 
-              <!-- Dropdown panel -->
+              <!-- Dropdown panel — hierarchical with retests nested -->
               <div id="trTestDropdown"
                 style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;
                   background:var(--surface);border:1px solid var(--border2);border-radius:10px;
                   box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:999;padding:4px;
-                  max-height:220px;overflow-y:auto">
-                <div id="trTestCheckboxList" style="display:flex;flex-direction:column;gap:2px"></div>
+                  max-height:260px;overflow-y:auto">
+                <div id="trTestCheckboxList" style="display:flex;flex-direction:column;gap:1px"></div>
               </div>
             </div>
 
             <div id="trTestHint" style="font-size:11.5px;color:var(--t3);margin-top:6px;display:none"></div>
+
+            <!-- ── Retest toggle ── -->
+            <div id="trRetestRow" style="display:none;margin-top:10px;padding:10px 12px;
+              background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--t1);user-select:none">
+                <input type="checkbox" id="trIsRetest"
+                  style="accent-color:var(--blue);width:15px;height:15px;cursor:pointer;flex-shrink:0"/>
+                This is a Retest
+                <span style="font-size:10.5px;font-weight:500;color:var(--t3);margin-left:2px">(only students with existing marks will be shown)</span>
+              </label>
+              <!-- Retest date — shown when checkbox checked -->
+              <div id="trRetestDateRow" style="display:none;margin-top:8px;display:none;align-items:center;gap:8px">
+                <label style="font-size:12px;color:var(--t3);font-weight:600;white-space:nowrap">Retest Date <span style="color:var(--red)">*</span></label>
+                <input type="date" id="trRetestDate"
+                  style="height:32px;padding:0 10px;background:var(--surface);border:1px solid var(--border2);
+                    border-radius:8px;color:var(--t1);font-size:12.5px;font-family:var(--font-body);outline:none;"/>
+                <span id="trRetestDateErr" style="font-size:10.5px;color:var(--red);display:none">Required</span>
+              </div>
+            </div>
           </div>
 
           <!-- ── Step 3: Marks settings (same as FinalResultsPanel fr-marks-header) ── -->
@@ -956,6 +1056,34 @@ export const TestResultsPanel = {
 
     let _batchEntries  = [];
     let _selectedEntry = null; // the one chosen test entry
+    let _isRetest      = false;
+    let _retestDate    = '';
+
+    // Retest UI elements
+    const retestRow     = modalEl.querySelector('#trRetestRow');
+    const retestCb      = modalEl.querySelector('#trIsRetest');
+    const retestDateRow = modalEl.querySelector('#trRetestDateRow');
+    const retestDateInp = modalEl.querySelector('#trRetestDate');
+    const retestDateErr = modalEl.querySelector('#trRetestDateErr');
+
+    // Wire retest checkbox
+    retestCb?.addEventListener('change', () => {
+      _isRetest = retestCb.checked;
+      retestDateRow.style.display = _isRetest ? 'flex' : 'none';
+      if (!_isRetest) { _retestDate = ''; retestDateInp.value = ''; }
+      // Reset grid when toggling
+      marksGrid.style.display = 'none';
+      if (saveBtn) saveBtn.disabled = true;
+      if (_isRetest && totalMarksInp?.value?.trim()) refreshGrid();
+    });
+
+    // Wire retest date input
+    retestDateInp?.addEventListener('change', () => {
+      _retestDate = retestDateInp.value;
+      retestDateErr.style.display = 'none';
+      retestDateInp.style.borderColor = '';
+      if (_selectedEntry && totalMarksInp?.value?.trim()) refreshGrid();
+    });
 
     // ── helpers ──────────────────────────────────────────────────
 
@@ -978,6 +1106,12 @@ export const TestResultsPanel = {
       testTrigger.style.borderColor = '';
       _batchEntries  = [];
       _selectedEntry = null;
+      _isRetest      = false;
+      _retestDate    = '';
+      if (retestCb)      { retestCb.checked = false; }
+      if (retestRow)     { retestRow.style.display = 'none'; }
+      if (retestDateRow) { retestDateRow.style.display = 'none'; }
+      if (retestDateInp) { retestDateInp.value = ''; }
       if (saveBtn) saveBtn.disabled = true;
     };
 
@@ -1074,6 +1208,12 @@ export const TestResultsPanel = {
         if (saveBtn) saveBtn.disabled = true;
         return;
       }
+      // If retest mode, require retest date
+      if (_isRetest && !_retestDate) {
+        marksGrid.style.display = 'none';
+        if (saveBtn) saveBtn.disabled = true;
+        return;
+      }
       totalMarksErr.style.display = 'none';
       totalMarksInp.style.borderColor = '';
 
@@ -1089,7 +1229,7 @@ export const TestResultsPanel = {
       enrolments.forEach(e => {
         if (e.batchId === sel.batchId) enrolledIds.add(e.studentId);
       });
-      const students = allStudents
+      let students = allStudents
         .filter(s => enrolledIds.has(s.id) || s.batchId === sel.batchId)
         .sort((a, b) => {
           const na = (a.studentName || `${a.firstName||''} ${a.lastName||''}`).toLowerCase();
@@ -1097,12 +1237,54 @@ export const TestResultsPanel = {
           return na.localeCompare(nb);
         });
 
+      // In retest mode: only show students who have marks on the PARENT test
+      // Students with no marks on parent = excluded (not absent, just not shown)
+      let parentEntryId = null;
+      let studentsWithParentMarks = new Set();
+      if (_isRetest) {
+        // The selected entry is the original test; retestOf is that entry's id
+        parentEntryId = entry.id;
+        const allSavedForParent = AppState.get('testResults') || [];
+        allSavedForParent.forEach(r => {
+          if (r.scheduleEntryId === parentEntryId && r.marks != null && !r.absent) {
+            studentsWithParentMarks.add(r.studentId);
+          }
+        });
+        students = students.filter(s => studentsWithParentMarks.has(s.id));
+      }
+
       if (!students.length) {
         marksGrid.style.display = '';
         marksGrid.innerHTML = `<div style="padding:12px;text-align:center;color:var(--t3);
           font-size:12.5px;border:1px dashed var(--border2);border-radius:10px">
-          No students found in this batch.</div>`;
+          ${_isRetest
+            ? 'No students found with marks in the original test. Enter original marks first.'
+            : 'No students found in this batch.'}</div>`;
         return;
+      }
+
+      // Determine the effective entry id for retest saves
+      // For retests, we generate a virtual id based on parentEntryId + retestIndex
+      let effectiveEntryId = entry.id;
+      if (_isRetest) {
+        // Count existing retests for this parent
+        const allSaved = AppState.get('testResults') || [];
+        const existingRetestIndices = new Set(
+          allSaved.filter(r => r.isRetest && r.retestOf === entry.id).map(r => r.retestIndex)
+        );
+        // Check if we already have a retest entry for same date (editing existing retest)
+        const matchingRetest = allSaved.find(r =>
+          r.isRetest && r.retestOf === entry.id && r.retestDate === _retestDate
+        );
+        if (matchingRetest) {
+          // Re-use existing retest virtual id
+          effectiveEntryId = matchingRetest.scheduleEntryId;
+        } else {
+          // New retest: next index
+          const nextIndex = existingRetestIndices.size > 0 ? Math.max(...existingRetestIndices) + 1 : 1;
+          effectiveEntryId = `retest__${entry.id}__${nextIndex}`;
+        }
+        entry._retestIndex = parseInt(effectiveEntryId.split('__')[2]) || 1;
       }
 
       // ── Helper: pass/fail badge ───────────────────────────────────
@@ -1117,7 +1299,7 @@ export const TestResultsPanel = {
       // ── Get saved marks for this entry ────────────────────────────
       const allSaved = AppState.get('testResults') || [];
       const getSaved = (studentId) =>
-        allSaved.find(r => r.scheduleEntryId === entry.id && r.studentId === studentId) || null;
+        allSaved.find(r => r.scheduleEntryId === effectiveEntryId && r.studentId === studentId) || null;
 
       // ── Build tbody rows ──────────────────────────────────────────
       const tbodyRows = students.map((stu, idx) => {
@@ -1136,10 +1318,14 @@ export const TestResultsPanel = {
                 <input type="number"
                   class="fr-marks-input tr-mark-cell"
                   data-row="${idx}"
-                  data-entry-id="${entry.id}"
+                  data-entry-id="${effectiveEntryId}"
                   data-student-id="${stu.id}"
                   data-total="${tm}"
                   data-passing="${pm}"
+                  data-is-retest="${_isRetest ? '1' : '0'}"
+                  data-retest-of="${_isRetest ? entry.id : ''}"
+                  data-retest-date="${_isRetest ? _retestDate : ''}"
+                  data-retest-index="${_isRetest ? (entry._retestIndex || 1) : ''}"
                   min="0" max="${tm}"
                   value="${val}"
                   placeholder="—"
@@ -1152,7 +1338,7 @@ export const TestResultsPanel = {
               <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--t3);cursor:pointer;justify-content:center">
                 <input type="checkbox"
                   class="tr-absent-cb"
-                  data-entry-id="${entry.id}"
+                  data-entry-id="${effectiveEntryId}"
                   data-student-id="${stu.id}"
                   data-row="${idx}"
                   ${isAbsent ? 'checked' : ''}
@@ -1166,6 +1352,12 @@ export const TestResultsPanel = {
       const batch   = AppState.findById('batches', sel.batchId) || {};
       const subject = sel.subjectId ? AppState.findById('subjects', sel.subjectId) : null;
 
+      const retestBadge = _isRetest
+        ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;
+            background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed)">
+            Retest #${entry._retestIndex || 1} &nbsp;·&nbsp; ${_retestDate}</span>`
+        : '';
+
       marksGrid.style.display = '';
       marksGrid.innerHTML = `
         <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden">
@@ -1177,8 +1369,9 @@ export const TestResultsPanel = {
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
             </svg>
             <span style="font-size:12.5px;font-weight:700;color:var(--t1)">
-              ${entry.testName} — ${students.length} student${students.length !== 1 ? 's' : ''}
+              ${_isRetest ? `Retest of ${entry.testName}` : entry.testName} — ${students.length} student${students.length !== 1 ? 's' : ''}
             </span>
+            ${retestBadge}
             <span style="font-size:11px;color:var(--t3)">
               Total: ${tm} &nbsp;|&nbsp; Pass: ${pm}
             </span>
@@ -1326,23 +1519,33 @@ export const TestResultsPanel = {
       testTrigger.style.borderColor = '';
       _batchEntries  = [];
       _selectedEntry = null;
+      _isRetest      = false;
+      _retestDate    = '';
+      if (retestCb)      { retestCb.checked = false; }
+      if (retestRow)     { retestRow.style.display = 'none'; }
+      if (retestDateRow) { retestDateRow.style.display = 'none'; }
+      if (retestDateInp) { retestDateInp.value = ''; }
       if (saveBtn) saveBtn.disabled = true;
       if (!sel.batchId) return;
 
-      const entries = _buildCalendarEntries({
+      const allEntries = _buildCalendarEntries({
         campusId:  sel.campusId,
         sessionId: sel.sessionId,
         subjectId: sel.subjectId,
         batchId:   sel.batchId,
       });
-      _batchEntries = entries.filter(e => e.batchId === sel.batchId);
+
+      // Separate originals and retests
+      const originalEntries = allEntries.filter(e => !e.isRetest && e.batchId === sel.batchId);
+      const retestEntries   = allEntries.filter(e =>  e.isRetest && e.batchId === sel.batchId);
+      _batchEntries = allEntries.filter(e => e.batchId === sel.batchId);
 
       // Show test group
       testGroup.style.display = '';
       testBadge.style.display = '';
-      testBadge.textContent   = `${_batchEntries.length} test${_batchEntries.length !== 1 ? 's' : ''} found`;
+      testBadge.textContent   = `${originalEntries.length} test${originalEntries.length !== 1 ? 's' : ''} found`;
 
-      if (!_batchEntries.length) {
+      if (!originalEntries.length) {
         testCheckList.innerHTML = `<div style="padding:10px;text-align:center;font-size:12px;color:var(--t4)">
           No test entries found. Schedule tests first.</div>`;
         testHint.style.display = '';
@@ -1353,7 +1556,6 @@ export const TestResultsPanel = {
       testHint.style.display = '';
       testHint.innerHTML = `Tests from <strong>Assessment Calendar</strong>. Select one to continue.`;
 
-      // Build dropdown items (radio style inside dropdown panel)
       const batch   = AppState.findById('batches', sel.batchId) || {};
       const subject = sel.subjectId ? AppState.findById('subjects', sel.subjectId) : null;
       if (metaLabel) {
@@ -1361,14 +1563,20 @@ export const TestResultsPanel = {
           (subject ? ' · ' + (subject.subjectCode || subject.subjectName) : '');
       }
 
-      testCheckList.innerHTML = _batchEntries.map(e => {
+      // ── Build hierarchical dropdown: original → its retests nested ──
+      const buildItem = (e, indent = false) => {
         const typeMeta  = TEST_TYPE_META[e.testType] || {};
         const dateLabel = e.date       ? ` — ${formatDate(e.date)}` : '';
         const mrkLabel  = e.totalMarks ? ` [${e.totalMarks} marks]` : '';
+        const retestBadgeHtml = e.isRetest
+          ? `<span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:5px;
+               background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);flex-shrink:0">
+               Retest ${e.retestIndex > 1 ? '#'+e.retestIndex : ''}</span>`
+          : '';
         return `
-          <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;
+          <label style="display:flex;align-items:center;gap:8px;padding:7px ${indent ? '22px' : '10px'} 7px ${indent ? '22px' : '10px'};
             border-radius:7px;cursor:pointer;font-size:12.5px;color:var(--t1);
-            transition:background .1s;user-select:none"
+            transition:background .1s;user-select:none;${indent ? 'border-left:2px solid var(--border2);margin-left:12px;margin-right:4px;' : ''}"
             onmouseover="this.style.background='var(--surface2)'"
             onmouseout="this.style.background=this.querySelector('input').checked?'var(--blue-dim)':'transparent'">
             <input type="radio" name="trTestRadio" class="tr-test-rb" value="${e.id}"
@@ -1377,16 +1585,30 @@ export const TestResultsPanel = {
               background:${typeMeta.bg||'var(--surface3)'};color:${typeMeta.color||'var(--t2)'};flex-shrink:0">
               ${e.testName}
             </span>
+            ${retestBadgeHtml}
             <span style="color:var(--t3);font-size:11.5px">${dateLabel}${mrkLabel}</span>
           </label>`;
-      }).join('');
+      };
 
-      // Wire radio buttons — on select: update trigger label, close dropdown, show marks settings
+      let html = '';
+      originalEntries.forEach(e => {
+        html += buildItem(e, false);
+        // Nested retests
+        const myRetests = retestEntries
+          .filter(r => r.retestOf === e.id)
+          .sort((a, b) => (a.retestIndex || 0) - (b.retestIndex || 0));
+        myRetests.forEach(r => {
+          html += buildItem(r, true);
+        });
+      });
+
+      testCheckList.innerHTML = html;
+
+      // Wire radio buttons
       testCheckList.querySelectorAll('.tr-test-rb').forEach(rb => {
         rb.addEventListener('change', () => {
           _selectedEntry = _batchEntries.find(e => e.id === rb.value) || null;
 
-          // Update trigger button label
           const typeMeta = _selectedEntry ? (TEST_TYPE_META[_selectedEntry.testType] || {}) : {};
           testTriggerLbl.textContent = _selectedEntry
             ? `${_selectedEntry.testName}${_selectedEntry.date ? '  —  ' + formatDate(_selectedEntry.date) : ''}`
@@ -1399,7 +1621,6 @@ export const TestResultsPanel = {
             lbl.style.background = inp?.checked ? 'var(--blue-dim)' : 'transparent';
           });
 
-          // Close dropdown
           closeTestDropdown();
 
           // Pre-fill totalMarks from entry if available
@@ -1411,10 +1632,26 @@ export const TestResultsPanel = {
             }
           }
 
-          // Show marks settings section
+          // Show marks settings
           marksSettings.style.display = '';
 
-          // If totalMarks already filled → immediately show grid
+          // If this is already a retest entry (selected from hierarchy), lock retest mode
+          if (_selectedEntry?.isRetest) {
+            // Pre-set retest mode as read-only context (editing existing retest)
+            _isRetest   = false; // it's already saved as retest, treat as normal edit
+            _retestDate = '';
+            if (retestCb)      { retestCb.checked = false; }
+            if (retestRow)     { retestRow.style.display = 'none'; }
+            if (retestDateRow) { retestDateRow.style.display = 'none'; }
+          } else {
+            // Original test: show retest option
+            _isRetest   = false;
+            _retestDate = '';
+            if (retestCb)      { retestCb.checked = false; }
+            if (retestRow)     { retestRow.style.display = ''; }
+            if (retestDateRow) { retestDateRow.style.display = 'none'; }
+          }
+
           if (totalMarksInp?.value?.trim()) refreshGrid();
         });
       });
@@ -1439,6 +1676,21 @@ export const TestResultsPanel = {
     if (totalMarksErr)  { totalMarksErr.style.display = 'none'; }
     if (totalMarksInp)  { totalMarksInp.style.borderColor = ''; }
 
+    // Validate retest date if retest mode
+    const retestCb      = modalEl.querySelector('#trIsRetest');
+    const retestDateInp = modalEl.querySelector('#trRetestDate');
+    const retestDateErr = modalEl.querySelector('#trRetestDateErr');
+    const isRetestMode  = retestCb?.checked || false;
+    const retestDateVal = retestDateInp?.value?.trim() || '';
+
+    if (isRetestMode && !retestDateVal) {
+      if (retestDateErr) { retestDateErr.style.display = ''; }
+      if (retestDateInp) { retestDateInp.style.borderColor = 'var(--red)'; retestDateInp.focus(); }
+      return;
+    }
+    if (retestDateErr) { retestDateErr.style.display = 'none'; }
+    if (retestDateInp) { retestDateInp.style.borderColor = ''; }
+
     const cells = modalEl.querySelectorAll('.tr-mark-cell');
     if (!cells.length) {
       Toast.error('Marks grid not loaded. Fill Total Marks first.');
@@ -1452,8 +1704,12 @@ export const TestResultsPanel = {
     let saved = 0;
 
     cells.forEach(input => {
-      const entryId   = input.dataset.entryId;
-      const studentId = input.dataset.studentId;
+      const entryId      = input.dataset.entryId;
+      const studentId    = input.dataset.studentId;
+      const isRetest     = input.dataset.isRetest === '1';
+      const retestOf     = input.dataset.retestOf     || null;
+      const retestDateV  = input.dataset.retestDate   || null;
+      const retestIndex  = input.dataset.retestIndex  ? parseInt(input.dataset.retestIndex) : null;
       if (!entryId || !studentId) return;
 
       const cb     = modalEl.querySelector(`.tr-absent-cb[data-entry-id="${entryId}"][data-student-id="${studentId}"]`);
@@ -1469,6 +1725,10 @@ export const TestResultsPanel = {
         subjectId:    subjectIdVal    || undefined,
         totalMarks:   totalMarksVal   || undefined,
         passingMarks: passingMarksVal || undefined,
+        isRetest:     isRetest        || undefined,
+        retestOf:     retestOf        || undefined,
+        retestDate:   retestDateV     || undefined,
+        retestIndex:  retestIndex     || undefined,
       });
 
       if (marks !== null || absent) saved++;
