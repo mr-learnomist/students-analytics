@@ -1738,9 +1738,10 @@ export const TestResultsPanel = {
 
   // ── Save all marks (includes ALL students, even blank — so totalMarks persists) ──
   _handleSaveMarks(modalEl, container, sel) {
-    // Validate test selected
-    const selectedRb = modalEl.querySelector('.tr-test-rb:checked');
-    if (!selectedRb) { Toast.error('Please select a test first.'); return; }
+    // Validate test selected — check either a radio is checked OR marks grid has cells (retest via button)
+    const selectedRb   = modalEl.querySelector('.tr-test-rb:checked');
+    const hasGridCells = modalEl.querySelectorAll('.tr-mark-cell').length > 0;
+    if (!selectedRb && !hasGridCells) { Toast.error('Please select a test first.'); return; }
 
     // Validate total marks
     const totalMarksInp   = modalEl.querySelector('#trModalTotalMarks');
