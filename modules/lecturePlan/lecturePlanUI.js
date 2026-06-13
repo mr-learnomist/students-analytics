@@ -9,6 +9,7 @@ import { AppState }             from '../../utils/state.js';
 import { Modal, Table, injectUIStyles } from '../../utils/ui.js';
 import { Toast }                from '../../utils/helpers.js';
 import { Auth }                 from '../../utils/auth.js';
+import { getSelectableSubjects } from '../subjects.js';
 import {
   LecturePlanService,
   getLPMeta,
@@ -743,8 +744,9 @@ function _openPlanForm(existing, container) {
 
   const selDisc   = existing?.disciplineId || _lpActiveDiscId || '';
   const selSubj   = existing?.subjectId    || _lpActiveSubjId || '';
+  // Active subjects only; always include the currently-saved subject even if archived.
   const filtSubj = selDisc
-    ? subjs.filter(s => {
+    ? getSelectableSubjects('', selSubj).filter(s => {
         const l = AppState.findById('levels', s.levelId);
         return l?.disciplineId === selDisc;
       })
@@ -792,7 +794,7 @@ function _openPlanForm(existing, container) {
           <label class="form-label">Subject <span class="req">*</span></label>
           <select id="lpFSubj" class="form-select form-input" ${!selDisc ? 'disabled' : ''}>
             <option value="">— Select Subject —</option>
-            ${filtSubj.map(s => `<option value="${s.id}" ${s.id === selSubj ? 'selected' : ''}>${s.subjectCode} — ${s.subjectName}</option>`).join('')}
+            ${filtSubj.map(s => `<option value="${s.id}" ${s.id === selSubj ? 'selected' : ''}>${s.subjectCode} — ${s.subjectName}${s.isArchived ? ' [archived]' : ''}</option>`).join('')}
           </select>
           <span class="form-hint">Required — Select discipline first.</span>
         </div>
@@ -847,8 +849,9 @@ function _openPlanForm(existing, container) {
       // Wire discipline → subject cascade
       modalEl.querySelector('#lpFDisc')?.addEventListener('change', e => {
         const dId = e.target.value;
+        // Active subjects only when discipline is re-selected (new choice context).
         const ss  = dId
-          ? subjs.filter(s => {
+          ? getSelectableSubjects().filter(s => {
               const l = AppState.findById('levels', s.levelId);
               return l?.disciplineId === dId;
             })
