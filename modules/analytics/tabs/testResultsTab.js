@@ -5,6 +5,7 @@
 // ============================================================
 
 import { ResultProfile }     from '../reports/testResults/resultProfile.js';
+import { TestResultSummary } from '../reports/testResults/testResultSummary.js';
 import { FinalResultReport } from '../reports/testResults/finalResultReport.js';
 
 // Test & Results report card registry
@@ -18,6 +19,15 @@ const TEST_RESULTS_REPORTS = [
     color:    'var(--purple)',
     colorDim: 'var(--purple-dim)',
     module:   ResultProfile,
+  },
+  {
+    id:       'testResultSummary',
+    title:    'Test Result Summary',
+    subtitle: '',
+    icon:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>',
+    color:    'var(--blue)',
+    colorDim: 'var(--blue-dim)',
+    module:   TestResultSummary,
   },
   {
     id:       'finalResult',
