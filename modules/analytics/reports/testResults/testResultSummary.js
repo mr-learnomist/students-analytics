@@ -571,6 +571,24 @@ function _injectStyles() {
   white-space:nowrap;
 }
 
+/* ── N/A pill: this test isn't scheduled for this batch ── */
+.trs-na-pill {
+  display:inline-flex; align-items:center;
+  padding:2px 7px; border-radius:20px;
+  font-size:10px; font-weight:700;
+  white-space:nowrap;
+  background:var(--surface3); color:var(--t4);
+}
+
+/* ── Pending pill: test scheduled but no results entered yet ── */
+.trs-pending-pill {
+  display:inline-flex; align-items:center;
+  padding:2px 7px; border-radius:20px;
+  font-size:10px; font-weight:700;
+  white-space:nowrap;
+  background:var(--surface3); color:var(--t3);
+}
+
 /* ── Empty state ── */
 .trs-empty {
   display:flex; flex-direction:column; align-items:center;
@@ -1230,10 +1248,33 @@ export const TestResultSummary = {
     });
 
     // ── Build unified column set ─────────────────────────────
-    // Use first batch's group labels (all batches share same subject → same tests)
-    // If subject differs per batch, take the union by groupLabel
-    const firstBatchData = Object.values(batchDataMap)[0];
-    const unifiedGroups  = firstBatchData?.testGroups || [];
+    // Union of ALL batches' test groups by groupLabel — batches may have
+    // a different number of tests (e.g. one batch has Test 1-2, another
+    // has Test 1-3). Sort: "Test N" numerically first, then Mocks.
+    const _groupSortKey = (g) => {
+      if (g.isMock) {
+        const m = /^Mock\s*(\d+)?$/i.exec(g.groupLabel);
+        return [1, m && m[1] ? parseInt(m[1], 10) : 0];
+      }
+      const m = /^Test\s*(\d+)$/i.exec(g.groupLabel);
+      return [0, m ? parseInt(m[1], 10) : 0];
+    };
+    const _unifiedMap = new Map(); // groupLabel → group shape { groupLabel, isMock, retests:[] }
+    Object.values(batchDataMap).forEach(bd => {
+      bd.testGroups.forEach(g => {
+        if (!_unifiedMap.has(g.groupLabel)) {
+          _unifiedMap.set(g.groupLabel, { groupLabel: g.groupLabel, isMock: g.isMock, retests: g.retests });
+        } else {
+          // Keep the longest retests list across batches (for "+N retest" badge)
+          const existing = _unifiedMap.get(g.groupLabel);
+          if ((g.retests?.length || 0) > (existing.retests?.length || 0)) existing.retests = g.retests;
+        }
+      });
+    });
+    const unifiedGroups = Array.from(_unifiedMap.values()).sort((a, b) => {
+      const ka = _groupSortKey(a), kb = _groupSortKey(b);
+      return ka[0] - kb[0] || ka[1] - kb[1];
+    });
 
     if (!unifiedGroups.length) {
       area.innerHTML = `
@@ -1307,12 +1348,27 @@ export const TestResultSummary = {
         const sepStyle = `border-left:2px solid ${isMock ? 'color-mix(in srgb,var(--violet,#8b5cf6) 20%,transparent)' : 'color-mix(in srgb,var(--blue) 20%,transparent)'}`;
 
         if (!_visibleCols.length) {
+          if (!bgd) return `<td class="${sepClass}" style="${sepStyle}"><span class="trs-na-pill">N/A</span></td>`;
+          if (!s.isDone) return `<td class="${sepClass}" style="${sepStyle}"><span class="trs-pending-pill">· Pending</span></td>`;
           return `<td class="${sepClass}" style="${sepStyle}">—</td>`;
         }
 
-        if (!s) {
+        // Group not scheduled for this batch at all (e.g. another batch
+        // has more tests than this one) → N/A, not "no data"
+        if (!bgd) {
           return _visibleCols.map((sc, i) =>
-            i === 0 ? `<td class="${sepClass}" style="${sepStyle}">—</td>` : `<td>—</td>`
+            i === 0
+              ? `<td class="${sepClass}" style="${sepStyle}"><span class="trs-na-pill">N/A</span></td>`
+              : `<td><span class="trs-na-pill">N/A</span></td>`
+          ).join('');
+        }
+
+        // Group scheduled for this batch, but no results entered yet
+        if (!s.isDone) {
+          return _visibleCols.map((sc, i) =>
+            i === 0
+              ? `<td class="${sepClass}" style="${sepStyle}"><span class="trs-pending-pill">· Pending</span></td>`
+              : `<td><span class="trs-pending-pill">· Pending</span></td>`
           ).join('');
         }
 
@@ -1599,14 +1655,23 @@ export const TestResultSummary = {
         if (_showTeacher) row['Teacher'] = teacherName;
         row['Test'] = ug.groupLabel;
 
-        const cellVals = {
-          pass:   s ? String(s.p)  : '—',
-          fail:   s ? String(s.f)  : '—',
-          absent: s ? String(s.ab) : '—',
-          avg:    s && s.avg != null ? String(s.avg) : '—',
-          rate:   s && s.appeared > 0 ? `${s.rate}%` : '—',
-          health: s ? _health(s.avgPct).label + (s.avgPct != null ? ` (${s.avgPct}%)` : '') : '—',
-        };
+        let cellVals;
+        if (!bgd) {
+          // This test isn't scheduled for this batch at all
+          cellVals = { pass:'N/A', fail:'N/A', absent:'N/A', avg:'N/A', rate:'N/A', health:'N/A' };
+        } else if (!s.isDone) {
+          // Scheduled, but no results entered yet
+          cellVals = { pass:'Pending', fail:'Pending', absent:'Pending', avg:'Pending', rate:'Pending', health:'Pending' };
+        } else {
+          cellVals = {
+            pass:   String(s.p),
+            fail:   String(s.f),
+            absent: String(s.ab),
+            avg:    s.avg != null ? String(s.avg) : '—',
+            rate:   s.appeared > 0 ? `${s.rate}%` : '—',
+            health: _health(s.avgPct).label + (s.avgPct != null ? ` (${s.avgPct}%)` : ''),
+          };
+        }
         cols.forEach(sc => {
           row[COL_LABELS[sc.key] || sc.label] = cellVals[sc.key];
         });
@@ -1689,10 +1754,15 @@ export const TestResultSummary = {
         const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
         const bc  = ug.isMock ? '#c4b5fd' : '#93c5fd';
         if (!visibleCols.length) {
+          if (!bgd) return `<td style="border-left:2px solid ${bc};color:#94a3b8">N/A</td>`;
+          if (!s.isDone) return `<td style="border-left:2px solid ${bc};color:#94a3b8">Pending</td>`;
           return `<td style="border-left:2px solid ${bc}">—</td>`;
         }
-        if (!s) {
-          return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>—</td>`).join('');
+        if (!bgd) {
+          return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>N/A</td>`).join('');
+        }
+        if (!s.isDone) {
+          return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>Pending</td>`).join('');
         }
         const hl = _health(s.avgPct);
         const rateColor = s.rate >= 80 ? '#16a34a' : s.rate >= 60 ? '#d97706' : s.appeared > 0 ? '#dc2626' : '#94a3b8';
