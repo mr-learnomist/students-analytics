@@ -82,14 +82,41 @@ function _getSubjectsFor({ disciplineId, levelId } = {}) {
 // Active = closeDate <= today (or no date)
 // Closed = closeDate > today
 // ── Batch status ────────────────────────────────────────────
-// Matches batch.js field: `endDate` (YYYY-MM-DD)
-// Active  = no endDate  OR  endDate > today  (batch still running)
-// Closed  = endDate <= today                 (batch has ended)
+// Field: batch.endDate (YYYY-MM-DD) — saved by batch.js
+// When endDateMode = 'lp', endDate = LP's last dated row (saved on Save Changes)
+// BUT: if user never re-saved after LP assignment, endDate may be blank.
+// So we also check LP directly as a fallback.
+//
+// Active  = effective endDate > today  OR  no effective endDate
+// Closed  = effective endDate <= today
 function _batchStatus(batch) {
-  const endDate = batch.endDate || '';
-  if (!endDate) return 'active'; // no end date → still active
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const end   = new Date(endDate); end.setHours(0, 0, 0, 0);
+
+  // 1. Try saved endDate first
+  let effectiveEnd = batch.endDate || '';
+
+  // 2. If missing or mode is LP, try to read LP's last date directly
+  if ((!effectiveEnd || batch.endDateMode !== 'manual') && batch.id) {
+    try {
+      const assignment = getAllAssignments()[batch.id];
+      const rows = assignment?.rows || [];
+      const datedRows = rows.filter(r => r.date);
+      if (datedRows.length) {
+        const lpLastDate = datedRows[datedRows.length - 1].date;
+        // LP date takes priority over saved endDate when mode = lp
+        if (lpLastDate && (batch.endDateMode !== 'manual')) {
+          effectiveEnd = lpLastDate;
+        } else if (lpLastDate && !effectiveEnd) {
+          effectiveEnd = lpLastDate;
+        }
+      }
+    } catch(e) { /* LP not available — use saved endDate */ }
+  }
+
+  // 3. No end date at all → still active
+  if (!effectiveEnd) return 'active';
+
+  const end = new Date(effectiveEnd); end.setHours(0, 0, 0, 0);
   return end <= today ? 'closed' : 'active';
 }
 
