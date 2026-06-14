@@ -16,6 +16,24 @@ import { getSchedules, formatDate } from '../../../testing/testingService.js';
 const LP_TEST_TYPES = new Set(['test', 'midterm', 'mock']);
 const LP_VALID_RE   = /^(?:test(?:\s+\d+)?|mid[\s-]?term(?:\s+\d+)?|mock(?:\s+exam)?(?:\s+\d+)?)$/i;
 
+// ── Sub-column definitions (common across every test group) ────
+const RP_SUB_COLS = [
+  { key: 'marks',  label: 'Marks'  },
+  { key: 'total',  label: 'Total'  },
+  { key: 'status', label: 'Status' },
+  { key: 'date',   label: 'Date'   },
+];
+const RP_COL_PREF_KEY = 'rp_col_prefs';
+
+function _getRpColPrefs() {
+  try {
+    const raw = AppState.get(RP_COL_PREF_KEY);
+    if (raw && Array.isArray(raw.hidden)) return raw;
+  } catch(e) {}
+  return { hidden: [] };
+}
+function _saveRpColPrefs(prefs) { AppState.set(RP_COL_PREF_KEY, prefs); }
+
 // ── Styles ─────────────────────────────────────────────────────
 let _stylesInjected = false;
 function _injectStyles() {
@@ -213,6 +231,49 @@ function _injectStyles() {
 .rp-passrate-footer { display:flex; align-items:baseline; gap:6px; justify-content:center; }
 .rp-passrate-pct  { font-size:15px; font-weight:700; line-height:1; }
 .rp-passrate-sub  { font-size:10px; color:var(--t3); }
+
+/* ── Column Manager ── */
+.rp-col-mgr-wrap  { position:relative; }
+.rp-col-mgr-panel {
+  position:fixed; z-index:9999;
+  width:200px; background:var(--surface);
+  border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+  display:none; flex-direction:column; overflow:hidden;
+  max-height:min(340px, calc(100vh - 24px));
+}
+.rp-col-mgr-panel.open { display:flex; }
+.rp-col-mgr-head {
+  padding:9px 13px 7px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center;
+  justify-content:space-between; flex-shrink:0;
+}
+.rp-col-mgr-title {
+  font-size:11.5px; font-weight:700; color:var(--t1);
+  display:flex; align-items:center; gap:6px;
+}
+.rp-col-mgr-link {
+  font-size:11px; color:var(--blue); cursor:pointer;
+  background:none; border:none; padding:0;
+  text-decoration:underline; font-weight:600;
+}
+.rp-col-mgr-link:hover { opacity:.8; }
+.rp-col-mgr-list { padding:4px 0; overflow-y:auto; flex:1; }
+.rp-col-mgr-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:default; user-select:none;
+  transition:background .1s;
+}
+.rp-col-mgr-item:hover { background:var(--surface2); }
+.rp-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+.rp-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
+.rp-col-mgr-item.col-hidden .rp-col-mgr-lbl { color:var(--t4); }
+.rp-col-mgr-foot {
+  padding:6px 12px; border-top:1px solid var(--border);
+  font-size:10.5px; color:var(--t3); text-align:center;
+  flex-shrink:0; background:var(--surface2);
+}
 
 /* ── Per-test stats strip ── */
 .rp-test-stats-strip {
@@ -948,7 +1009,9 @@ export const ResultProfile = {
                      color:var(--t3);cursor:pointer;font-size:12px;font-weight:600;
                      font-family:inherit;transition:all .15s;white-space:nowrap">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12l2.5 2.5L16 9"/>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
               </svg>
               CSV
             </button>
@@ -965,6 +1028,32 @@ export const ResultProfile = {
               </svg>
               PDF
             </button>
+            <!-- Column Manager button -->
+            <div class="rp-col-mgr-wrap">
+              <button id="rpColMgrBtn" title="Show / hide columns"
+                style="display:inline-flex;align-items:center;justify-content:center;
+                       width:30px;height:30px;border-radius:8px;
+                       border:1px solid var(--border);background:var(--surface2);
+                       color:var(--t3);cursor:pointer;transition:all .15s">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="18" rx="1"/>
+                  <rect x="14" y="3" width="7" height="18" rx="1"/>
+                </svg>
+              </button>
+              <div class="rp-col-mgr-panel" id="rpColMgrPanel">
+                <div class="rp-col-mgr-head">
+                  <span class="rp-col-mgr-title">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                    </svg>
+                    Columns
+                  </span>
+                  <button class="rp-col-mgr-link" id="rpColMgrShowAll">Show All</button>
+                </div>
+                <div class="rp-col-mgr-list" id="rpColMgrList"></div>
+                <div class="rp-col-mgr-foot">Applies to all tests</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>`;
@@ -1019,6 +1108,15 @@ export const ResultProfile = {
     // ── Build dynamic headers ──────────────────────────────────
     const FIXED = 3;
 
+    // ── Column prefs (which sub-columns are visible) ────────────
+    const _rpPrefs      = _getRpColPrefs();
+    const _visibleSubs  = RP_SUB_COLS.filter(sc => !_rpPrefs.hidden.includes(sc.key));
+    const _visColspan   = _visibleSubs.length || 1; // colspan per test group
+    const _showMarks    = !_rpPrefs.hidden.includes('marks');
+    const _showTotal    = !_rpPrefs.hidden.includes('total');
+    const _showStatus   = !_rpPrefs.hidden.includes('status');
+    const _showDate     = !_rpPrefs.hidden.includes('date');
+
     let groupHeaderRow = `
       <tr class="rp-thead-group">
         <th class="rp-th-left" colspan="1">#</th>
@@ -1027,7 +1125,7 @@ export const ResultProfile = {
         ${labelledCols.map((col, ci) => {
           const s = colStats[ci];
           return `
-          <th colspan="4" class="${col.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
+          <th colspan="${_visColspan}" class="${col.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
               style="vertical-align:bottom;padding-bottom:6px">
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
               <span style="font-size:11.5px;font-weight:800">${col.colLabel}</span>
@@ -1085,12 +1183,15 @@ export const ResultProfile = {
         <th></th>
         <th></th>
         <th></th>
-        ${labelledCols.map(() => `
-          <th class="rp-sub-sep">Marks</th>
-          <th>Total</th>
-          <th>Status</th>
-          <th>Date</th>
-        `).join('')}
+        ${labelledCols.map((col, _ci) => {
+          const isFirst = true; // border applied via first visible sub
+          const subs = [];
+          if (_showMarks)  subs.push(`<th class="rp-sub-sep">Marks</th>`);
+          if (_showTotal)  subs.push(`<th${!_showMarks ? ' class="rp-sub-sep"' : ''}>Total</th>`);
+          if (_showStatus) subs.push(`<th${!_showMarks && !_showTotal ? ' class="rp-sub-sep"' : ''}>Status</th>`);
+          if (_showDate)   subs.push(`<th${!_showMarks && !_showTotal && !_showStatus ? ' class="rp-sub-sep"' : ''}>Date</th>`);
+          return subs.join('');
+        }).join('')}
       </tr>`;
 
     const bodyHTML = tableRows.map((row, ri) => `
@@ -1126,13 +1227,13 @@ export const ResultProfile = {
                  </div>`
               : `<span style="color:var(--t1)">—</span>`;
           return `
-          <td class="rp-td-sep"
+          ${_showMarks ? `<td class="rp-td-sep"
               style="white-space:nowrap;padding:8px 10px;vertical-align:middle">
             ${marksDisplay}
-          </td>
-          <td style="color:var(--t1);font-size:12px">${cell.totalMarks || '—'}</td>
-          <td>${this._statusBadge(cell.status)}</td>
-          <td style="font-size:11.5px;color:var(--t1);white-space:nowrap">${cell.col.date ? formatDate(cell.col.date) : '—'}</td>
+          </td>` : ''}
+          ${_showTotal  ? `<td style="color:var(--t1);font-size:12px">${cell.totalMarks || '—'}</td>` : ''}
+          ${_showStatus ? `<td>${this._statusBadge(cell.status)}</td>` : ''}
+          ${_showDate   ? `<td style="font-size:11.5px;color:var(--t1);white-space:nowrap">${cell.col.date ? formatDate(cell.col.date) : '—'}</td>` : ''}
         `}).join('')}
       </tr>
     `).join('');
@@ -1210,6 +1311,93 @@ export const ResultProfile = {
       if (!btn) return;
       btn.addEventListener('mouseenter', () => { btn.style.borderColor = 'var(--blue)'; btn.style.color = 'var(--blue)'; btn.style.background = 'var(--blue-dim)'; });
       btn.addEventListener('mouseleave', () => { btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--t3)'; btn.style.background = 'var(--surface2)'; });
+    });
+
+    // ── Column Manager wiring ───────────────────────────────────
+    this._wireColManager(area, c);
+  },
+
+  // ── Column Manager ────────────────────────────────────────────
+  _wireColManager(area, c) {
+    const btn   = area.querySelector('#rpColMgrBtn');
+    const panel = area.querySelector('#rpColMgrPanel');
+    const list  = area.querySelector('#rpColMgrList');
+    if (!btn || !panel || !list) return;
+
+    const _positionPanel = () => {
+      const r      = btn.getBoundingClientRect();
+      const panelW = 200;
+      let left = r.right - panelW;
+      left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+      panel.style.left = left + 'px';
+      panel.style.top  = (r.bottom + 6) + 'px';
+    };
+
+    const _renderList = () => {
+      const prefs = _getRpColPrefs();
+      list.innerHTML = '';
+      RP_SUB_COLS.forEach(sc => {
+        const isVisible = !prefs.hidden.includes(sc.key);
+        const item = document.createElement('div');
+        item.className = 'rp-col-mgr-item' + (isVisible ? '' : ' col-hidden');
+        item.innerHTML =
+          `<input type="checkbox" class="rp-col-mgr-chk" id="rp_chk_${sc.key}"${isVisible ? ' checked' : ''}/>`+
+          `<label class="rp-col-mgr-lbl" for="rp_chk_${sc.key}">${sc.label}</label>`;
+        item.querySelector('.rp-col-mgr-chk').addEventListener('change', e => {
+          const p = _getRpColPrefs();
+          if (e.target.checked) {
+            p.hidden = p.hidden.filter(h => h !== sc.key);
+            item.classList.remove('col-hidden');
+          } else {
+            if (!p.hidden.includes(sc.key)) p.hidden.push(sc.key);
+            item.classList.add('col-hidden');
+          }
+          _saveRpColPrefs(p);
+          panel.classList.remove('open');
+          this._renderTable(c);    // re-render table with new prefs
+        });
+        list.appendChild(item);
+      });
+    };
+
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        panel.classList.remove('open');
+      } else {
+        _renderList();
+        _positionPanel();
+        panel.classList.add('open');
+        btn.style.borderColor = 'var(--blue)';
+        btn.style.color = 'var(--blue)';
+        btn.style.background = 'var(--blue-dim)';
+      }
+    });
+
+    // Show All
+    area.querySelector('#rpColMgrShowAll')?.addEventListener('click', () => {
+      _saveRpColPrefs({ hidden: [] });
+      panel.classList.remove('open');
+      this._renderTable(c);
+    });
+
+    // Close on outside click
+    const _outsideClick = e => {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.classList.remove('open');
+        btn.style.borderColor = 'var(--border)';
+        btn.style.color = 'var(--t3)';
+        btn.style.background = 'var(--surface2)';
+      }
+    };
+    document.addEventListener('click', _outsideClick);
+
+    window.addEventListener('scroll', () => {
+      if (panel.classList.contains('open')) _positionPanel();
+    }, true);
+    window.addEventListener('resize', () => {
+      if (panel.classList.contains('open')) _positionPanel();
     });
   },
 
