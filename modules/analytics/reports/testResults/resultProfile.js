@@ -1258,77 +1258,20 @@ export const ResultProfile = {
       return { p, f, ab, pend, appeared, rate, avg, avgPct, isDone, color, colorHex, hlColor, hlBg, hlLabel, hlIcon };
     });
 
-    // ── Build dynamic headers ──────────────────────────────────
-    const FIXED = 3;
-
-    // ── Column prefs (which sub-columns are visible) ────────────
+    // ── Column visibility prefs ────────────────────────────────
     const _rpPrefs    = _getRpColPrefs();
     const _showMarks  = !_rpPrefs.hidden.includes('marks');
     const _showStatus = !_rpPrefs.hidden.includes('status');
     const _showDate   = !_rpPrefs.hidden.includes('date');
-    // Count exactly how many <td>s the body renders per attempt
-    const _visColspan = (_showMarks ? 1 : 0) + (_showStatus ? 1 : 0) + (_showDate ? 1 : 0) || 1;
+    // Exact number of <td>s rendered per attempt — drives ALL colspan math
+    const _subCount   = (_showMarks ? 1 : 0) + (_showStatus ? 1 : 0) + (_showDate ? 1 : 0) || 1;
 
-    // Row 1: Test group headers — fixed cols rowspan="3", test colspan = totalAttempts × _visColspan
-    let groupHeaderRow = `
-      <tr class="rp-thead-group">
-        <th class="rp-th-left" rowspan="3" style="vertical-align:middle">#</th>
-        <th class="rp-th-left" rowspan="3" style="vertical-align:middle">Student ID</th>
-        <th class="rp-th-left" rowspan="3" style="vertical-align:middle">Student Name</th>
-        ${testGroups.map((g, gi) => {
-          const s             = colStats[gi];
-          const totalAttempts = 1 + g.retests.length;
-          const groupColspan  = totalAttempts * _visColspan;
-          return `
-          <th colspan="${groupColspan}" class="${g.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
-              style="vertical-align:bottom;padding-bottom:6px">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
-              <span style="font-size:11.5px;font-weight:800">${g.groupLabel}</span>
-              ${g.original.date ? `<span style="font-size:9.5px;font-weight:500;opacity:.7">${formatDate(g.original.date)}</span>` : ''}
-              <div style="width:100%;min-width:80px;margin-top:3px">
-                <div style="display:flex;justify-content:space-between;align-items:center;
-                             margin-bottom:2px;gap:4px">
-                  <span style="font-size:9px;color:var(--t3);white-space:nowrap">
-                    ✓${s.p} ✗${s.f}${s.ab ? ` ⊘${s.ab}` : ''}
-                  </span>
-                  <span style="font-size:10px;font-weight:800;color:${s.color};white-space:nowrap">
-                    ${s.appeared > 0 ? s.rate + '%' : '—'}
-                  </span>
-                </div>
-                <div style="height:4px;background:rgba(0,0,0,0.1);border-radius:2px;overflow:hidden">
-                  <div style="height:100%;width:${s.rate}%;background:${s.color};border-radius:2px;transition:width .3s"></div>
-                </div>
-              </div>
-            </div>
-          </th>`;
-        }).join('')}
-      </tr>`;
-
-    // Row 2: NO fixed-col placeholders (rowspan="3" covers them) — strict colspan="_visColspan" per attempt
-    let attemptHeaderRow = `
-      <tr class="rp-thead-group" style="background:var(--surface3)">
-        ${testGroups.map(g => {
-          const attemptEntries = [g.original, ...g.retests];
-          return attemptEntries.map((entry, ai) => {
-            const label   = ai === 0 ? '1st Attempt' : `Retest #${entry.retestIndex || ai}`;
-            const isFirst = ai === 0;
-            return `<th colspan="${_visColspan}"
-              style="text-align:center;font-size:9.5px;font-weight:700;padding:5px 8px;
-                     color:var(--t2);white-space:nowrap;
-                     ${isFirst ? 'border-left:2px solid var(--border2)' : ''}">${label}</th>`;
-          }).join('');
-        }).join('')}
-      </tr>`;
-
-    // ── Info bar above table ────────────────────────────────────
+    // ── Info bar ───────────────────────────────────────────────
     const batchDisplayName = batchObj.batchName || batchNo;
     const infoBarHTML = `
       <div style="display:flex;align-items:center;gap:0;
-                  background:var(--surface2);
-                  border:1px solid var(--border);
-                  border-bottom:none;
-                  border-radius:12px 12px 0 0;
-                  padding:9px 16px;overflow:hidden">
+                  background:var(--surface2);border:1px solid var(--border);
+                  border-bottom:none;border-radius:12px 12px 0 0;padding:9px 16px;overflow:hidden">
         <div style="display:flex;align-items:center;gap:7px">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -1348,73 +1291,123 @@ export const ResultProfile = {
         </div>
       </div>`;
 
-    // Row 3: Sub-column labels — NO fixed-col placeholders (rowspan="3" covers them)
-    let subHeaderRow = `
+    // ── ROW 1: Test group headers ──────────────────────────────
+    // #/Student ID/Student Name → rowspan="3" (clears rows 2 & 3 automatically)
+    // Each test group th → colspan = totalAttempts × _subCount
+    const groupHeaderRow = `
+      <tr class="rp-thead-group">
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;min-width:32px">#</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;min-width:100px">Student ID</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;min-width:140px">Student Name</th>
+        ${testGroups.map((g, gi) => {
+          const s            = colStats[gi];
+          const totalAttempts = 1 + g.retests.length;
+          const groupColspan  = totalAttempts * _subCount;
+          return `
+          <th colspan="${groupColspan}"
+              class="${g.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
+              style="vertical-align:bottom;padding-bottom:6px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+              <span style="font-size:11.5px;font-weight:800">${g.groupLabel}</span>
+              ${g.original.date ? `<span style="font-size:9.5px;font-weight:500;opacity:.7">${formatDate(g.original.date)}</span>` : ''}
+              <div style="width:100%;min-width:80px;margin-top:3px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;gap:4px">
+                  <span style="font-size:9px;color:var(--t3);white-space:nowrap">✓${s.p} ✗${s.f}${s.ab ? ` ⊘${s.ab}` : ''}</span>
+                  <span style="font-size:10px;font-weight:800;color:${s.color};white-space:nowrap">${s.appeared > 0 ? s.rate + '%' : '—'}</span>
+                </div>
+                <div style="height:4px;background:rgba(0,0,0,0.1);border-radius:2px;overflow:hidden">
+                  <div style="height:100%;width:${s.rate}%;background:${s.color};border-radius:2px;transition:width .3s"></div>
+                </div>
+              </div>
+            </div>
+          </th>`;
+        }).join('')}
+      </tr>`;
+
+    // ── ROW 2: Attempt labels ──────────────────────────────────
+    // NO placeholder cells — rowspan="3" on fixed cols already reserves this space
+    // Each attempt th → colspan = _subCount
+    const attemptHeaderRow = `
+      <tr class="rp-thead-group" style="background:var(--surface3)">
+        ${testGroups.map(g => {
+          const attemptEntries = [g.original, ...g.retests];
+          return attemptEntries.map((entry, ai) => {
+            const label   = ai === 0 ? '1st Attempt' : `Retest #${entry.retestIndex || ai}`;
+            const isFirst = ai === 0;
+            return `<th colspan="${_subCount}"
+              style="text-align:center;font-size:9.5px;font-weight:700;padding:5px 8px;
+                     color:var(--t2);white-space:nowrap;
+                     ${isFirst ? 'border-left:2px solid var(--border2)' : ''}">${label}</th>`;
+          }).join('');
+        }).join('')}
+      </tr>`;
+
+    // ── ROW 3: Sub-column labels ───────────────────────────────
+    // NO placeholder cells — rowspan="3" covers fixed cols
+    // Render only visible sub-columns per attempt per group
+    const subHeaderRow = `
       <tr class="rp-thead-sub">
         ${testGroups.map(g => {
           const attemptEntries = [g.original, ...g.retests];
           return attemptEntries.map((entry, ai) => {
+            const isFirst = ai === 0;
             const subs = [];
-            const isFirstAttempt = ai === 0;
-            if (_showMarks)  subs.push(`<th class="${isFirstAttempt ? 'rp-sub-sep' : ''}">Marks</th>`);
-            if (_showStatus) subs.push(`<th${!_showMarks && isFirstAttempt ? ' class="rp-sub-sep"' : ''}>Status</th>`);
-            if (_showDate)   subs.push(`<th${!_showMarks && !_showStatus && isFirstAttempt ? ' class="rp-sub-sep"' : ''}>Date</th>`);
+            if (_showMarks)  subs.push(`<th class="${isFirst ? 'rp-sub-sep' : ''}" style="min-width:80px">Marks</th>`);
+            if (_showStatus) subs.push(`<th${!_showMarks && isFirst ? ' class="rp-sub-sep"' : ''} style="min-width:70px">Status</th>`);
+            if (_showDate)   subs.push(`<th${!_showMarks && !_showStatus && isFirst ? ' class="rp-sub-sep"' : ''} style="min-width:90px">Date</th>`);
             return subs.join('');
           }).join('');
         }).join('')}
       </tr>`;
 
+    // ── TBODY ─────────────────────────────────────────────────
+    // student → groups → attempts → sub-columns (mirrors thead exactly)
     const bodyHTML = tableRows.map((row, ri) => `
       <tr>
-        <td style="color:var(--t1);font-size:11.5px">${ri + 1}</td>
-        <td style="font-size:12px;color:var(--t1)">${row.studentId}</td>
+        <td style="color:var(--t1);font-size:11.5px;text-align:center">${ri + 1}</td>
+        <td style="font-size:12px;color:var(--t1);font-family:var(--font-mono,monospace)">${row.studentId}</td>
         <td style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px"
             title="${row.studentName}">${row.studentName}</td>
-        ${row.groupCols.map((gc, gi) => {
-          // Render one set of sub-columns per attempt (original + retests)
-          return gc.attempts.map((cell, ai) => {
-            const isFirstAttempt = ai === 0;
-            const isEffective    = cell === gc.effective;
-            const perfBg = cell.status === 'pass'    ? 'var(--green-dim)'
-                         : cell.status === 'fail'    ? 'var(--red-dim)'
-                         : cell.status === 'absent'  ? 'var(--yellow-dim)'
-                         : 'transparent';
+        ${row.groupCols.map(gc =>
+          gc.attempts.map((cell, ai) => {
+            const isFirst    = ai === 0;
+            const isEffective = cell === gc.effective;
+            const perfBg    = cell.status === 'pass'   ? 'var(--green-dim)'
+                            : cell.status === 'fail'   ? 'var(--red-dim)'
+                            : cell.status === 'absent' ? 'var(--yellow-dim)'
+                            : 'transparent';
             const perfColor = cell.status === 'pass'   ? 'var(--green)'
                             : cell.status === 'fail'   ? 'var(--red)'
                             : cell.status === 'absent' ? 'var(--yellow)'
                             : 'var(--t4)';
             const pct = (cell.marks != null && !cell.absent && cell.totalMarks)
-              ? Math.round((Number(cell.marks) / Number(cell.totalMarks)) * 100)
-              : null;
+              ? Math.round((Number(cell.marks) / Number(cell.totalMarks)) * 100) : null;
             const hlIcon  = pct == null ? '' : pct >= 80 ? '●' : pct >= 70 ? '▲' : '⚠';
             const hlLabel = pct == null ? '' : pct >= 80 ? 'Healthy' : pct >= 70 ? 'At Risk' : 'Danger';
             const hlColor = pct == null ? 'var(--t3)' : pct >= 80 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
             const hlBadge = pct != null
-              ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:${hlColor}">${hlIcon} ${hlLabel}</span>`
+              ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:${hlColor};white-space:nowrap">${hlIcon} ${hlLabel}</span>`
               : '';
-            // If this is the effective attempt, show a subtle indicator
             const effectiveDot = isEffective && gc.attempts.length > 1
               ? `<span title="Effective result" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${perfColor || 'var(--t4)'};margin-left:3px;vertical-align:middle;opacity:.8"></span>`
               : '';
             const marksDisplay = cell.absent
               ? `<span style="font-weight:700;color:var(--yellow)">Ab</span>`
               : cell.marks != null
-                ? `<div style="display:flex;flex-direction:column;gap:1px">
-                     <span style="font-weight:700;font-family:var(--font-mono,monospace);color:${perfColor}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:var(--t3)">/${cell.totalMarks}</span>` : ''}${effectiveDot}</span>
+                ? `<div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+                     <span style="font-weight:700;font-family:var(--font-mono,monospace);color:${perfColor};white-space:nowrap">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:var(--t3)">/${cell.totalMarks}</span>` : ''}${effectiveDot}</span>
                      ${hlBadge}
                    </div>`
-                : `<span style="color:var(--t1)">—</span>`;
-            const leftBorder = isFirstAttempt ? 'border-left:2px solid var(--border2)' : '';
+                : `<span style="color:var(--t3)">—</span>`;
+            const leftBorder = isFirst ? 'border-left:2px solid var(--border2)' : '';
             const tdBg = isEffective && gc.attempts.length > 1 ? `background:${perfBg}` : '';
-            return `
-            ${_showMarks ? `<td style="white-space:nowrap;padding:8px 10px;vertical-align:middle;${leftBorder};${tdBg}">
-              ${marksDisplay}
-            </td>` : ''}
-            ${_showStatus ? `<td style="${!_showMarks && isFirstAttempt ? 'border-left:2px solid var(--border2);' : ''}${tdBg}">${this._statusBadge(cell.status)}</td>` : ''}
-            ${_showDate   ? `<td style="font-size:11.5px;color:var(--t1);white-space:nowrap;${tdBg}">${cell.entry.date ? formatDate(cell.entry.date) : '—'}</td>` : ''}
-            `;
-          }).join('');
-        }).join('')}
+            return [
+              _showMarks  ? `<td style="white-space:nowrap;padding:8px 10px;vertical-align:middle;${leftBorder};${tdBg}">${marksDisplay}</td>` : '',
+              _showStatus ? `<td style="${!_showMarks && isFirst ? 'border-left:2px solid var(--border2);' : ''}padding:8px 10px;vertical-align:middle;${tdBg}">${this._statusBadge(cell.status)}</td>` : '',
+              _showDate   ? `<td style="${!_showMarks && !_showStatus && isFirst ? 'border-left:2px solid var(--border2);' : ''}font-size:11.5px;color:var(--t1);white-space:nowrap;padding:8px 10px;vertical-align:middle;${tdBg}">${cell.entry.date ? formatDate(cell.entry.date) : '—'}</td>` : '',
+            ].join('');
+          }).join('')
+        ).join('')}
       </tr>
     `).join('');
 
@@ -1432,8 +1425,7 @@ export const ResultProfile = {
               </div>
               <span style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;
                            background:${s.hlBg};color:${s.hlColor};
-                           padding:2px 7px;border-radius:20px;font-size:9.5px;font-weight:700;
-                           white-space:nowrap">
+                           padding:2px 7px;border-radius:20px;font-size:9.5px;font-weight:700;white-space:nowrap">
                 ${s.hlIcon} ${s.hlLabel}${s.avgPct != null ? ` (${s.avgPct}%)` : ''}
               </span>
             </div>
@@ -1442,9 +1434,9 @@ export const ResultProfile = {
                 ? `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--green-dim);color:var(--green);padding:1px 8px;border-radius:20px;font-size:10.5px;font-weight:700">✓ Done</span>`
                 : `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--surface3);color:var(--t3);padding:1px 8px;border-radius:20px;font-size:10.5px;font-weight:700">· Pending</span>`
               }
-              ${s.p    ? `<span class="rp-test-count-pill rp-tpill-pass">✓ ${s.p} Pass</span>`      : ''}
-              ${s.f    ? `<span class="rp-test-count-pill rp-tpill-fail">✗ ${s.f} Fail</span>`      : ''}
-              ${s.ab   ? `<span class="rp-test-count-pill rp-tpill-absent">⊘ ${s.ab} Absent</span>` : ''}
+              ${s.p    ? `<span class="rp-test-count-pill rp-tpill-pass">✓ ${s.p} Pass</span>`       : ''}
+              ${s.f    ? `<span class="rp-test-count-pill rp-tpill-fail">✗ ${s.f} Fail</span>`       : ''}
+              ${s.ab   ? `<span class="rp-test-count-pill rp-tpill-absent">⊘ ${s.ab} Absent</span>`  : ''}
               ${s.pend ? `<span class="rp-test-count-pill rp-tpill-pend">· ${s.pend} Pending</span>` : ''}
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -1464,11 +1456,17 @@ export const ResultProfile = {
         }).join('')}
       </div>`;
 
+    // ── Assemble: statsHTML + testStatsStrip stay outside scroll container ──
+    // Only the <table> lives inside the isolated scroll container
     area.innerHTML = statsHTML + testStatsStripHTML + infoBarHTML + `
-      <div style="width:100%;overflow-x:scroll;overflow-y:hidden;-webkit-overflow-scrolling:touch;
-                  border:1px solid var(--border);border-top:none;border-radius:0 0 12px 12px;
+      <div class="table-scroll-container"
+           style="width:100%;overflow-x:scroll;overflow-y:hidden;
+                  -webkit-overflow-scrolling:touch;
+                  border:1px solid var(--border);border-top:none;
+                  border-radius:0 0 12px 12px;
                   scrollbar-width:thin;scrollbar-color:var(--border2) var(--surface2)">
-        <table class="rp-table" style="width:max-content;min-width:100%;border-collapse:collapse">
+        <table class="rp-table"
+               style="width:max-content;min-width:100%;border-collapse:collapse;font-size:12.5px">
           <thead>
             ${groupHeaderRow}
             ${attemptHeaderRow}
