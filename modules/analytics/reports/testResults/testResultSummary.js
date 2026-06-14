@@ -12,6 +12,26 @@ import { AppState }         from '../../../../utils/state.js';
 import { getAllAssignments } from '../../../lecturePlan/lecturePlanService.js';
 import { getSchedules, formatDate } from '../../../testing/testingService.js';
 
+// ── Sub-column definitions for column manager ──────────────
+const TRS_SUB_COLS = [
+  { key: 'pass',     label: 'Pass'      },
+  { key: 'fail',     label: 'Fail'      },
+  { key: 'absent',   label: 'Absent'    },
+  { key: 'avg',      label: 'Avg Marks' },
+  { key: 'rate',     label: 'Pass Rate' },
+  { key: 'health',   label: 'Health'    },
+];
+const TRS_COL_PREF_KEY = 'trs_col_prefs';
+
+function _getTrsColPrefs() {
+  try {
+    const raw = AppState.get(TRS_COL_PREF_KEY);
+    if (raw && Array.isArray(raw.hidden)) return raw;
+  } catch(e) {}
+  return { hidden: [] };
+}
+function _saveTrsColPrefs(prefs) { AppState.set(TRS_COL_PREF_KEY, prefs); }
+
 // ── Data helpers ────────────────────────────────────────────
 function _getResults()    { return AppState.get('testResults') || []; }
 function _getCampuses()   { return AppState.get('campuses')    || []; }
@@ -372,6 +392,84 @@ function _injectStyles() {
   border-bottom:none;
   border-radius:12px 12px 0 0;
 }
+
+/* ── Table scroll container (both axes) ── */
+.trs-table-scroll-container {
+  width:100%;
+  overflow-x:scroll;
+  overflow-y:auto;
+  max-height:calc(100vh - 280px);
+  -webkit-overflow-scrolling:touch;
+  border:1px solid var(--border);
+  border-top:none;
+  border-radius:0 0 12px 12px;
+  scrollbar-width:thin;
+  scrollbar-color:var(--border2) var(--surface2);
+}
+.trs-table-scroll-container::-webkit-scrollbar { height:7px; width:7px; }
+.trs-table-scroll-container::-webkit-scrollbar-track { background:var(--surface2); border-radius:4px; }
+.trs-table-scroll-container::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
+.trs-table-scroll-container::-webkit-scrollbar-thumb:hover { background:var(--t4); }
+.trs-table-scroll-container .trs-table { width:max-content; min-width:100%; }
+
+/* ── Export / Column-manager buttons ── */
+.trs-export-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  height:30px; padding:0 12px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface2);
+  color:var(--t3); cursor:pointer; font-size:12px; font-weight:600;
+  font-family:inherit; transition:all .15s; white-space:nowrap;
+}
+.trs-export-btn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+
+/* ── Column Manager ── */
+.trs-col-mgr-wrap  { position:relative; }
+.trs-col-mgr-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface2);
+  color:var(--t3); cursor:pointer; transition:all .15s;
+}
+.trs-col-mgr-panel {
+  position:fixed; z-index:9999;
+  width:200px; background:var(--surface);
+  border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+  display:none; flex-direction:column; overflow:hidden;
+  max-height:min(340px, calc(100vh - 24px));
+}
+.trs-col-mgr-panel.open { display:flex; }
+.trs-col-mgr-head {
+  padding:9px 13px 7px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center;
+  justify-content:space-between; flex-shrink:0;
+}
+.trs-col-mgr-title {
+  font-size:11.5px; font-weight:700; color:var(--t1);
+  display:flex; align-items:center; gap:6px;
+}
+.trs-col-mgr-link {
+  font-size:11px; color:var(--blue); cursor:pointer;
+  background:none; border:none; padding:0;
+  text-decoration:underline; font-weight:600;
+}
+.trs-col-mgr-link:hover { opacity:.8; }
+.trs-col-mgr-list { padding:4px 0; overflow-y:auto; flex:1; }
+.trs-col-mgr-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:default; user-select:none;
+  transition:background .1s;
+}
+.trs-col-mgr-item:hover { background:var(--surface2); }
+.trs-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+.trs-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
+.trs-col-mgr-item.col-hidden .trs-col-mgr-lbl { color:var(--t4); }
+.trs-col-mgr-foot {
+  padding:6px 12px; border-top:1px solid var(--border);
+  font-size:10.5px; color:var(--t3); text-align:center;
+  flex-shrink:0; background:var(--surface2);
+}
 `;
   document.head.appendChild(st);
 }
@@ -726,16 +824,19 @@ export const TestResultSummary = {
 
     // ── Subject / campus display info ────────────────────────
     const subjectObj = _getSubjects().find(s => s.id === resolvedSubjectId) || {};
-    const subjectDisplay = subjectObj.subjectCode
-      ? `${subjectObj.subjectCode} — ${subjectObj.subjectName||''}`.trim()
-      : subjectObj.subjectName || '—';
+    const subjectDisplay = f.subject
+      ? (subjectObj.subjectCode
+          ? `${subjectObj.subjectCode} — ${subjectObj.subjectName||''}`.trim()
+          : subjectObj.subjectName || '—')
+      : 'All Subjects';
     const campusObj = _getCampuses().find(c => c.id === (f.campus || allBatches[0]?.campusId)) || {};
     const campusName = (campusObj.campusName || '').replace(/\s*campus$/i,'').trim() || '—';
 
     // ── Build table HTML ─────────────────────────────────────
-    // Header row 1: # | Batch | Teacher | [Test 1 colspan=5] | [Test 2 colspan=5] …
-    // Colspan per test = 5 stats: Pass | Fail | Absent | Avg | Pass Rate | Health  (6)
-    const STAT_COLS = 6;
+    // Header row 1: # | Batch | Teacher | [Test 1 colspan=N] | [Test 2 colspan=N] …
+    const _prefs = _getTrsColPrefs();
+    const _visibleCols = TRS_SUB_COLS.filter(sc => !_prefs.hidden.includes(sc.key));
+    const STAT_COLS = _visibleCols.length || 1;
 
     const groupHeaderCells = unifiedGroups.map(g => `
       <th colspan="${STAT_COLS}"
@@ -747,13 +848,14 @@ export const TestResultSummary = {
 
     const subHeaderCells = unifiedGroups.map(g => {
       const sepClass = g.isMock ? 'trs-td-mock-sep' : 'trs-td-test-sep';
-      return `
-        <th class="${sepClass}" style="border-left:2px solid ${g.isMock ? 'color-mix(in srgb,var(--violet,#8b5cf6) 30%,transparent)' : 'color-mix(in srgb,var(--blue) 30%,transparent)'}">Pass</th>
-        <th>Fail</th>
-        <th>Absent</th>
-        <th>Avg Marks</th>
-        <th>Pass Rate</th>
-        <th>Health</th>`;
+      if (!_visibleCols.length) {
+        return `<th class="${sepClass}" style="border-left:2px solid ${g.isMock ? 'color-mix(in srgb,var(--violet,#8b5cf6) 30%,transparent)' : 'color-mix(in srgb,var(--blue) 30%,transparent)'}">—</th>`;
+      }
+      return _visibleCols.map((sc, i) => {
+        const isFirst = i === 0;
+        const sepStyle = isFirst ? ` style="border-left:2px solid ${g.isMock ? 'color-mix(in srgb,var(--violet,#8b5cf6) 30%,transparent)' : 'color-mix(in srgb,var(--blue) 30%,transparent)'}"` : '';
+        return `<th class="${isFirst ? sepClass : ''}"${sepStyle}>${sc.label}</th>`;
+      }).join('');
     }).join('');
 
     // Body rows
@@ -772,10 +874,14 @@ export const TestResultSummary = {
         const sepClass = isMock ? 'trs-td-mock-sep' : 'trs-td-test-sep';
         const sepStyle = `border-left:2px solid ${isMock ? 'color-mix(in srgb,var(--violet,#8b5cf6) 20%,transparent)' : 'color-mix(in srgb,var(--blue) 20%,transparent)'}`;
 
+        if (!_visibleCols.length) {
+          return `<td class="${sepClass}" style="${sepStyle}">—</td>`;
+        }
+
         if (!s) {
-          return `
-            <td class="${sepClass}" style="${sepStyle}">—</td>
-            <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`;
+          return _visibleCols.map((sc, i) =>
+            i === 0 ? `<td class="${sepClass}" style="${sepStyle}">—</td>` : `<td>—</td>`
+          ).join('');
         }
 
         const hl = _health(s.avgPct);
@@ -793,15 +899,21 @@ export const TestResultSummary = {
             ${hl.icon} ${hl.label}${s.avgPct != null ? ` (${s.avgPct}%)` : ''}
           </span>`;
 
-        return `
-          <td class="${sepClass}" style="${sepStyle}">
-            ${s.p > 0 ? `<span class="trs-pill" style="background:var(--green-dim);color:var(--green)">✓ ${s.p}</span>` : `<span style="color:var(--t4)">0</span>`}
-          </td>
-          <td>${s.f > 0 ? `<span class="trs-pill" style="background:var(--red-dim);color:var(--red)">✗ ${s.f}</span>` : `<span style="color:var(--t4)">0</span>`}</td>
-          <td>${s.ab > 0 ? `<span class="trs-pill" style="background:var(--yellow-dim);color:var(--yellow)">⊘ ${s.ab}</span>` : `<span style="color:var(--t4)">0</span>`}</td>
-          <td style="font-size:12px;font-weight:700;color:var(--t1)">${s.avg != null ? s.avg : '—'}</td>
-          <td style="min-width:90px">${passRateBar}</td>
-          <td>${healthPill}</td>`;
+        const cellHTML = {
+          pass:   s.p > 0 ? `<span class="trs-pill" style="background:var(--green-dim);color:var(--green)">✓ ${s.p}</span>` : `<span style="color:var(--t4)">0</span>`,
+          fail:   s.f > 0 ? `<span class="trs-pill" style="background:var(--red-dim);color:var(--red)">✗ ${s.f}</span>` : `<span style="color:var(--t4)">0</span>`,
+          absent: s.ab > 0 ? `<span class="trs-pill" style="background:var(--yellow-dim);color:var(--yellow)">⊘ ${s.ab}</span>` : `<span style="color:var(--t4)">0</span>`,
+          avg:    `<span style="font-size:12px;font-weight:700;color:var(--t1)">${s.avg != null ? s.avg : '—'}</span>`,
+          rate:   passRateBar,
+          health: healthPill,
+        };
+
+        return _visibleCols.map((sc, i) => {
+          const extraStyle = sc.key === 'avg' ? '' : sc.key === 'rate' ? ' style="min-width:90px"' : '';
+          const cls   = i === 0 ? sepClass : '';
+          const style = i === 0 ? ` style="${sepStyle}"` : extraStyle;
+          return `<td class="${cls}"${style}>${cellHTML[sc.key]}</td>`;
+        }).join('');
       }).join('');
 
       const rowBg = bi % 2 === 1 ? 'background:var(--surface2)' : '';
@@ -831,31 +943,333 @@ export const TestResultSummary = {
           <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
         </svg>
         <span style="font-size:12.5px;font-weight:700;color:var(--blue)">${subjectDisplay}</span>
-        <span style="margin-left:auto;font-size:11.5px;color:var(--t3)">
+        <span style="font-size:11.5px;color:var(--t3);margin-left:8px">
           ${allBatches.length} batch${allBatches.length !== 1 ? 'es' : ''} · ${unifiedGroups.length} test${unifiedGroups.length !== 1 ? 's' : ''}
           · effective stats (latest attempt per student)
         </span>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
+          <button class="trs-export-btn" id="trsExportCSV">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            CSV
+          </button>
+          <button class="trs-export-btn" id="trsExportPDF">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>
+            </svg>
+            PDF
+          </button>
+          <div class="trs-col-mgr-wrap">
+            <button class="trs-col-mgr-btn" id="trsColMgrBtn" title="Show / hide columns">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="18" rx="1"/>
+                <rect x="14" y="3" width="7" height="18" rx="1"/>
+              </svg>
+            </button>
+            <div class="trs-col-mgr-panel" id="trsColMgrPanel">
+              <div class="trs-col-mgr-head">
+                <span class="trs-col-mgr-title">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                  </svg>
+                  Columns
+                </span>
+                <button class="trs-col-mgr-link" id="trsColMgrShowAll">Show All</button>
+              </div>
+              <div class="trs-col-mgr-list" id="trsColMgrList"></div>
+              <div class="trs-col-mgr-foot">Applies to all tests</div>
+            </div>
+          </div>
+        </div>
       </div>`;
 
     area.innerHTML = infoBar + `
-      <div class="trs-table-wrap" style="border-top:none;border-radius:0 0 12px 12px">
-        <div class="trs-table-scroll">
-          <table class="trs-table">
-            <thead>
-              <tr>
-                <th class="trs-th-left" rowspan="2" style="vertical-align:middle;min-width:130px">Batch</th>
-                <th class="trs-th-left" rowspan="2" style="vertical-align:middle;min-width:110px">Teacher</th>
-                ${groupHeaderCells}
-              </tr>
-              <tr class="trs-thead-sub">
-                ${subHeaderCells}
-              </tr>
-            </thead>
-            <tbody>
-              ${bodyHTML || `<tr><td colspan="${2 + unifiedGroups.length * STAT_COLS}" style="text-align:center;padding:40px;color:var(--t3)">No data available</td></tr>`}
-            </tbody>
-          </table>
-        </div>
+      <div class="trs-table-scroll-container" id="trsTableScroll">
+        <table class="trs-table">
+          <thead>
+            <tr>
+              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;min-width:130px">Batch</th>
+              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;min-width:110px">Teacher</th>
+              ${groupHeaderCells}
+            </tr>
+            <tr class="trs-thead-sub">
+              ${subHeaderCells}
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyHTML || `<tr><td colspan="${2 + unifiedGroups.length * STAT_COLS}" style="text-align:center;padding:40px;color:var(--t3)">No data available</td></tr>`}
+          </tbody>
+        </table>
       </div>`;
+
+    // ── Wire export buttons ───────────────────────────────────
+    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols };
+    area.querySelector('#trsExportCSV')?.addEventListener('click', () => this._exportCSV(_exportData));
+    area.querySelector('#trsExportPDF')?.addEventListener('click', () => this._exportPDF(_exportData));
+
+    // ── Wire column manager ────────────────────────────────────
+    this._wireColManager(area, c);
+  },
+
+  // ── Column Manager ─────────────────────────────────────────
+  _wireColManager(area, c) {
+    const btn   = area.querySelector('#trsColMgrBtn');
+    const panel = area.querySelector('#trsColMgrPanel');
+    const list  = area.querySelector('#trsColMgrList');
+    if (!btn || !panel || !list) return;
+
+    const _positionPanel = () => {
+      const r      = btn.getBoundingClientRect();
+      const panelW = 200;
+      let left = r.right - panelW;
+      left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+      panel.style.left = left + 'px';
+      panel.style.top  = (r.bottom + 6) + 'px';
+    };
+
+    const _renderList = () => {
+      const prefs = _getTrsColPrefs();
+      list.innerHTML = '';
+      TRS_SUB_COLS.forEach(sc => {
+        const isVisible = !prefs.hidden.includes(sc.key);
+        const item = document.createElement('div');
+        item.className = 'trs-col-mgr-item' + (isVisible ? '' : ' col-hidden');
+        item.innerHTML =
+          `<input type="checkbox" class="trs-col-mgr-chk" id="trs_chk_${sc.key}"${isVisible ? ' checked' : ''}/>`+
+          `<label class="trs-col-mgr-lbl" for="trs_chk_${sc.key}">${sc.label}</label>`;
+        item.querySelector('.trs-col-mgr-chk').addEventListener('change', e => {
+          const p = _getTrsColPrefs();
+          if (e.target.checked) {
+            p.hidden = p.hidden.filter(h => h !== sc.key);
+            item.classList.remove('col-hidden');
+          } else {
+            if (!p.hidden.includes(sc.key)) p.hidden.push(sc.key);
+            item.classList.add('col-hidden');
+          }
+          _saveTrsColPrefs(p);
+          panel.classList.remove('open');
+          this._renderTable(c);
+        });
+        list.appendChild(item);
+      });
+    };
+
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        panel.classList.remove('open');
+      } else {
+        _renderList();
+        _positionPanel();
+        panel.classList.add('open');
+        btn.style.borderColor = 'var(--blue)';
+        btn.style.color = 'var(--blue)';
+        btn.style.background = 'var(--blue-dim)';
+      }
+    });
+
+    area.querySelector('#trsColMgrShowAll')?.addEventListener('click', () => {
+      _saveTrsColPrefs({ hidden: [] });
+      panel.classList.remove('open');
+      this._renderTable(c);
+    });
+
+    const _outsideClick = e => {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.classList.remove('open');
+        btn.style.borderColor = 'var(--border)';
+        btn.style.color = 'var(--t3)';
+        btn.style.background = 'var(--surface2)';
+      }
+    };
+    document.addEventListener('click', _outsideClick);
+
+    window.addEventListener('scroll', () => {
+      if (panel.classList.contains('open')) _positionPanel();
+    }, true);
+    window.addEventListener('resize', () => {
+      if (panel.classList.contains('open')) _positionPanel();
+    });
+  },
+
+  // ── Build flat rows for CSV/PDF export ──────────────────────
+  _buildExportRows({ allBatches, batchDataMap, unifiedGroups }) {
+    const rows = [];
+    allBatches.forEach(batch => {
+      const bd = batchDataMap[batch.id];
+      if (!bd) return;
+      const teacherName  = _getTeacherName(batch);
+      const batchDisplay = batch.batchName || (batch.batchNo ? `Batch ${String(batch.batchNo).padStart(2,'0')}` : batch.id);
+      const session      = batch.sessionPeriod || '—';
+
+      unifiedGroups.forEach(ug => {
+        const bgd = bd.testGroups.find(g => g.groupLabel === ug.groupLabel);
+        const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
+        rows.push({
+          'Batch':     batchDisplay,
+          'Teacher':   teacherName,
+          'Session':   session,
+          'Test':      ug.groupLabel,
+          'Pass':      s ? String(s.p)  : '—',
+          'Fail':      s ? String(s.f)  : '—',
+          'Absent':    s ? String(s.ab) : '—',
+          'Avg Marks': s && s.avg != null ? String(s.avg) : '—',
+          'Pass Rate': s && s.appeared > 0 ? `${s.rate}%` : '—',
+          'Health':    s ? _health(s.avgPct).label + (s.avgPct != null ? ` (${s.avgPct}%)` : '') : '—',
+        });
+      });
+    });
+    return rows;
+  },
+
+  // ── Export CSV ───────────────────────────────────────────────
+  _exportCSV(d) {
+    const data = this._buildExportRows(d);
+    if (!data.length) { alert('No results to export.'); return; }
+    const headers = Object.keys(data[0]);
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+    const metaLines = [
+      `Test Result Summary Report`,
+      `Generated: ${dateStr} ${timeStr}`,
+      `Campus: ${d.campusName}  |  Subject: ${d.subjectDisplay}`,
+      `Batches: ${d.allBatches.length}  |  Tests: ${d.unifiedGroups.length}`,
+      '',
+    ].join('\n');
+
+    const csvRows = [
+      metaLines,
+      headers.join(','),
+      ...data.map(r => headers.map(h => `"${String(r[h]||'').replace(/"/g,'""')}"`).join(',')),
+    ];
+
+    const blob = new Blob([csvRows.join('\n')], { type:'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `Test-Result-Summary-${dateStr.replace(/ /g,'-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  // ── Export PDF ───────────────────────────────────────────────
+  _exportPDF(d) {
+    if (!d.allBatches.length) { alert('No results to export.'); return; }
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+    const visibleCols = d.visibleCols.length ? d.visibleCols : TRS_SUB_COLS;
+    const STAT_COLS   = visibleCols.length;
+
+    const groupThs = d.unifiedGroups.map(g => {
+      const bg    = g.isMock ? '#ede9fe' : '#dbeafe';
+      const color = g.isMock ? '#5b21b6' : '#1e40af';
+      return `<th colspan="${STAT_COLS}" style="text-align:center;background:${bg};color:${color};
+                font-size:9px;font-weight:700;padding:5px 8px;
+                border-left:2px solid ${g.isMock ? '#c4b5fd' : '#93c5fd'};
+                white-space:nowrap">${g.groupLabel}</th>`;
+    }).join('');
+
+    const subThs = d.unifiedGroups.map(g => {
+      const bc = g.isMock ? '#c4b5fd' : '#93c5fd';
+      return visibleCols.map((sc, i) =>
+        `<th${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>${sc.label}</th>`
+      ).join('');
+    }).join('');
+
+    const bodyRows = d.allBatches.map((batch, ri) => {
+      const bd = d.batchDataMap[batch.id];
+      const teacherName  = _getTeacherName(batch);
+      const batchDisplay = batch.batchName || (batch.batchNo ? `Batch ${String(batch.batchNo).padStart(2,'0')}` : batch.id);
+      const session      = batch.sessionPeriod || '—';
+
+      const cells = d.unifiedGroups.map(ug => {
+        const bgd = bd?.testGroups.find(g => g.groupLabel === ug.groupLabel);
+        const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
+        const bc  = ug.isMock ? '#c4b5fd' : '#93c5fd';
+        if (!s) {
+          return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>—</td>`).join('');
+        }
+        const hl = _health(s.avgPct);
+        const rateColor = s.rate >= 80 ? '#16a34a' : s.rate >= 60 ? '#d97706' : s.appeared > 0 ? '#dc2626' : '#94a3b8';
+        const hlHex = { 'var(--green)':'#16a34a','var(--yellow)':'#d97706','var(--red)':'#dc2626','var(--t3)':'#64748b' }[hl.color] || '#64748b';
+        const cellVals = {
+          pass:   s.p,
+          fail:   s.f,
+          absent: s.ab,
+          avg:    s.avg != null ? s.avg : '—',
+          rate:   s.appeared > 0 ? `<span style="color:${rateColor};font-weight:700">${s.rate}%</span>` : '—',
+          health: `<span style="color:${hlHex};font-weight:700">${hl.label}${s.avgPct != null ? ` (${s.avgPct}%)` : ''}</span>`,
+        };
+        return visibleCols.map((sc, i) =>
+          `<td${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>${cellVals[sc.key]}</td>`
+        ).join('');
+      }).join('');
+
+      return `<tr class="${ri%2===0?'even':'odd'}">
+        <td style="font-weight:600;white-space:nowrap">${batchDisplay}<br><span style="font-size:8px;color:#64748b">${session}</span></td>
+        <td style="white-space:nowrap">${teacherName}</td>
+        ${cells}
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<title>Test Result Summary</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:#fff;padding:16px 18px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #2563eb;padding-bottom:10px;margin-bottom:10px}
+  .header .title{font-size:17px;font-weight:700;color:#1e40af}
+  .header .sub{font-size:10px;color:#64748b;margin-top:2px}
+  .header .right{text-align:right;font-size:10px;color:#64748b;line-height:1.6}
+  .meta-bar{display:flex;align-items:center;gap:12px;padding:6px 12px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:9px;font-size:10px;color:#1e40af;font-weight:600}
+  table.main{width:100%;border-collapse:collapse;font-size:8.5px}
+  table.main thead tr.g-row th{background:#1e40af;color:#fff;font-weight:700;padding:5px 7px;text-align:center;font-size:8.5px;white-space:nowrap}
+  table.main thead tr.g-row th.left-col{text-align:left;background:#1e40af}
+  table.main thead tr.s-row th{background:#1e3a8a;color:#93c5fd;font-size:7.5px;font-weight:600;padding:4px 7px;text-transform:uppercase;letter-spacing:.4px;text-align:center;white-space:nowrap}
+  table.main tbody tr.even{background:#fff}table.main tbody tr.odd{background:#f8faff}
+  table.main tbody td{padding:4px 6px;border-bottom:1px solid #e2e8f0;vertical-align:middle;color:#334155;text-align:center}
+  .footer{margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:8.5px;color:#94a3b8}
+  @media print{body{padding:8px 10px}@page{size:A4 landscape;margin:6mm}.no-print{display:none}}
+</style></head><body>
+  <div class="header">
+    <div><div class="title">Test Result Summary Report</div><div class="sub">Batch-wise test performance overview</div></div>
+    <div class="right"><strong style="color:#1e293b">${dateStr}</strong><div>${timeStr}</div></div>
+  </div>
+  <div class="meta-bar">🏠 ${d.campusName} <span style="color:#bfdbfe">|</span> 📘 ${d.subjectDisplay}</div>
+  <table class="main">
+    <thead>
+      <tr class="g-row">
+        <th class="left-col" rowspan="2">Batch</th>
+        <th class="left-col" rowspan="2">Teacher</th>
+        ${groupThs}
+      </tr>
+      <tr class="s-row">${subThs}</tr>
+    </thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+  <div class="footer">
+    <span>Test Result Summary &nbsp;|&nbsp; Exported ${dateStr} at ${timeStr}</span>
+    <span>${d.allBatches.length} batch${d.allBatches.length!==1?'es':''} · ${d.unifiedGroups.length} test${d.unifiedGroups.length!==1?'s':''}</span>
+  </div>
+  <div style="margin-top:8px;text-align:center;font-size:8.5px;color:#94a3b8">Powered by <strong style="color:#2563eb">Learnomist</strong></div>
+  <div class="no-print" style="margin-top:14px;text-align:center">
+    <button onclick="window.print()" style="padding:7px 24px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Print / Save as PDF</button>
+  </div>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 600);
   },
 };
