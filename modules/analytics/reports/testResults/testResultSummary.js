@@ -78,13 +78,33 @@ function _getSubjectsFor({ disciplineId, levelId } = {}) {
     return s.disciplineId === disciplineId;
   });
 }
-function _getBatchesFor({ disciplineId, levelId, subjectId, sessionId, campusId } = {}) {
+// ── Batch status helper ─────────────────────────────────────
+// Active = closeDate <= today (or no date)
+// Closed = closeDate > today
+function _batchStatus(batch) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const close = batch.closeDate || batch.endDate || batch.batchEndDate || '';
+  if (!close) return 'active';
+  const d = new Date(close); d.setHours(0,0,0,0);
+  return d <= today ? 'active' : 'closed';
+}
+
+function _getBatchesFor({ disciplineId, levelId, subjectId, sessionId, campusId, status } = {}) {
+  // Each param can be a string (single) or an array (multi-select)
+  const _match = (val, filter) => {
+    if (!filter || (Array.isArray(filter) && !filter.length)) return true;
+    return Array.isArray(filter) ? filter.includes(val) : val === filter;
+  };
   return _getBatches().filter(b => {
-    if (disciplineId && b.disciplineId !== disciplineId) return false;
-    if (levelId      && b.levelId      !== levelId)      return false;
-    if (subjectId    && b.subjectId    !== subjectId)     return false;
-    if (sessionId    && b.sessionPeriod !== sessionId)    return false;
-    if (campusId     && b.campusId     !== campusId)      return false;
+    if (!_match(b.disciplineId,  disciplineId)) return false;
+    if (!_match(b.levelId,       levelId))      return false;
+    if (!_match(b.subjectId,     subjectId))     return false;
+    if (!_match(b.sessionPeriod, sessionId))     return false;
+    if (!_match(b.campusId,      campusId))      return false;
+    if (status && (Array.isArray(status) ? status.length : true)) {
+      const ss = Array.isArray(status) ? status : [status];
+      if (ss.length && !ss.includes(_batchStatus(b))) return false;
+    }
     return true;
   });
 }
@@ -226,6 +246,79 @@ function _injectStyles() {
   st.textContent = `
 /* ── TRS page ── */
 .trs-page { display:flex; flex-direction:column; gap:16px; }
+
+/* ── Multi-select dropdown ── */
+.trs-ms-wrap { position:relative; width:100%; box-sizing:border-box; }
+.trs-ms-trigger {
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
+  height:34px; padding:0 10px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:8px; color:var(--t1); font-size:12.5px;
+  cursor:pointer; outline:none; font-family:inherit;
+  transition:border-color .12s; width:100%; box-sizing:border-box;
+  user-select:none; white-space:nowrap; overflow:hidden;
+}
+.trs-ms-trigger:focus, .trs-ms-trigger.open { border-color:var(--blue); }
+.trs-ms-trigger[disabled] { opacity:.45; cursor:not-allowed; pointer-events:none; }
+.trs-ms-trigger-text { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--t1); }
+.trs-ms-trigger-text.placeholder { color:var(--t3); }
+.trs-ms-trigger-arrow { flex-shrink:0; color:var(--t3); transition:transform .18s; }
+.trs-ms-trigger.open .trs-ms-trigger-arrow { transform:rotate(180deg); }
+.trs-ms-trigger-count {
+  flex-shrink:0; background:var(--blue-dim); color:var(--blue);
+  border-radius:20px; padding:1px 7px; font-size:10.5px; font-weight:700;
+}
+.trs-ms-dropdown {
+  position:fixed; z-index:9999;
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:10px; box-shadow:0 8px 32px rgba(0,0,0,.2);
+  display:none; flex-direction:column; overflow:hidden;
+  min-width:180px; max-width:300px;
+  max-height:240px;
+}
+.trs-ms-dropdown.open { display:flex; }
+.trs-ms-search-wrap {
+  padding:8px 8px 4px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.trs-ms-search {
+  width:100%; box-sizing:border-box; padding:5px 9px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:7px; color:var(--t1); font-size:12px; outline:none;
+  font-family:inherit;
+}
+.trs-ms-search::placeholder { color:var(--t3); }
+.trs-ms-list { overflow-y:auto; flex:1; padding:3px 0; }
+.trs-ms-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:pointer; transition:background .1s;
+  font-size:12.5px; color:var(--t1); user-select:none;
+}
+.trs-ms-item:hover { background:var(--surface2); }
+.trs-ms-item.selected { color:var(--blue); }
+.trs-ms-chk {
+  width:14px; height:14px; border-radius:3px; flex-shrink:0;
+  border:1.5px solid var(--border2); background:var(--surface2);
+  display:flex; align-items:center; justify-content:center; transition:all .1s;
+}
+.trs-ms-item.selected .trs-ms-chk {
+  background:var(--blue); border-color:var(--blue);
+}
+.trs-ms-chk-tick { display:none; color:#fff; font-size:10px; font-weight:900; }
+.trs-ms-item.selected .trs-ms-chk-tick { display:block; }
+.trs-ms-lbl { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.trs-ms-footer {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:5px 10px; border-top:1px solid var(--border);
+  font-size:10.5px; color:var(--t3); flex-shrink:0;
+}
+.trs-ms-footer-btn {
+  background:none; border:none; color:var(--blue); font-size:10.5px;
+  font-weight:700; cursor:pointer; font-family:inherit; padding:0;
+}
+.trs-ms-footer-btn:hover { opacity:.8; }
+/* Status option pills */
+.trs-ms-status-active { color:var(--green); }
+.trs-ms-status-closed { color:var(--yellow); }
 
 /* ── Filter bar card — sticky to page-content scroll container ── */
 .rp-filter-card {
@@ -479,26 +572,31 @@ export const TestResultSummary = {
 
   _container:     null,
   _filterOpen:    false,
-  _selCampus:     '',
-  _selDiscipline: '',
-  _selLevel:      '',
-  _selSession:    '',
-  _selSubject:    '',
-  _selBatch:      '',
+  // Multi-select: each is an array of selected values
+  _selCampus:     [],
+  _selDiscipline: [],
+  _selLevel:      [],
+  _selSession:    [],
+  _selSubject:    [],
+  _selBatch:      [],
+  _selStatus:     [],
   _appliedFilter: null,
+  _openMs:        null,  // id of currently open multi-select dropdown
 
   mount(container) {
     if (!container) return;
     _injectStyles();
     this._container     = container;
     this._filterOpen    = false;
-    this._selCampus     = '';
-    this._selDiscipline = '';
-    this._selLevel      = '';
-    this._selSession    = '';
-    this._selSubject    = '';
-    this._selBatch      = '';
+    this._selCampus     = [];
+    this._selDiscipline = [];
+    this._selLevel      = [];
+    this._selSession    = [];
+    this._selSubject    = [];
+    this._selBatch      = [];
+    this._selStatus     = [];
     this._appliedFilter = null;
+    this._openMs        = null;
     this._render();
   },
 
@@ -540,27 +638,76 @@ export const TestResultSummary = {
 
   _activeFilterCount() {
     if (!this._appliedFilter) return 0;
-    return ['campus','discipline','level','session','subject','batch']
-      .filter(k => this._appliedFilter[k]).length;
+    return ['campus','discipline','level','session','subject','batch','status']
+      .filter(k => { const v = this._appliedFilter[k]; return Array.isArray(v) ? v.length > 0 : !!v; }).length;
+  },
+
+  // ── Multi-select helper: render a custom dropdown ────────
+  // opts: [{value, label}], selected: string[], stateKey: '_selXxx'
+  _msHTML(id, label, opts, selected, disabled = false) {
+    const sel  = selected || [];
+    const count = sel.length;
+    const trigText = count === 0
+      ? `<span class="trs-ms-trigger-text placeholder">Select ${label}…</span>`
+      : count === 1
+        ? `<span class="trs-ms-trigger-text">${(opts.find(o=>o.value===sel[0])?.label || sel[0])}</span>`
+        : `<span class="trs-ms-trigger-text">${count} selected</span>`;
+    const countBadge = count > 0 ? `<span class="trs-ms-trigger-count">${count}</span>` : '';
+    const disAttr = disabled ? 'disabled' : '';
+    return `
+      <div class="rp-filter-col">
+        <div class="rp-filter-col-label">${label}</div>
+        <div class="trs-ms-wrap" data-ms-id="${id}">
+          <button class="trs-ms-trigger${disabled?' trs-ms-trigger-disabled':''}" id="${id}Trigger" ${disAttr}
+                  type="button" data-ms-id="${id}">
+            ${trigText}${countBadge}
+            <svg class="trs-ms-trigger-arrow" width="12" height="12" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+          <div class="trs-ms-dropdown" id="${id}Drop" data-ms-id="${id}">
+            ${opts.length > 5 ? `<div class="trs-ms-search-wrap">
+              <input class="trs-ms-search" id="${id}Search" placeholder="Search…" type="text"/>
+            </div>` : ''}
+            <div class="trs-ms-list" id="${id}List">
+              ${opts.map(o => {
+                const isSel = sel.includes(o.value);
+                const extraClass = o.statusClass || '';
+                return `<div class="trs-ms-item${isSel?' selected':''} ${extraClass}"
+                             data-ms-id="${id}" data-val="${o.value}">
+                  <div class="trs-ms-chk"><span class="trs-ms-chk-tick">✓</span></div>
+                  <span class="trs-ms-lbl" title="${o.label}">${o.label}</span>
+                </div>`;
+              }).join('')}
+              ${!opts.length ? `<div style="padding:12px;text-align:center;font-size:12px;color:var(--t3)">No options</div>` : ''}
+            </div>
+            <div class="trs-ms-footer">
+              <span id="${id}CountLbl">${count} selected</span>
+              <button class="trs-ms-footer-btn" id="${id}ClearBtn" type="button">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
   },
 
   // ── Filter body ──────────────────────────────────────────
   _filterBodyHTML() {
     const campuses    = _getCampuses();
-    const disciplines = _getDisciplines(this._selCampus);
-    const levels      = _getLevels(this._selDiscipline);
-    const sessions    = _getSessions(this._selSubject);
-    const subjects    = _getSubjectsFor({ disciplineId: this._selDiscipline, levelId: this._selLevel });
-    const batches     = _getBatchesFor({ disciplineId: this._selDiscipline, levelId: this._selLevel, subjectId: this._selSubject, sessionId: this._selSession, campusId: this._selCampus });
-
-    const sel = (id, label, opts, val, disabled = false) => `
-      <div class="rp-filter-col">
-        <div class="rp-filter-col-label">${label}</div>
-        <select class="rp-filter-sel" id="${id}" ${disabled ? 'disabled' : ''}>
-          <option value="">Select ${label}…</option>
-          ${opts.map(o => `<option value="${o.value}" ${val === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
-        </select>
-      </div>`;
+    const hasCampus   = this._selCampus.length > 0;
+    const disciplines = _getDisciplines(hasCampus ? this._selCampus[0] : '');
+    const hasDiscipline = this._selDiscipline.length > 0;
+    const levels      = _getLevels(hasDiscipline ? this._selDiscipline[0] : '');
+    const sessions    = _getSessions(this._selSubject.length ? this._selSubject[0] : '');
+    const subjects    = _getSubjectsFor({ disciplineId: hasDiscipline ? this._selDiscipline[0] : '', levelId: this._selLevel.length ? this._selLevel[0] : '' });
+    const batches     = _getBatchesFor({
+      disciplineId: this._selDiscipline,
+      levelId:      this._selLevel,
+      subjectId:    this._selSubject,
+      sessionId:    this._selSession,
+      campusId:     this._selCampus,
+      status:       this._selStatus,
+    });
 
     const campusOpts     = campuses.map(c    => ({ value: c.id, label: (c.campusName||'').replace(/\s*campus$/i,'').trim() }));
     const disciplineOpts = disciplines.map(d => ({ value: d.id, label: d.abbreviation ? `${d.abbreviation} — ${d.fullName}` : (d.fullName || d.name || d.id) }));
@@ -568,17 +715,22 @@ export const TestResultSummary = {
     const sessionOpts    = sessions.map(s   => ({ value: s,    label: s }));
     const subjectOpts    = subjects.map(s   => ({ value: s.id, label: `${s.subjectCode||''} — ${s.subjectName||''}`.replace(/^—\s*/,'').trim() }));
     const batchOpts      = batches.map(b    => ({ value: b.id, label: b.batchName || `Batch ${b.batchNo || b.id}` }));
+    const statusOpts     = [
+      { value: 'active', label: '● Active',  statusClass: 'trs-ms-status-active' },
+      { value: 'closed', label: '◐ Closed',  statusClass: 'trs-ms-status-closed' },
+    ];
 
     const chips = this._appliedChipsHTML();
 
     return `
       <div class="rp-filter-row">
-        ${sel('trsSelCampus',     'Campus',     campusOpts,     this._selCampus)}
-        ${sel('trsSelDiscipline', 'Discipline', disciplineOpts, this._selDiscipline, !this._selCampus)}
-        ${sel('trsSelLevel',      'Level',      levelOpts,      this._selLevel,      !this._selDiscipline)}
-        ${sel('trsSelSession',    'Session',    sessionOpts,    this._selSession,    !this._selCampus)}
-        ${sel('trsSelSubject',    'Subject',    subjectOpts,    this._selSubject,    !this._selCampus)}
-        ${sel('trsSelBatch',      'Batch #',    batchOpts,      this._selBatch,      !this._selSubject)}
+        ${this._msHTML('trsSelCampus',     'Campus',     campusOpts,     this._selCampus)}
+        ${this._msHTML('trsSelDiscipline', 'Discipline', disciplineOpts, this._selDiscipline, !hasCampus)}
+        ${this._msHTML('trsSelLevel',      'Level',      levelOpts,      this._selLevel,      !hasDiscipline)}
+        ${this._msHTML('trsSelSession',    'Session',    sessionOpts,    this._selSession,    !hasCampus)}
+        ${this._msHTML('trsSelSubject',    'Subject',    subjectOpts,    this._selSubject,    !hasCampus)}
+        ${this._msHTML('trsSelBatch',      'Batch #',    batchOpts,      this._selBatch,      !this._selSubject.length)}
+        ${this._msHTML('trsSelStatus',     'Status',     statusOpts,     this._selStatus)}
       </div>
       <div class="rp-filter-actions">
         <button class="rp-filter-apply" id="trsApplyBtn">Apply Filter</button>
@@ -594,33 +746,188 @@ export const TestResultSummary = {
     const make = (label, color) => `
       <span class="rp-chip" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color};border-color:${color}">${label}</span>`;
     const chips = [];
-    if (f.campus)     chips.push(make((_getCampuses().find(c=>c.id===f.campus)?.campusName||f.campus).replace(/\s*campus$/i,'').trim(), 'var(--blue)'));
-    if (f.discipline) { const d = _getDisciplines().find(d=>d.id===f.discipline); chips.push(make(d ? (d.abbreviation||d.fullName) : f.discipline, 'var(--violet,#8b5cf6)')); }
-    if (f.level)      { const l = _getLevels().find(l=>l.id===f.level); chips.push(make(l ? (l.levelName||l.name||f.level) : f.level, 'var(--cyan)')); }
-    if (f.session)    chips.push(make(f.session, 'var(--green)'));
-    if (f.subject)    { const s = _getSubjects().find(s=>s.id===f.subject); chips.push(make(s ? (s.subjectCode||s.subjectName) : f.subject, 'var(--orange,#f59e0b)')); }
-    if (f.batch)      { const b = _getBatches().find(b=>b.id===f.batch); chips.push(make(b?.batchName||f.batch, 'var(--yellow)')); }
+    const _arr = v => Array.isArray(v) ? v : (v ? [v] : []);
+
+    _arr(f.campus).forEach(id => {
+      const c = _getCampuses().find(c=>c.id===id);
+      chips.push(make((c?.campusName||id).replace(/\s*campus$/i,'').trim(), 'var(--blue)'));
+    });
+    _arr(f.discipline).forEach(id => {
+      const d = _getDisciplines().find(d=>d.id===id);
+      chips.push(make(d ? (d.abbreviation||d.fullName) : id, 'var(--violet,#8b5cf6)'));
+    });
+    _arr(f.level).forEach(id => {
+      const l = _getLevels().find(l=>l.id===id);
+      chips.push(make(l ? (l.levelName||l.name||id) : id, 'var(--cyan)'));
+    });
+    _arr(f.session).forEach(s => chips.push(make(s, 'var(--green)')));
+    _arr(f.subject).forEach(id => {
+      const s = _getSubjects().find(s=>s.id===id);
+      chips.push(make(s ? (s.subjectCode||s.subjectName) : id, 'var(--orange,#f59e0b)'));
+    });
+    _arr(f.batch).forEach(id => {
+      const b = _getBatches().find(b=>b.id===id);
+      chips.push(make(b?.batchName||id, 'var(--yellow)'));
+    });
+    _arr(f.status).forEach(s => chips.push(make(
+      s === 'active' ? '● Active' : '◐ Closed',
+      s === 'active' ? 'var(--green)' : 'var(--yellow)'
+    )));
     return chips.join('');
+  },
+
+  // ── Bind multi-select dropdowns ──────────────────────────
+  _bindMultiSelects(c) {
+    const MS_IDS = [
+      { id: 'trsSelCampus',     key: '_selCampus',     cascadeReset: ['_selDiscipline','_selLevel','_selSession','_selSubject','_selBatch'] },
+      { id: 'trsSelDiscipline', key: '_selDiscipline',  cascadeReset: ['_selLevel','_selBatch'] },
+      { id: 'trsSelLevel',      key: '_selLevel',        cascadeReset: ['_selBatch'] },
+      { id: 'trsSelSession',    key: '_selSession',      cascadeReset: ['_selBatch'] },
+      { id: 'trsSelSubject',    key: '_selSubject',      cascadeReset: ['_selBatch'] },
+      { id: 'trsSelBatch',      key: '_selBatch',        cascadeReset: [] },
+      { id: 'trsSelStatus',     key: '_selStatus',       cascadeReset: [] },
+    ];
+
+    const _closeAll = (exceptId) => {
+      MS_IDS.forEach(m => {
+        if (m.id === exceptId) return;
+        const drop = c.querySelector(`#${m.id}Drop`);
+        const trig = c.querySelector(`#${m.id}Trigger`);
+        drop?.classList.remove('open');
+        trig?.classList.remove('open');
+      });
+    };
+
+    MS_IDS.forEach(({ id, key, cascadeReset }) => {
+      const trigger = c.querySelector(`#${id}Trigger`);
+      const drop    = c.querySelector(`#${id}Drop`);
+      const list    = c.querySelector(`#${id}List`);
+      const search  = c.querySelector(`#${id}Search`);
+      const clrBtn  = c.querySelector(`#${id}ClearBtn`);
+      const cntLbl  = c.querySelector(`#${id}CountLbl`);
+      if (!trigger || !drop) return;
+
+      // Toggle open
+      trigger.addEventListener('click', e => {
+        e.stopPropagation();
+        if (trigger.disabled) return;
+        const isOpen = drop.classList.contains('open');
+        _closeAll(isOpen ? null : id);
+        if (!isOpen) {
+          // position dropdown
+          const rect = trigger.getBoundingClientRect();
+          drop.style.top    = (rect.bottom + 4) + 'px';
+          drop.style.left   = rect.left + 'px';
+          drop.style.width  = Math.max(rect.width, 200) + 'px';
+          drop.classList.add('open');
+          trigger.classList.add('open');
+          search?.focus();
+        } else {
+          drop.classList.remove('open');
+          trigger.classList.remove('open');
+        }
+      });
+
+      // Search filter within dropdown
+      search?.addEventListener('input', e => {
+        const q = e.target.value.toLowerCase();
+        list?.querySelectorAll('.trs-ms-item').forEach(item => {
+          const lbl = item.querySelector('.trs-ms-lbl')?.textContent?.toLowerCase() || '';
+          item.style.display = !q || lbl.includes(q) ? '' : 'none';
+        });
+      });
+
+      // Item click — toggle selection
+      list?.addEventListener('click', e => {
+        const item = e.target.closest('.trs-ms-item');
+        if (!item) return;
+        const val = item.dataset.val;
+        const arr = this[key] || [];
+        const idx = arr.indexOf(val);
+        if (idx === -1) {
+          this[key] = [...arr, val];
+          item.classList.add('selected');
+        } else {
+          this[key] = arr.filter(v => v !== val);
+          item.classList.remove('selected');
+        }
+        // Update count label + trigger badge
+        const newCount = this[key].length;
+        if (cntLbl) cntLbl.textContent = `${newCount} selected`;
+        // Update trigger display
+        this._updateMsTrigger(trigger, id, this[key], c.querySelectorAll(`#${id}List .trs-ms-item`));
+        // Cascade reset
+        cascadeReset.forEach(k => { this[k] = []; });
+        if (cascadeReset.length) this._rerenderFilterBody(c);
+      });
+
+      // Clear button
+      clrBtn?.addEventListener('click', e => {
+        e.stopPropagation();
+        this[key] = [];
+        list?.querySelectorAll('.trs-ms-item').forEach(i => i.classList.remove('selected'));
+        if (cntLbl) cntLbl.textContent = '0 selected';
+        this._updateMsTrigger(trigger, id, [], []);
+        cascadeReset.forEach(k => { this[k] = []; });
+        if (cascadeReset.length) this._rerenderFilterBody(c);
+      });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.trs-ms-wrap') && !e.target.closest('.trs-ms-dropdown')) {
+        _closeAll(null);
+      }
+    }, { capture: false });
+  },
+
+  _updateMsTrigger(trigger, id, selected, items) {
+    const count = selected.length;
+    const allOpts = [...(items || [])].map(el => ({ value: el.dataset.val, label: el.querySelector('.trs-ms-lbl')?.textContent || '' }));
+    const label = trigger.closest('.rp-filter-col')?.querySelector('.rp-filter-col-label')?.textContent || '';
+    let textEl = trigger.querySelector('.trs-ms-trigger-text');
+    let countEl = trigger.querySelector('.trs-ms-trigger-count');
+    if (!textEl) return;
+    if (count === 0) {
+      textEl.className = 'trs-ms-trigger-text placeholder';
+      textEl.textContent = `Select ${label}…`;
+      if (countEl) countEl.remove();
+    } else {
+      textEl.className = 'trs-ms-trigger-text';
+      textEl.textContent = count === 1
+        ? (allOpts.find(o=>o.value===selected[0])?.label || selected[0])
+        : `${count} selected`;
+      if (!countEl) {
+        countEl = document.createElement('span');
+        countEl.className = 'trs-ms-trigger-count';
+        const arrow = trigger.querySelector('.trs-ms-trigger-arrow');
+        trigger.insertBefore(countEl, arrow);
+      }
+      countEl.textContent = count;
+    }
   },
 
   // ── Filter events ────────────────────────────────────────
   _attachFilterEvents(c) {
-    const onToggle = () => {
+    c.querySelector('#trsFilterToggle')?.addEventListener('click', () => {
       this._filterOpen = !this._filterOpen;
       c.querySelector('#trsFilterBody')?.classList.toggle('open', this._filterOpen);
       c.querySelector('.rp-filter-arrow')?.classList.toggle('open', this._filterOpen);
-    };
-    c.querySelector('#trsFilterToggle')?.addEventListener('click', onToggle);
-    this._bindCascade(c);
+    });
+    this._bindMultiSelects(c);
+    this._bindApplyClear(c);
+  },
 
-    const doApply = () => {
+  _bindApplyClear(c) {
+    c.querySelector('#trsApplyBtn')?.addEventListener('click', () => {
       this._appliedFilter = {
-        campus:     this._selCampus,
-        discipline: this._selDiscipline,
-        level:      this._selLevel,
-        session:    this._selSession,
-        subject:    this._selSubject,
-        batch:      this._selBatch,
+        campus:     [...this._selCampus],
+        discipline: [...this._selDiscipline],
+        level:      [...this._selLevel],
+        session:    [...this._selSession],
+        subject:    [...this._selSubject],
+        batch:      [...this._selBatch],
+        status:     [...this._selStatus],
       };
       this._filterOpen = false;
       this._renderTable(c);
@@ -628,60 +935,26 @@ export const TestResultSummary = {
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
       this._rerenderFilterToggle(c);
       this._rerenderFilterBody(c);
-    };
-    const doClear = () => {
+    });
+    c.querySelector('#trsClearBtn')?.addEventListener('click', () => {
       this._selCampus = this._selDiscipline = this._selLevel =
-        this._selSession = this._selSubject = this._selBatch = '';
+        this._selSession = this._selSubject = this._selBatch = this._selStatus = [];
+      // Re-assign as new arrays
+      this._selCampus = []; this._selDiscipline = []; this._selLevel = [];
+      this._selSession = []; this._selSubject = []; this._selBatch = []; this._selStatus = [];
       this._appliedFilter = null;
       this._renderTable(c);
       this._rerenderFilterBody(c);
       this._rerenderFilterToggle(c);
-    };
-    c.querySelector('#trsApplyBtn')?.addEventListener('click', doApply);
-    c.querySelector('#trsClearBtn')?.addEventListener('click', doClear);
-  },
-
-  _bindCascade(c) {
-    const reset = (...keys) => keys.forEach(k => (this[k] = ''));
-    c.querySelector('#trsSelCampus')    ?.addEventListener('change', e => { this._selCampus = e.target.value; reset('_selDiscipline','_selLevel','_selSession','_selSubject','_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelDiscipline')?.addEventListener('change', e => { this._selDiscipline = e.target.value; reset('_selLevel','_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelLevel')     ?.addEventListener('change', e => { this._selLevel = e.target.value; reset('_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelSession')   ?.addEventListener('change', e => { this._selSession = e.target.value; reset('_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelSubject')   ?.addEventListener('change', e => { this._selSubject = e.target.value; reset('_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelBatch')     ?.addEventListener('change', e => { this._selBatch = e.target.value; });
+    });
   },
 
   _rerenderFilterBody(c) {
     const body = c.querySelector('#trsFilterBody');
     if (!body) return;
     body.innerHTML = this._filterBodyHTML();
-    this._bindCascade(c);
-    const doApply = () => {
-      this._appliedFilter = {
-        campus:     this._selCampus,
-        discipline: this._selDiscipline,
-        level:      this._selLevel,
-        session:    this._selSession,
-        subject:    this._selSubject,
-        batch:      this._selBatch,
-      };
-      this._filterOpen = false;
-      this._renderTable(c);
-      c.querySelector('#trsFilterBody')?.classList.remove('open');
-      c.querySelector('.rp-filter-arrow')?.classList.remove('open');
-      this._rerenderFilterToggle(c);
-      this._rerenderFilterBody(c);
-    };
-    const doClear = () => {
-      this._selCampus = this._selDiscipline = this._selLevel =
-        this._selSession = this._selSubject = this._selBatch = '';
-      this._appliedFilter = null;
-      this._renderTable(c);
-      this._rerenderFilterBody(c);
-      this._rerenderFilterToggle(c);
-    };
-    c.querySelector('#trsApplyBtn')?.addEventListener('click', doApply);
-    c.querySelector('#trsClearBtn')?.addEventListener('click', doClear);
+    this._bindMultiSelects(c);
+    this._bindApplyClear(c);
   },
 
   _rerenderFilterToggle(c) {
@@ -703,8 +976,10 @@ export const TestResultSummary = {
     const area = c.querySelector('#trsTableArea');
     if (!area) return;
 
-    if (!this._appliedFilter ||
-        (!this._appliedFilter.campus && !this._appliedFilter.subject && !this._appliedFilter.batch)) {
+    const f = this._appliedFilter;
+    const _hasAny = (v) => Array.isArray(v) ? v.length > 0 : !!v;
+
+    if (!f || (!_hasAny(f.campus) && !_hasAny(f.subject) && !_hasAny(f.batch) && !_hasAny(f.status))) {
       area.innerHTML = `
         <div class="trs-empty">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
@@ -716,8 +991,6 @@ export const TestResultSummary = {
       return;
     }
 
-    const f = this._appliedFilter;
-
     // ── Collect matching batches ─────────────────────────────
     const allBatches = _getBatchesFor({
       disciplineId: f.discipline,
@@ -725,7 +998,8 @@ export const TestResultSummary = {
       subjectId:    f.subject,
       sessionId:    f.session,
       campusId:     f.campus,
-    }).filter(b => !f.batch || b.id === f.batch);
+      status:       f.status,
+    }).filter(b => !f.batch?.length || f.batch.includes(b.id));
 
     if (!allBatches.length) {
       area.innerHTML = `
@@ -740,7 +1014,7 @@ export const TestResultSummary = {
     }
 
     // ── Get shared subject for resolved subjectId ────────────
-    const resolvedSubjectId = f.subject || allBatches[0]?.subjectId || '';
+    const resolvedSubjectId = (Array.isArray(f.subject) ? f.subject[0] : f.subject) || allBatches[0]?.subjectId || '';
     const allResults = _getResults();
 
     // resultsMap: scheduleEntryId → studentId → record
@@ -824,12 +1098,14 @@ export const TestResultSummary = {
 
     // ── Subject / campus display info ────────────────────────
     const subjectObj = _getSubjects().find(s => s.id === resolvedSubjectId) || {};
-    const subjectDisplay = f.subject
+    const hasSubjectFilter = Array.isArray(f.subject) ? f.subject.length > 0 : !!f.subject;
+    const subjectDisplay = hasSubjectFilter
       ? (subjectObj.subjectCode
           ? `${subjectObj.subjectCode} — ${subjectObj.subjectName||''}`.trim()
           : subjectObj.subjectName || '—')
       : 'All Subjects';
-    const campusObj = _getCampuses().find(c => c.id === (f.campus || allBatches[0]?.campusId)) || {};
+    const resolvedCampusId = (Array.isArray(f.campus) ? f.campus[0] : f.campus) || allBatches[0]?.campusId;
+    const campusObj = _getCampuses().find(c => c.id === resolvedCampusId) || {};
     const campusName = (campusObj.campusName || '').replace(/\s*campus$/i,'').trim() || '—';
 
     // ── Build table HTML ─────────────────────────────────────
@@ -865,6 +1141,10 @@ export const TestResultSummary = {
       const teacherName   = _getTeacherName(batch);
       const batchDisplay  = batch.batchName || (batch.batchNo ? `Batch ${String(batch.batchNo).padStart(2,'0')}` : batch.id);
       const session       = batch.sessionPeriod || '—';
+      const bStatus       = _batchStatus(batch);
+      const statusPill    = bStatus === 'active'
+        ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;color:var(--green);background:var(--green-dim);border-radius:20px;padding:1px 6px">● Active</span>`
+        : `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;color:var(--yellow);background:var(--yellow-dim);border-radius:20px;padding:1px 6px">◐ Closed</span>`;
 
       const dataCells = unifiedGroups.map((ug, gi) => {
         // Find matching group in this batch by label
@@ -921,7 +1201,10 @@ export const TestResultSummary = {
       return `
         <tr style="${rowBg}">
           <td class="trs-td-left" style="font-weight:700;color:var(--t1);white-space:nowrap">
-            <div style="font-size:12.5px;font-weight:700">${batchDisplay}</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12.5px;font-weight:700">${batchDisplay}</span>
+              ${statusPill}
+            </div>
             <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${session} · ${bd.groupStats[0]?.students || 0} students</div>
           </td>
           <td class="trs-td-left" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>
