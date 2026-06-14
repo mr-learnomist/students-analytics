@@ -392,18 +392,15 @@ export const TestResultSummary = {
   mount(container) {
     if (!container) return;
     _injectStyles();
-    const isSameContainer = this._container === container;
-    this._container = container;
-    if (!isSameContainer) {
-      this._filterOpen    = false;
-      this._selCampus     = '';
-      this._selDiscipline = '';
-      this._selLevel      = '';
-      this._selSession    = '';
-      this._selSubject    = '';
-      this._selBatch      = '';
-      this._appliedFilter = null;
-    }
+    this._container     = container;
+    this._filterOpen    = false;
+    this._selCampus     = '';
+    this._selDiscipline = '';
+    this._selLevel      = '';
+    this._selSession    = '';
+    this._selSubject    = '';
+    this._selBatch      = '';
+    this._appliedFilter = null;
     this._render();
   },
 
@@ -528,18 +525,18 @@ export const TestResultSummary = {
         batch:      this._selBatch,
       };
       this._filterOpen = false;
+      this._renderTable(c);
       c.querySelector('#trsFilterBody')?.classList.remove('open');
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
       this._rerenderFilterToggle(c);
       this._rerenderFilterBody(c);
-      this._renderTable(c);
     };
     const doClear = () => {
       this._selCampus = this._selDiscipline = this._selLevel =
         this._selSession = this._selSubject = this._selBatch = '';
       this._appliedFilter = null;
-      this._rerenderFilterBody(c);
       this._renderTable(c);
+      this._rerenderFilterBody(c);
       this._rerenderFilterToggle(c);
     };
     c.querySelector('#trsApplyBtn')?.addEventListener('click', doApply);
@@ -571,18 +568,18 @@ export const TestResultSummary = {
         batch:      this._selBatch,
       };
       this._filterOpen = false;
+      this._renderTable(c);
       c.querySelector('#trsFilterBody')?.classList.remove('open');
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
       this._rerenderFilterToggle(c);
       this._rerenderFilterBody(c);
-      this._renderTable(c);
     };
     const doClear = () => {
       this._selCampus = this._selDiscipline = this._selLevel =
         this._selSession = this._selSubject = this._selBatch = '';
       this._appliedFilter = null;
-      this._rerenderFilterBody(c);
       this._renderTable(c);
+      this._rerenderFilterBody(c);
       this._rerenderFilterToggle(c);
     };
     c.querySelector('#trsApplyBtn')?.addEventListener('click', doApply);
@@ -813,7 +810,7 @@ export const TestResultSummary = {
         <tr style="${rowBg}">
           <td class="trs-td-left" style="font-weight:700;color:var(--t1);white-space:nowrap">
             <div style="font-size:12.5px;font-weight:700">${batchDisplay}</div>
-            <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${session} · ${s?.students || bd.groupStats[0]?.students || 0} students</div>
+            <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${session} · ${bd.groupStats[0]?.students || 0} students</div>
           </td>
           <td class="trs-td-left" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>
           ${dataCells}
