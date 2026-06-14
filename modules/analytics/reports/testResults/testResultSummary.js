@@ -12,6 +12,13 @@ import { AppState }         from '../../../../utils/state.js';
 import { getAllAssignments } from '../../../lecturePlan/lecturePlanService.js';
 import { getSchedules, formatDate } from '../../../testing/testingService.js';
 
+// ── Base (fixed) columns — shown first in column manager ────
+// 'batch' is always visible and cannot be unchecked (locked).
+const TRS_BASE_COLS = [
+  { key: 'batch',   label: 'Batch',   locked: true  },
+  { key: 'teacher', label: 'Teacher', locked: false },
+];
+
 // ── Sub-column definitions for column manager ──────────────
 const TRS_SUB_COLS = [
   { key: 'pass',     label: 'Pass'      },
@@ -460,6 +467,12 @@ function _injectStyles() {
   border-right: 2px solid var(--border2);
 }
 
+/* When Teacher column is hidden, Batch becomes the sole frozen column */
+.trs-table.trs-table--no-teacher th.trs-th-left:nth-child(1),
+.trs-table.trs-table--no-teacher td.trs-td-left:nth-child(1) {
+  border-right: 2px solid var(--border2);
+}
+
 /* Frozen header cells need higher z-index */
 .trs-table thead th.trs-th-left { z-index: 4; background: var(--surface2); }
 .trs-table thead tr.trs-thead-sub th.trs-th-left { background: var(--surface3); }
@@ -484,6 +497,10 @@ function _injectStyles() {
 /* Shadow on Teacher column right edge to indicate freeze */
 .trs-table th.trs-th-left:nth-child(2),
 .trs-table td.trs-td-left:nth-child(2) {
+  box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12);
+}
+.trs-table.trs-table--no-teacher th.trs-th-left:nth-child(1),
+.trs-table.trs-table--no-teacher td.trs-td-left:nth-child(1) {
   box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12);
 }
 
@@ -645,6 +662,14 @@ function _injectStyles() {
 .trs-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
 .trs-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
 .trs-col-mgr-item.col-hidden .trs-col-mgr-lbl { color:var(--t4); }
+.trs-col-mgr-item.col-locked { cursor:default; }
+.trs-col-mgr-item.col-locked .trs-col-mgr-chk { cursor:default; opacity:.6; }
+.trs-col-mgr-item.col-locked .trs-col-mgr-lbl { cursor:default; }
+.trs-col-mgr-lock { font-size:10px; opacity:.6; margin-left:2px; }
+.trs-col-mgr-divider {
+  height:1px; margin:4px 12px;
+  background:var(--border);
+}
 .trs-col-mgr-foot {
   padding:6px 12px; border-top:1px solid var(--border);
   font-size:10.5px; color:var(--t3); text-align:center;
@@ -1239,6 +1264,7 @@ export const TestResultSummary = {
     const _prefs = _getTrsColPrefs();
     const _visibleCols = TRS_SUB_COLS.filter(sc => !_prefs.hidden.includes(sc.key));
     const STAT_COLS = _visibleCols.length || 1;
+    const _showTeacher = !_prefs.hidden.includes('teacher');
 
     const groupHeaderCells = unifiedGroups.map(g => `
       <th colspan="${STAT_COLS}"
@@ -1333,7 +1359,7 @@ export const TestResultSummary = {
             </div>
             <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${session} · ${bd.groupStats[0]?.students || 0} students</div>
           </td>
-          <td class="trs-td-left" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>
+          ${_showTeacher ? `<td class="trs-td-left" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>` : ''}
           ${dataCells}
         </tr>`;
     }).join('');
@@ -1399,11 +1425,11 @@ export const TestResultSummary = {
 
     area.innerHTML = infoBar + `
       <div class="trs-table-scroll-container" id="trsTableScroll">
-        <table class="trs-table">
+        <table class="trs-table${_showTeacher ? '' : ' trs-table--no-teacher'}">
           <thead>
             <tr>
               <th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:160px;min-width:160px">Batch</th>
-              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:150px;min-width:150px">Teacher</th>
+              ${_showTeacher ? `<th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:150px;min-width:150px">Teacher</th>` : ''}
               ${groupHeaderCells}
             </tr>
             <tr class="trs-thead-sub">
@@ -1411,13 +1437,13 @@ export const TestResultSummary = {
             </tr>
           </thead>
           <tbody>
-            ${bodyHTML || `<tr><td colspan="${2 + unifiedGroups.length * STAT_COLS}" style="text-align:center;padding:40px;color:var(--t3)">No data available</td></tr>`}
+            ${bodyHTML || `<tr><td colspan="${(_showTeacher ? 2 : 1) + unifiedGroups.length * STAT_COLS}" style="text-align:center;padding:40px;color:var(--t3)">No data available</td></tr>`}
           </tbody>
         </table>
       </div>`;
 
     // ── Wire export buttons ───────────────────────────────────
-    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, filterSummary: this._appliedFilterSummary() };
+    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, showTeacher: _showTeacher, filterSummary: this._appliedFilterSummary() };
     area.querySelector('#trsExportCSV')?.addEventListener('click', () => this._exportCSV(_exportData));
     area.querySelector('#trsExportPDF')?.addEventListener('click', () => this._exportPDF(_exportData));
 
@@ -1444,6 +1470,39 @@ export const TestResultSummary = {
     const _renderList = () => {
       const prefs = _getTrsColPrefs();
       list.innerHTML = '';
+
+      // ── Base columns: Batch (locked, always visible) + Teacher (toggleable)
+      TRS_BASE_COLS.forEach(bc => {
+        const isVisible = bc.locked ? true : !prefs.hidden.includes(bc.key);
+        const item = document.createElement('div');
+        item.className = 'trs-col-mgr-item' + (isVisible ? '' : ' col-hidden') + (bc.locked ? ' col-locked' : '');
+        item.innerHTML =
+          `<input type="checkbox" class="trs-col-mgr-chk" id="trs_chk_${bc.key}"${isVisible ? ' checked' : ''}${bc.locked ? ' disabled title="Always visible"' : ''}/>`+
+          `<label class="trs-col-mgr-lbl" for="trs_chk_${bc.key}">${bc.label}${bc.locked ? ' <span class="trs-col-mgr-lock">🔒</span>' : ''}</label>`;
+        if (!bc.locked) {
+          item.querySelector('.trs-col-mgr-chk').addEventListener('change', e => {
+            const p = _getTrsColPrefs();
+            if (e.target.checked) {
+              p.hidden = p.hidden.filter(h => h !== bc.key);
+              item.classList.remove('col-hidden');
+            } else {
+              if (!p.hidden.includes(bc.key)) p.hidden.push(bc.key);
+              item.classList.add('col-hidden');
+            }
+            _saveTrsColPrefs(p);
+            panel.classList.remove('open');
+            this._renderTable(c);
+          });
+        }
+        list.appendChild(item);
+      });
+
+      // ── Divider between base columns and per-test stat columns
+      const divider = document.createElement('div');
+      divider.className = 'trs-col-mgr-divider';
+      list.appendChild(divider);
+
+      // ── Per-test stat sub-columns (Pass / Fail / Absent / Avg / Rate / Health)
       TRS_SUB_COLS.forEach(sc => {
         const isVisible = !prefs.hidden.includes(sc.key);
         const item = document.createElement('div');
@@ -1508,7 +1567,19 @@ export const TestResultSummary = {
   },
 
   // ── Build flat rows for CSV/PDF export ──────────────────────
-  _buildExportRows({ allBatches, batchDataMap, unifiedGroups }) {
+  _buildExportRows({ allBatches, batchDataMap, unifiedGroups, visibleCols, showTeacher }) {
+    const cols = visibleCols || TRS_SUB_COLS; // [] = user hid all stat columns → export none
+    const _showTeacher = showTeacher !== false; // default true if undefined
+
+    const COL_LABELS = {
+      pass:   'Pass',
+      fail:   'Fail',
+      absent: 'Absent',
+      avg:    'Avg Marks',
+      rate:   'Pass Rate',
+      health: 'Health',
+    };
+
     const rows = [];
     allBatches.forEach(batch => {
       const bd = batchDataMap[batch.id];
@@ -1520,18 +1591,27 @@ export const TestResultSummary = {
       unifiedGroups.forEach(ug => {
         const bgd = bd.testGroups.find(g => g.groupLabel === ug.groupLabel);
         const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
-        rows.push({
-          'Batch':     batchDisplay,
-          'Teacher':   teacherName,
-          'Session':   session,
-          'Test':      ug.groupLabel,
-          'Pass':      s ? String(s.p)  : '—',
-          'Fail':      s ? String(s.f)  : '—',
-          'Absent':    s ? String(s.ab) : '—',
-          'Avg Marks': s && s.avg != null ? String(s.avg) : '—',
-          'Pass Rate': s && s.appeared > 0 ? `${s.rate}%` : '—',
-          'Health':    s ? _health(s.avgPct).label + (s.avgPct != null ? ` (${s.avgPct}%)` : '') : '—',
+
+        const row = {
+          'Batch':   batchDisplay,
+          'Session': session,
+        };
+        if (_showTeacher) row['Teacher'] = teacherName;
+        row['Test'] = ug.groupLabel;
+
+        const cellVals = {
+          pass:   s ? String(s.p)  : '—',
+          fail:   s ? String(s.f)  : '—',
+          absent: s ? String(s.ab) : '—',
+          avg:    s && s.avg != null ? String(s.avg) : '—',
+          rate:   s && s.appeared > 0 ? `${s.rate}%` : '—',
+          health: s ? _health(s.avgPct).label + (s.avgPct != null ? ` (${s.avgPct}%)` : '') : '—',
+        };
+        cols.forEach(sc => {
+          row[COL_LABELS[sc.key] || sc.label] = cellVals[sc.key];
         });
+
+        rows.push(row);
       });
     });
     return rows;
@@ -1576,8 +1656,9 @@ export const TestResultSummary = {
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
 
-    const visibleCols = d.visibleCols.length ? d.visibleCols : TRS_SUB_COLS;
-    const STAT_COLS   = visibleCols.length;
+    const visibleCols = d.visibleCols || TRS_SUB_COLS; // [] = user hid all stat columns
+    const STAT_COLS   = visibleCols.length || 1;
+    const showTeacher = d.showTeacher !== false;
 
     const groupThs = d.unifiedGroups.map(g => {
       const bg    = g.isMock ? '#ede9fe' : '#dbeafe';
@@ -1590,6 +1671,9 @@ export const TestResultSummary = {
 
     const subThs = d.unifiedGroups.map(g => {
       const bc = g.isMock ? '#c4b5fd' : '#93c5fd';
+      if (!visibleCols.length) {
+        return `<th style="border-left:2px solid ${bc}">—</th>`;
+      }
       return visibleCols.map((sc, i) =>
         `<th${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>${sc.label}</th>`
       ).join('');
@@ -1604,6 +1688,9 @@ export const TestResultSummary = {
         const bgd = bd?.testGroups.find(g => g.groupLabel === ug.groupLabel);
         const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
         const bc  = ug.isMock ? '#c4b5fd' : '#93c5fd';
+        if (!visibleCols.length) {
+          return `<td style="border-left:2px solid ${bc}">—</td>`;
+        }
         if (!s) {
           return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>—</td>`).join('');
         }
@@ -1625,7 +1712,7 @@ export const TestResultSummary = {
 
       return `<tr class="${ri%2===0?'even':'odd'}">
         <td style="font-weight:600;white-space:nowrap">${batchDisplay}</td>
-        <td style="white-space:nowrap;text-align:left">${teacherName}</td>
+        ${showTeacher ? `<td style="white-space:nowrap;text-align:left">${teacherName}</td>` : ''}
         ${cells}
       </tr>`;
     }).join('');
@@ -1667,7 +1754,7 @@ export const TestResultSummary = {
     <thead>
       <tr class="g-row">
         <th class="left-col" rowspan="2">Batch</th>
-        <th class="left-col" rowspan="2">Teacher</th>
+        ${showTeacher ? `<th class="left-col" rowspan="2">Teacher</th>` : ''}
         ${groupThs}
       </tr>
       <tr class="s-row">${subThs}</tr>
