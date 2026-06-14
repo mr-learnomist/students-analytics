@@ -207,7 +207,89 @@ function _injectStyles() {
 /* ── TRS page ── */
 .trs-page { display:flex; flex-direction:column; gap:16px; }
 
-/* ── Reuse rp-filter styles (already injected by resultProfile) ── */
+/* ── Filter bar card — sticky to page-content scroll container ── */
+.rp-filter-card {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.rp-filter-toggle {
+  display:flex; align-items:center; gap:10px;
+  width:100%; padding:11px 16px;
+  background:none; border:none; font-family:inherit;
+  font-size:13px; font-weight:700; color:var(--t1);
+  cursor:pointer; text-align:left;
+  transition:background .15s;
+}
+.rp-filter-toggle:hover { background:var(--surface2); }
+.rp-filter-toggle-label { flex:1; }
+.rp-filter-badge {
+  display:inline-flex; align-items:center;
+  background:var(--blue-dim); color:var(--blue);
+  border-radius:20px; padding:2px 9px;
+  font-size:11px; font-weight:700;
+}
+.rp-filter-arrow { transition:transform .2s; color:var(--t3); }
+.rp-filter-arrow.open { transform:rotate(180deg); }
+.rp-filter-body {
+  display:none; flex-direction:column; gap:14px;
+  border-top:1px solid var(--border);
+  padding:16px;
+}
+.rp-filter-body.open { display:flex; }
+.rp-filter-row { display:flex; flex-wrap:wrap; gap:12px; width:100%; box-sizing:border-box; }
+.rp-filter-col {
+  display:flex; flex-direction:column; gap:5px;
+  flex:1 1 140px; min-width:120px; max-width:100%; box-sizing:border-box;
+}
+.rp-filter-col-label {
+  font-size:10.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.07em;
+  color:var(--t3);
+}
+.rp-filter-sel {
+  height:34px; padding:0 10px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:8px; color:var(--t1); font-size:12.5px;
+  cursor:pointer; outline:none; font-family:inherit;
+  transition:border-color .12s;
+  width:100%; box-sizing:border-box;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.rp-filter-sel:focus   { border-color:var(--blue); }
+.rp-filter-sel:disabled { opacity:.45; cursor:not-allowed; }
+.rp-filter-actions { display:flex; gap:8px; align-items:center; padding-top:2px; }
+.rp-filter-apply {
+  padding:7px 20px; border-radius:8px; border:none;
+  background:var(--blue); color:#fff;
+  font-size:12.5px; font-weight:700;
+  cursor:pointer; transition:opacity .15s; font-family:inherit;
+}
+.rp-filter-apply:hover { opacity:.88; }
+.rp-filter-clear {
+  padding:7px 14px; border-radius:8px;
+  border:1px solid var(--border); background:transparent;
+  color:var(--t2); font-size:12px; font-weight:600;
+  cursor:pointer; transition:all .15s; font-family:inherit;
+}
+.rp-filter-clear:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
+.rp-chip-row { display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px; }
+.rp-chip {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 9px; border-radius:20px;
+  font-size:11px; font-weight:600;
+  border:1px solid transparent;
+}
+.rp-chip-x { font-size:10px; cursor:pointer; opacity:.7; }
+.rp-chip-x:hover { opacity:1; }
+
 /* ── TRS table wrapper ── */
 .trs-table-wrap {
   border:1px solid var(--border);
@@ -396,8 +478,8 @@ export const TestResultSummary = {
         ${sel('trsSelCampus',     'Campus',     campusOpts,     this._selCampus)}
         ${sel('trsSelDiscipline', 'Discipline', disciplineOpts, this._selDiscipline, !this._selCampus)}
         ${sel('trsSelLevel',      'Level',      levelOpts,      this._selLevel,      !this._selDiscipline)}
-        ${sel('trsSelSession',    'Session',    sessionOpts,    this._selSession,    !this._selLevel)}
-        ${sel('trsSelSubject',    'Subject',    subjectOpts,    this._selSubject,    !this._selSession)}
+        ${sel('trsSelSession',    'Session',    sessionOpts,    this._selSession,    !this._selCampus)}
+        ${sel('trsSelSubject',    'Subject',    subjectOpts,    this._selSubject,    !this._selCampus)}
         ${sel('trsSelBatch',      'Batch #',    batchOpts,      this._selBatch,      !this._selSubject)}
       </div>
       <div class="rp-filter-actions">
@@ -446,8 +528,8 @@ export const TestResultSummary = {
       c.querySelector('#trsFilterBody')?.classList.remove('open');
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
       this._rerenderFilterToggle(c);
-      this._renderTable(c);
       this._rerenderFilterBody(c);
+      this._renderTable(c);
     };
     const doClear = () => {
       this._selCampus = this._selDiscipline = this._selLevel =
@@ -464,9 +546,9 @@ export const TestResultSummary = {
   _bindCascade(c) {
     const reset = (...keys) => keys.forEach(k => (this[k] = ''));
     c.querySelector('#trsSelCampus')    ?.addEventListener('change', e => { this._selCampus = e.target.value; reset('_selDiscipline','_selLevel','_selSession','_selSubject','_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelDiscipline')?.addEventListener('change', e => { this._selDiscipline = e.target.value; reset('_selLevel','_selSession','_selSubject','_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelLevel')     ?.addEventListener('change', e => { this._selLevel = e.target.value; reset('_selSession','_selSubject','_selBatch'); this._rerenderFilterBody(c); });
-    c.querySelector('#trsSelSession')   ?.addEventListener('change', e => { this._selSession = e.target.value; reset('_selSubject','_selBatch'); this._rerenderFilterBody(c); });
+    c.querySelector('#trsSelDiscipline')?.addEventListener('change', e => { this._selDiscipline = e.target.value; reset('_selLevel','_selBatch'); this._rerenderFilterBody(c); });
+    c.querySelector('#trsSelLevel')     ?.addEventListener('change', e => { this._selLevel = e.target.value; reset('_selBatch'); this._rerenderFilterBody(c); });
+    c.querySelector('#trsSelSession')   ?.addEventListener('change', e => { this._selSession = e.target.value; reset('_selBatch'); this._rerenderFilterBody(c); });
     c.querySelector('#trsSelSubject')   ?.addEventListener('change', e => { this._selSubject = e.target.value; reset('_selBatch'); this._rerenderFilterBody(c); });
     c.querySelector('#trsSelBatch')     ?.addEventListener('change', e => { this._selBatch = e.target.value; });
   },
@@ -476,8 +558,7 @@ export const TestResultSummary = {
     if (!body) return;
     body.innerHTML = this._filterBodyHTML();
     this._bindCascade(c);
-
-    body.querySelector('#trsApplyBtn')?.addEventListener('click', () => {
+    const doApply = () => {
       this._appliedFilter = {
         campus:     this._selCampus,
         discipline: this._selDiscipline,
@@ -487,20 +568,22 @@ export const TestResultSummary = {
         batch:      this._selBatch,
       };
       this._filterOpen = false;
-      body.classList.remove('open');
+      c.querySelector('#trsFilterBody')?.classList.remove('open');
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
-      this._rerenderFilterToggle(c);
-      this._renderTable(c);
-    });
-
-    body.querySelector('#trsClearBtn')?.addEventListener('click', () => {
-      this._selCampus = this._selDiscipline = this._selLevel =
-        this._selSession = this._selSubject = this._selBatch = '';
-      this._appliedFilter = null;
       this._rerenderFilterToggle(c);
       this._rerenderFilterBody(c);
       this._renderTable(c);
-    });
+    };
+    const doClear = () => {
+      this._selCampus = this._selDiscipline = this._selLevel =
+        this._selSession = this._selSubject = this._selBatch = '';
+      this._appliedFilter = null;
+      this._rerenderFilterBody(c);
+      this._renderTable(c);
+      this._rerenderFilterToggle(c);
+    };
+    c.querySelector('#trsApplyBtn')?.addEventListener('click', doApply);
+    c.querySelector('#trsClearBtn')?.addEventListener('click', doClear);
   },
 
   _rerenderFilterToggle(c) {
@@ -523,7 +606,7 @@ export const TestResultSummary = {
     if (!area) return;
 
     if (!this._appliedFilter ||
-        !Object.values(this._appliedFilter).some(v => v)) {
+        (!this._appliedFilter.campus && !this._appliedFilter.subject && !this._appliedFilter.batch)) {
       area.innerHTML = `
         <div class="trs-empty">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
