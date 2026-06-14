@@ -43,12 +43,18 @@ function _injectStyles() {
 /* ── Page wrap ── */
 .rp-page { display:flex; flex-direction:column; gap:16px; }
 
-/* ── Filter bar card ── */
+/* ── Filter bar card — sticky, fit-to-screen, zoom-safe ── */
 .rp-filter-card {
+  position:sticky;
+  top:0;
+  z-index:20;
   background:var(--surface);
   border:1px solid var(--border);
   border-radius:12px;
   overflow:hidden;
+  width:100%;
+  box-sizing:border-box;
+  max-width:100%;
 }
 .rp-filter-toggle {
   display:flex; align-items:center; gap:10px;
@@ -78,10 +84,10 @@ function _injectStyles() {
 }
 .rp-filter-body.open { display:flex; }
 
-.rp-filter-row { display:flex; flex-wrap:wrap; gap:14px; }
+.rp-filter-row { display:flex; flex-wrap:wrap; gap:12px; width:100%; box-sizing:border-box; }
 .rp-filter-col {
   display:flex; flex-direction:column; gap:5px;
-  flex:1; min-width:150px;
+  flex:1 1 140px; min-width:120px; max-width:100%; box-sizing:border-box;
 }
 .rp-filter-col-label {
   font-size:10.5px; font-weight:700;
@@ -94,6 +100,9 @@ function _injectStyles() {
   border-radius:8px; color:var(--t1); font-size:12.5px;
   cursor:pointer; outline:none; font-family:inherit;
   transition:border-color .12s;
+  width:100%; box-sizing:border-box;
+  /* Prevent text overflow causing horizontal scroll */
+  overflow:hidden; text-overflow:ellipsis;
 }
 .rp-filter-sel:focus   { border-color:var(--blue); }
 .rp-filter-sel:disabled { opacity:.45; cursor:not-allowed; }
@@ -136,6 +145,12 @@ function _injectStyles() {
 }
 .rp-empty p    { font-size:14px; font-weight:600; color:var(--t2); margin:0; }
 .rp-empty span { font-size:12.5px; }
+
+/* Custom scrollbar for isolated table container */
+.table-scroll-container::-webkit-scrollbar { height:7px; }
+.table-scroll-container::-webkit-scrollbar-track { background:var(--surface2); border-radius:4px; }
+.table-scroll-container::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background:var(--t4); }
 
 /* ── Table ── */
 .rp-table-wrap {
