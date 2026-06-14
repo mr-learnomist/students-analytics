@@ -41,20 +41,25 @@ function _injectStyles() {
   const st = document.createElement('style');
   st.textContent = `
 /* ── Page wrap ── */
-.rp-page { display:flex; flex-direction:column; gap:16px; }
+.rp-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Must NOT have overflow:hidden — filter card needs sticky context */
+}
 
-/* ── Filter bar card — sticky, fit-to-screen, zoom-safe ── */
+/* ── Filter bar card — sticky to page-content scroll container ── */
 .rp-filter-card {
-  position:sticky;
-  top:0;
-  z-index:20;
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-radius:12px;
-  overflow:hidden;
-  width:100%;
-  box-sizing:border-box;
-  max-width:100%;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 .rp-filter-toggle {
   display:flex; align-items:center; gap:10px;
@@ -147,7 +152,13 @@ function _injectStyles() {
 .rp-empty span { font-size:12.5px; }
 
 /* Custom scrollbar for isolated table container */
-.table-scroll-container::-webkit-scrollbar { height:7px; }
+.table-scroll-container {
+  overflow-x: scroll;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll-container::-webkit-scrollbar { height:7px; width:7px; }
 .table-scroll-container::-webkit-scrollbar-track { background:var(--surface2); border-radius:4px; }
 .table-scroll-container::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
 .table-scroll-container::-webkit-scrollbar-thumb:hover { background:var(--t4); }
@@ -1475,7 +1486,8 @@ export const ResultProfile = {
     // Only the <table> lives inside the isolated scroll container
     area.innerHTML = statsHTML + testStatsStripHTML + infoBarHTML + `
       <div class="table-scroll-container"
-           style="width:100%;overflow-x:scroll;overflow-y:hidden;
+           style="width:100%;overflow-x:scroll;overflow-y:auto;
+                  max-height:calc(100vh - 280px);
                   -webkit-overflow-scrolling:touch;
                   border:1px solid var(--border);border-top:none;
                   border-radius:0 0 12px 12px;
