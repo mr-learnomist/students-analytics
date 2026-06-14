@@ -184,6 +184,36 @@ function _injectStyles() {
 .rp-table thead tr:nth-child(1) th { position:sticky; top:0;    z-index:3; }
 .rp-table thead tr:nth-child(2) th { position:sticky; top:56px; z-index:3; }
 .rp-table thead tr:nth-child(3) th { position:sticky; top:96px; z-index:3; }
+
+/* ── Freeze: first 3 columns (#, Student ID, Student Name) ── */
+/* thead: z-index:5 so frozen header corners sit above both axes */
+.rp-table thead th.rp-th-left:nth-child(1),
+.rp-table tbody  td:nth-child(1) { position:sticky; left:0;     z-index:2; }
+.rp-table thead th.rp-th-left:nth-child(2),
+.rp-table tbody  td:nth-child(2) { position:sticky; left:48px;  z-index:2; }
+.rp-table thead th.rp-th-left:nth-child(3),
+.rp-table tbody  td:nth-child(3) { position:sticky; left:148px; z-index:2; }
+
+/* Frozen header corners: above both sticky header rows AND scrolling body */
+.rp-table thead th.rp-th-left { z-index:5 !important; }
+
+/* Frozen body cells need a solid background so data doesn't bleed through */
+.rp-table tbody td:nth-child(1),
+.rp-table tbody td:nth-child(2),
+.rp-table tbody td:nth-child(3) {
+  background: var(--surface);
+}
+.rp-table tbody tr:hover td:nth-child(1),
+.rp-table tbody tr:hover td:nth-child(2),
+.rp-table tbody tr:hover td:nth-child(3) {
+  background: var(--surface2);
+}
+
+/* Right shadow on last frozen column to hint more content */
+.rp-table thead th.rp-th-left:nth-child(3),
+.rp-table tbody  td:nth-child(3) {
+  box-shadow: 3px 0 6px -2px rgba(0,0,0,0.18);
+}
 /* Group header row */
 .rp-table thead tr.rp-thead-group th {
   background:var(--surface2);
@@ -1322,9 +1352,9 @@ export const ResultProfile = {
     // Each test group th → colspan = totalAttempts × _subCount
     const groupHeaderRow = `
       <tr class="rp-thead-group">
-        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;min-width:32px">#</th>
-        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;min-width:100px">Student ID</th>
-        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;min-width:140px">Student Name</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;width:48px;min-width:48px;max-width:48px">#</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;width:100px;min-width:100px;max-width:100px">Student ID</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle;width:160px;min-width:160px;max-width:160px">Student Name</th>
         ${testGroups.map((g, gi) => {
           const s            = colStats[gi];
           const totalAttempts = 1 + g.retests.length;
