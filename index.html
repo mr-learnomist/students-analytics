@@ -91,7 +91,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 .sb-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
 .sb-user-name{display:block;font-size:12.5px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-user-role{display:block;font-size:11px;color:var(--t3)}
-.main{flex:1;margin-left:var(--sw);display:flex;flex-direction:column;min-height:100vh;transition:margin-left .25s cubic-bezier(.4,0,.2,1)}
+.main{flex:1;margin-left:var(--sw);display:flex;flex-direction:column;height:100vh;overflow:hidden;transition:margin-left .25s cubic-bezier(.4,0,.2,1)}
 .navbar{height:var(--nh);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:50;gap:16px}
 .nb-left{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
 .nb-title{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--t1)}
@@ -114,7 +114,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 .role-admin{background:var(--blue-dim);color:var(--blue)}
 .role-teacher{background:var(--green-dim);color:var(--green)}
 .role-viewer{background:rgba(136,146,180,0.12);color:var(--t2)}
-.page-content{flex:1;padding:28px;display:flex;flex-direction:column;gap:24px}
+.page-content{flex:1;padding:28px;display:flex;flex-direction:column;gap:24px;overflow-y:auto;overflow-x:hidden;min-height:0}
 [data-view]{display:none}[data-view].view--active{display:block}
 .view-hdr{margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
 .view-hdr h2{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--t1)}
