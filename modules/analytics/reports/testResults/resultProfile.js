@@ -1262,14 +1262,14 @@ export const ResultProfile = {
     const FIXED = 3;
 
     // ── Column prefs (which sub-columns are visible) ────────────
-    const _rpPrefs      = _getRpColPrefs();
-    const _visibleSubs  = RP_SUB_COLS.filter(sc => !_rpPrefs.hidden.includes(sc.key));
-    const _visColspan   = _visibleSubs.length || 1; // colspan per attempt sub-group
-    const _showMarks    = !_rpPrefs.hidden.includes('marks');
-    const _showStatus   = !_rpPrefs.hidden.includes('status');
-    const _showDate     = !_rpPrefs.hidden.includes('date');
+    const _rpPrefs    = _getRpColPrefs();
+    const _showMarks  = !_rpPrefs.hidden.includes('marks');
+    const _showStatus = !_rpPrefs.hidden.includes('status');
+    const _showDate   = !_rpPrefs.hidden.includes('date');
+    // Count exactly how many <td>s the body renders per attempt
+    const _visColspan = (_showMarks ? 1 : 0) + (_showStatus ? 1 : 0) + (_showDate ? 1 : 0) || 1;
 
-    // Row 1: Test group headers — colspan = #attempts × _visColspan
+    // Row 1: Test group headers — colspan = totalAttempts × _visColspan
     let groupHeaderRow = `
       <tr class="rp-thead-group">
         <th class="rp-th-left" colspan="1">#</th>
@@ -1278,8 +1278,9 @@ export const ResultProfile = {
         ${testGroups.map((g, gi) => {
           const s = colStats[gi];
           const totalAttempts = 1 + g.retests.length;
+          const groupColspan  = totalAttempts * _visColspan;
           return `
-          <th colspan="${totalAttempts * _visColspan}" class="${g.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
+          <th colspan="${groupColspan}" class="${g.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
               style="vertical-align:bottom;padding-bottom:6px">
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
               <span style="font-size:11.5px;font-weight:800">${g.groupLabel}</span>
@@ -1304,14 +1305,14 @@ export const ResultProfile = {
         }).join('')}
       </tr>`;
 
-    // Row 2: Attempt sub-group labels (1st Attempt | Retest #1 | Retest #2 …)
+    // Row 2: Attempt labels — strict colspan="_visColspan" per attempt cell
     let attemptHeaderRow = `
       <tr class="rp-thead-group" style="background:var(--surface3)">
-        <th></th><th></th><th></th>
+        <th colspan="1"></th><th colspan="1"></th><th colspan="1"></th>
         ${testGroups.map(g => {
           const attemptEntries = [g.original, ...g.retests];
           return attemptEntries.map((entry, ai) => {
-            const label = ai === 0 ? '1st Attempt' : `Retest #${entry.retestIndex || ai}`;
+            const label   = ai === 0 ? '1st Attempt' : `Retest #${entry.retestIndex || ai}`;
             const isFirst = ai === 0;
             return `<th colspan="${_visColspan}"
               style="text-align:center;font-size:9.5px;font-weight:700;padding:5px 8px;
