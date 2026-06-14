@@ -446,8 +446,8 @@ export const TestResultSummary = {
       c.querySelector('#trsFilterBody')?.classList.remove('open');
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
       this._rerenderFilterToggle(c);
-      this._rerenderFilterBody(c);
       this._renderTable(c);
+      this._rerenderFilterBody(c);
     };
     const doClear = () => {
       this._selCampus = this._selDiscipline = this._selLevel =
@@ -476,7 +476,8 @@ export const TestResultSummary = {
     if (!body) return;
     body.innerHTML = this._filterBodyHTML();
     this._bindCascade(c);
-    const doApply = () => {
+
+    body.querySelector('#trsApplyBtn')?.addEventListener('click', () => {
       this._appliedFilter = {
         campus:     this._selCampus,
         discipline: this._selDiscipline,
@@ -486,22 +487,20 @@ export const TestResultSummary = {
         batch:      this._selBatch,
       };
       this._filterOpen = false;
-      c.querySelector('#trsFilterBody')?.classList.remove('open');
+      body.classList.remove('open');
       c.querySelector('.rp-filter-arrow')?.classList.remove('open');
       this._rerenderFilterToggle(c);
-      this._rerenderFilterBody(c);
       this._renderTable(c);
-    };
-    const doClear = () => {
+    });
+
+    body.querySelector('#trsClearBtn')?.addEventListener('click', () => {
       this._selCampus = this._selDiscipline = this._selLevel =
         this._selSession = this._selSubject = this._selBatch = '';
       this._appliedFilter = null;
+      this._rerenderFilterToggle(c);
       this._rerenderFilterBody(c);
       this._renderTable(c);
-      this._rerenderFilterToggle(c);
-    };
-    c.querySelector('#trsApplyBtn')?.addEventListener('click', doApply);
-    c.querySelector('#trsClearBtn')?.addEventListener('click', doClear);
+    });
   },
 
   _rerenderFilterToggle(c) {
@@ -524,7 +523,7 @@ export const TestResultSummary = {
     if (!area) return;
 
     if (!this._appliedFilter ||
-        (!this._appliedFilter.campus && !this._appliedFilter.subject && !this._appliedFilter.batch)) {
+        !Object.values(this._appliedFilter).some(v => v)) {
       area.innerHTML = `
         <div class="trs-empty">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
