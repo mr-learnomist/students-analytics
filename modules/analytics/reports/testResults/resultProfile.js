@@ -19,7 +19,6 @@ const LP_VALID_RE   = /^(?:test(?:\s+\d+)?|mid[\s-]?term(?:\s+\d+)?|mock(?:\s+ex
 // ── Sub-column definitions (common across every test group) ────
 const RP_SUB_COLS = [
   { key: 'marks',  label: 'Marks'  },
-  { key: 'total',  label: 'Total'  },
   { key: 'status', label: 'Status' },
   { key: 'date',   label: 'Date'   },
 ];
@@ -1113,7 +1112,6 @@ export const ResultProfile = {
     const _visibleSubs  = RP_SUB_COLS.filter(sc => !_rpPrefs.hidden.includes(sc.key));
     const _visColspan   = _visibleSubs.length || 1; // colspan per test group
     const _showMarks    = !_rpPrefs.hidden.includes('marks');
-    const _showTotal    = !_rpPrefs.hidden.includes('total');
     const _showStatus   = !_rpPrefs.hidden.includes('status');
     const _showDate     = !_rpPrefs.hidden.includes('date');
 
@@ -1187,9 +1185,8 @@ export const ResultProfile = {
           const isFirst = true; // border applied via first visible sub
           const subs = [];
           if (_showMarks)  subs.push(`<th class="rp-sub-sep">Marks</th>`);
-          if (_showTotal)  subs.push(`<th${!_showMarks ? ' class="rp-sub-sep"' : ''}>Total</th>`);
-          if (_showStatus) subs.push(`<th${!_showMarks && !_showTotal ? ' class="rp-sub-sep"' : ''}>Status</th>`);
-          if (_showDate)   subs.push(`<th${!_showMarks && !_showTotal && !_showStatus ? ' class="rp-sub-sep"' : ''}>Date</th>`);
+          if (_showStatus) subs.push(`<th${!_showMarks ? ' class="rp-sub-sep"' : ''}>Status</th>`);
+          if (_showDate)   subs.push(`<th${!_showMarks && !_showStatus ? ' class="rp-sub-sep"' : ''}>Date</th>`);
           return subs.join('');
         }).join('')}
       </tr>`;
@@ -1222,7 +1219,7 @@ export const ResultProfile = {
             ? `<span style="font-weight:700;color:var(--yellow)">Ab</span>`
             : cell.marks != null
               ? `<div style="display:flex;flex-direction:column;gap:1px">
-                   <span style="font-weight:700;font-family:var(--font-mono,monospace);color:${perfColor}">${cell.marks}</span>
+                   <span style="font-weight:700;font-family:var(--font-mono,monospace);color:${perfColor}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:var(--t3)">/${cell.totalMarks}</span>` : ''}</span>
                    ${hlBadge}
                  </div>`
               : `<span style="color:var(--t1)">—</span>`;
@@ -1231,8 +1228,7 @@ export const ResultProfile = {
               style="white-space:nowrap;padding:8px 10px;vertical-align:middle">
             ${marksDisplay}
           </td>` : ''}
-          ${_showTotal  ? `<td style="color:var(--t1);font-size:12px">${cell.totalMarks || '—'}</td>` : ''}
-          ${_showStatus ? `<td>${this._statusBadge(cell.status)}</td>` : ''}
+          ${_showStatus ? `<td${!_showMarks ? ' class="rp-td-sep"' : ''}>${this._statusBadge(cell.status)}</td>` : ''}
           ${_showDate   ? `<td style="font-size:11.5px;color:var(--t1);white-space:nowrap">${cell.col.date ? formatDate(cell.col.date) : '—'}</td>` : ''}
         `}).join('')}
       </tr>
@@ -1412,8 +1408,9 @@ export const ResultProfile = {
           'Student ID': row.studentId    || '—',
           'Test':       col.colLabel     || '—',
           'Date':       col.date ? formatDate(col.date) : '—',
-          'Marks':      cell.marks != null ? String(cell.marks) : (cell.absent ? 'Absent' : '—'),
-          'Total':      cell.totalMarks  != null ? String(cell.totalMarks) : '—',
+          'Marks':      cell.marks != null
+            ? (cell.totalMarks ? `${cell.marks}/${cell.totalMarks}` : String(cell.marks))
+            : (cell.absent ? 'Absent' : '—'),
           'Status':     cell.status === 'pass'   ? 'Pass'
                       : cell.status === 'fail'   ? 'Fail'
                       : cell.status === 'absent' ? 'Absent' : 'Pending',
@@ -1517,7 +1514,7 @@ export const ResultProfile = {
     const groupThs = d.labelledCols.map(col => {
       const bg    = col.isMock ? '#ede9fe' : '#dbeafe';
       const color = col.isMock ? '#5b21b6' : '#1e40af';
-      return `<th colspan="4" style="text-align:center;background:${bg};color:${color};
+      return `<th colspan="3" style="text-align:center;background:${bg};color:${color};
                 font-size:9px;font-weight:700;padding:5px 8px;
                 border-left:2px solid ${col.isMock ? '#c4b5fd' : '#93c5fd'};
                 white-space:nowrap">
@@ -1527,7 +1524,7 @@ export const ResultProfile = {
 
     const subThs = d.labelledCols.map(col => {
       const bc = col.isMock ? '#c4b5fd' : '#93c5fd';
-      return `<th style="border-left:2px solid ${bc}">Marks</th><th>Total</th><th>Status</th><th>Date</th>`;
+      return `<th style="border-left:2px solid ${bc}">Marks</th><th>Status</th><th>Date</th>`;
     }).join('');
 
     const bodyRows = d.tableRows.map((row, ri) => {
@@ -1546,10 +1543,10 @@ export const ResultProfile = {
         const marksCell = cell.absent
           ? `<span style="color:#d97706;font-weight:700">Ab</span>`
           : cell.marks != null
-            ? `<strong style="color:${sc[cell.status]||'#64748b'}">${cell.marks}</strong><br><span style="font-size:8px;font-weight:700;color:${hlHex}">${hlIcon} ${hlLabel}</span>`
+            ? `<strong style="color:${sc[cell.status]||'#64748b'}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:#94a3b8">/${cell.totalMarks}</span>` : ''}</strong><br><span style="font-size:8px;font-weight:700;color:${hlHex}">${hlIcon} ${hlLabel}</span>`
             : '—';
         const statusBadge = `<span style="color:${sc[cell.status]||'#64748b'};background:${bg};padding:1px 7px;border-radius:20px;font-size:8px;font-weight:700;white-space:nowrap">${cell.status==='pass'?'Pass':cell.status==='fail'?'Fail':cell.status==='absent'?'Absent':'Pending'}</span>`;
-        return `<td style="border-left:2px solid ${bc};background:${bg}">${marksCell}</td><td style="color:#64748b;background:${bg}">${cell.totalMarks||'—'}</td><td style="background:${bg}">${statusBadge}</td><td style="color:#64748b;white-space:nowrap">${col.date ? formatDate(col.date) : '—'}</td>`;
+        return `<td style="border-left:2px solid ${bc};background:${bg}">${marksCell}</td><td style="background:${bg}">${statusBadge}</td><td style="color:#64748b;white-space:nowrap">${col.date ? formatDate(col.date) : '—'}</td>`;
       }).join('');
       return `<tr class="${ri%2===0?'even':'odd'}">
         <td style="color:#94a3b8">${ri+1}</td>
