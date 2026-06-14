@@ -516,3 +516,123 @@ body.light {
     margin-bottom: 2px;
   }
 }
+
+/* ── User Popup Menu ── */
+.sidebar-footer {
+  position: relative;   /* popup anchors to footer */
+}
+
+.sidebar-user-popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 8px;
+  right: 8px;
+  background: var(--sb-bg);
+  border: 1px solid var(--sb-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+  overflow: hidden;
+  z-index: 400;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  min-width: 200px;
+}
+
+.sidebar-user-popup.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Popup header — user info */
+.sup-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
+}
+
+.sup-avatar {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 50%;
+  background: var(--sb-avatar-bg);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sup-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sup-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sb-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sup-role {
+  font-size: 11px;
+  color: var(--sb-text-muted);
+  white-space: nowrap;
+}
+
+.sup-divider {
+  height: 1px;
+  background: var(--sb-border);
+  margin: 2px 0;
+}
+
+/* Popup menu items */
+.sup-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--sb-text-secondary);
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sup-item:hover {
+  background: var(--sb-hover-bg);
+  color: var(--sb-text-primary);
+}
+
+/* Logout — red accent */
+.sup-item.sup-logout {
+  color: #ef4444;
+}
+
+.sup-item.sup-logout:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* When sidebar is collapsed, popup still shows from bottom-left */
+.sidebar.collapsed .sidebar-user-popup {
+  left: 4px;
+  right: auto;
+  width: 220px;
+  bottom: 10px;
+}
