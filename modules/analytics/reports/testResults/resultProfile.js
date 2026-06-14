@@ -157,6 +157,12 @@ function _injectStyles() {
   border-bottom:1px solid var(--border2);
   white-space:nowrap;
 }
+.rp-table thead tr.rp-thead-group th[rowspan] {
+  vertical-align:middle;
+}
+.rp-table thead tr.rp-thead-attempt th {
+  border-bottom:1px solid var(--border2);
+}
 .rp-table thead tr.rp-thead-group th.rp-th-left {
   text-align:left;
 }
@@ -461,6 +467,21 @@ function _defaultLabel(rowType) {
   if (rowType === 'midterm') return 'Midterm';
   if (rowType === 'mock')    return 'Mock Exam';
   return 'Test';
+}
+
+// ── Retest naming helpers ───────────────────────────────────────
+// "Test 1 (Retest #1)" → { base: "Test 1", retestNo: 1 }
+// "Test 1"             → { base: "Test 1", retestNo: 0 }
+const RETEST_RE = /^(.*?)\s*\(Retest\s*#\s*(\d+)\)\s*$/i;
+
+function _parseTestName(name) {
+  const m = RETEST_RE.exec((name || '').trim());
+  if (m) return { base: m[1].trim(), retestNo: parseInt(m[2], 10) };
+  return { base: (name || '').trim(), retestNo: 0 };
+}
+
+function _attemptLabel(retestNo) {
+  return retestNo === 0 ? '1st Attempt' : `Retest #${retestNo}`;
 }
 
 // ── Main Export ────────────────────────────────────────────────
@@ -809,11 +830,51 @@ export const ResultProfile = {
     const testEntries = entries.filter(e => e.testType !== 'mock');
     const mockEntries = entries.filter(e => e.testType === 'mock');
 
-    // Label them: Test 1, Test 2, … and Mock 1, Mock 2, …
-    const labelledCols = [
-      ...testEntries.map((e, i) => ({ ...e, colLabel: `Test ${i + 1}`, isMock: false })),
-      ...mockEntries.map((e, i) => ({ ...e, colLabel: mockEntries.length === 1 ? 'Mock' : `Mock ${i + 1}`, isMock: true })),
-    ];
+    // Group test entries by base name (original vs retests of same test)
+    // e.g. "Test 1", "Test 1 (Retest #1)", "Test 1 (Retest #2)" → one group "Test 1"
+    const _testGroupsMap = new Map(); // base → array of { entry, retestNo }
+    testEntries.forEach(e => {
+      const { base, retestNo } = _parseTestName(e.testName);
+      if (!_testGroupsMap.has(base)) _testGroupsMap.set(base, []);
+      _testGroupsMap.get(base).push({ entry: e, retestNo });
+    });
+
+    // Build labelledCols: flat list of every attempt column (original + retests),
+    // ordered group-by-group, attempts within a group ordered by retestNo.
+    // Also build testGroups: one entry per group with its attempt columns.
+    const labelledCols = [];
+    const testGroups   = [];
+    Array.from(_testGroupsMap.entries()).forEach(([base, attempts]) => {
+      attempts.sort((a, b) => a.retestNo - b.retestNo);
+      const groupCols = attempts.map(({ entry, retestNo }) => {
+        const col = { ...entry, colLabel: base, attemptLabel: _attemptLabel(retestNo), retestNo, isMock: false };
+        labelledCols.push(col);
+        return col;
+      });
+      // Group date = original (1st attempt) date if present, else first attempt's date
+      const originalCol = groupCols.find(c => c.retestNo === 0) || groupCols[0];
+      testGroups.push({
+        base,
+        colLabel: base,
+        isMock: false,
+        date: originalCol.date,
+        attempts: groupCols,
+      });
+    });
+
+    // Mocks: each mock is its own group with a single attempt (no retest grouping)
+    mockEntries.forEach((e, i) => {
+      const mockLabel = mockEntries.length === 1 ? 'Mock' : `Mock ${i + 1}`;
+      const col = { ...e, colLabel: mockLabel, attemptLabel: '1st Attempt', retestNo: 0, isMock: true };
+      labelledCols.push(col);
+      testGroups.push({
+        base: mockLabel,
+        colLabel: mockLabel,
+        isMock: true,
+        date: e.date,
+        attempts: [col],
+      });
+    });
 
     // Get all results map: scheduleEntryId → studentId → result record
     const allResults = _getResults();
@@ -894,21 +955,42 @@ export const ResultProfile = {
                      : marks == null       ? 'pending'
                      : (effectivePassingMarks && marks >= Number(effectivePassingMarks)) ? 'pass'
                      : 'fail';
-        return { col, marks, absent, status, totalMarks: effectiveTotalMarks };
+        return { col, marks, absent, status, totalMarks: effectiveTotalMarks, hasRecord: !!r };
       });
 
-      return { st, studentName, studentId, cols };
+      // ── Per-group cells + effective (latest-attempt) status ────
+      // For each test group, walk attempts from last → first; the latest
+      // attempt that HAS A RECORD (marks or absent — not a missing cell)
+      // becomes the "effective" result. If no attempt has a record → Pending.
+      const colByEntryId = {};
+      cols.forEach(c => { colByEntryId[c.col.id] = c; });
+
+      const groupCells = testGroups.map(g => {
+        const attemptCells = g.attempts.map(ac => colByEntryId[ac.id]);
+        let effective = null;
+        for (let i = attemptCells.length - 1; i >= 0; i--) {
+          if (attemptCells[i].hasRecord) { effective = attemptCells[i]; break; }
+        }
+        if (!effective) {
+          // Nothing has a record yet → Pending (use last attempt's col for date/total context)
+          effective = attemptCells[attemptCells.length - 1];
+        }
+        return { group: g, attemptCells, effective };
+      });
+
+      return { st, studentName, studentId, cols, groupCells };
     });
 
     // Sort by student name
     tableRows.sort((a, b) => a.studentName.localeCompare(b.studentName));
 
     // ── Stats strip ─────────────────────────────────────────────
-    // Count total cells for summary
+    // Count effective cells (one per test GROUP, using latest-attempt result)
     let totalCells = 0, passC = 0, failC = 0, absentC = 0, pendingC = 0;
     let allMarksSum = 0, allMarksCount = 0, allTotalSum = 0;
     tableRows.forEach(row => {
-      row.cols.forEach(cell => {
+      row.groupCells.forEach(gc => {
+        const cell = gc.effective;
         totalCells++;
         if (cell.status === 'pass')         passC++;
         else if (cell.status === 'fail')    failC++;
@@ -924,20 +1006,17 @@ export const ResultProfile = {
     const appearedC = passC + failC;
     const passRate  = appearedC > 0 ? Math.round((passC / appearedC) * 100) : 0;
 
-    // Tests done = tests where at least one student has a result (not all pending)
-    const testsDone    = labelledCols.filter((col, ci) => {
-      return tableRows.some(row => {
-        const cell = row.cols[ci];
-        return cell && cell.status !== 'pending';
-      });
+    // Tests done = test groups where at least one student has an effective result (not pending)
+    const testsDone    = testGroups.filter((g, gi) => {
+      return tableRows.some(row => row.groupCells[gi].effective.status !== 'pending');
     }).length;
-    const testsPending = labelledCols.length - testsDone;
+    const testsPending = testGroups.length - testsDone;
 
-    // Batch performance: har test ka avgPct nikalo, phir equal-weight average
-    const _testAvgPcts = labelledCols.map((col, ci) => {
+    // Batch performance: har test group ka avgPct (effective marks se) nikalo, phir equal-weight average
+    const _testAvgPcts = testGroups.map((g, gi) => {
       let tMarksSum = 0, tTotalSum = 0, tCount = 0;
       tableRows.forEach(row => {
-        const cell = row.cols[ci];
+        const cell = row.groupCells[gi].effective;
         if (cell && cell.marks != null && !cell.absent && cell.totalMarks) {
           tMarksSum += Number(cell.marks);
           tTotalSum += Number(cell.totalMarks);
@@ -1057,11 +1136,11 @@ export const ResultProfile = {
         </div>
       </div>`;
 
-    // ── Per-test pass rate stats ────────────────────────────────
-    const colStats = labelledCols.map((col, ci) => {
+    // ── Per-test (group) pass rate stats — effective ────────────
+    const colStats = testGroups.map((g, gi) => {
       let p = 0, f = 0, ab = 0, pend = 0, marksSum = 0, marksCount = 0, totalSum = 0;
       tableRows.forEach(row => {
-        const cell = row.cols.find(c => c.col.id === col.id);
+        const cell = row.groupCells[gi]?.effective;
         if (!cell) return;
         if      (cell.status === 'pass')    p++;
         else if (cell.status === 'fail')    f++;
@@ -1117,18 +1196,20 @@ export const ResultProfile = {
 
     let groupHeaderRow = `
       <tr class="rp-thead-group">
-        <th class="rp-th-left" colspan="1">#</th>
-        <th class="rp-th-left" colspan="1">Student ID</th>
-        <th class="rp-th-left" colspan="1">Student Name</th>
-        ${labelledCols.map((col, ci) => {
-          const s = colStats[ci];
+        <th class="rp-th-left" colspan="1" rowspan="3">#</th>
+        <th class="rp-th-left" colspan="1" rowspan="3">Student ID</th>
+        <th class="rp-th-left" colspan="1" rowspan="3">Student Name</th>
+        ${testGroups.map((g, gi) => {
+          const s = colStats[gi];
+          const totalColspan = g.attempts.length * _visColspan;
+          const multiAttempt = g.attempts.length > 1;
           return `
-          <th colspan="${_visColspan}" class="${col.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
+          <th colspan="${totalColspan}" ${multiAttempt ? '' : 'rowspan="2"'} class="${g.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
               style="vertical-align:bottom;padding-bottom:6px">
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
-              <span style="font-size:11.5px;font-weight:800">${col.colLabel}</span>
-              ${col.date ? `<span style="font-size:9.5px;font-weight:500;opacity:.7">${formatDate(col.date)}</span>` : ''}
-              <!-- mini pass-rate bar -->
+              <span style="font-size:11.5px;font-weight:800">${g.colLabel}</span>
+              ${g.date ? `<span style="font-size:9.5px;font-weight:500;opacity:.7">${formatDate(g.date)}</span>` : ''}
+              <!-- mini pass-rate bar (effective) -->
               <div style="width:100%;min-width:80px;margin-top:3px">
                 <div style="display:flex;justify-content:space-between;align-items:center;
                              margin-bottom:2px;gap:4px">
@@ -1145,6 +1226,22 @@ export const ResultProfile = {
               </div>
             </div>
           </th>`;
+        }).join('')}
+      </tr>`;
+
+    // ── Attempt sub-group header row (1st Attempt | Retest #1 | …) ──
+    // Only emitted for groups with more than one attempt (single-attempt
+    // groups already rowspan into this row via the group header above).
+    let attemptHeaderRow = `
+      <tr class="rp-thead-group rp-thead-attempt">
+        ${testGroups.map(g => {
+          if (g.attempts.length <= 1) return '';
+          return g.attempts.map((ac, ai) => `
+          <th colspan="${_visColspan}"
+              class="${g.isMock ? 'rp-th-mock-group' : 'rp-th-test-group'}"
+              style="font-size:10px;font-weight:700;opacity:.85;padding:5px 8px;${ai > 0 ? 'border-left:1px dashed var(--border2);' : ''}">
+            ${ac.attemptLabel}${ac.date && ac.retestNo > 0 ? `<br><span style="font-size:9px;font-weight:500;opacity:.75">${formatDate(ac.date)}</span>` : ''}
+          </th>`).join('');
         }).join('')}
       </tr>`;
 
@@ -1178,18 +1275,46 @@ export const ResultProfile = {
 
     let subHeaderRow = `
       <tr class="rp-thead-sub">
-        <th></th>
-        <th></th>
-        <th></th>
-        ${labelledCols.map((col, _ci) => {
-          const isFirst = true; // border applied via first visible sub
+        ${testGroups.map(g => g.attempts.map((ac, ai) => {
           const subs = [];
           if (_showMarks)  subs.push(`<th class="rp-sub-sep">Marks</th>`);
           if (_showStatus) subs.push(`<th${!_showMarks ? ' class="rp-sub-sep"' : ''}>Status</th>`);
           if (_showDate)   subs.push(`<th${!_showMarks && !_showStatus ? ' class="rp-sub-sep"' : ''}>Date</th>`);
           return subs.join('');
-        }).join('')}
+        }).join('')).join('')}
       </tr>`;
+
+    const _renderCell = (cell) => {
+      const perfColor = cell.status === 'pass'   ? 'var(--green)'
+                      : cell.status === 'fail'   ? 'var(--red)'
+                      : cell.status === 'absent' ? 'var(--yellow)'
+                      : 'var(--t4)';
+      const pct = (cell.marks != null && !cell.absent && cell.totalMarks)
+        ? Math.round((Number(cell.marks) / Number(cell.totalMarks)) * 100)
+        : null;
+      const hlIcon  = pct == null ? '' : pct >= 80 ? '●' : pct >= 70 ? '▲' : '⚠';
+      const hlLabel = pct == null ? '' : pct >= 80 ? 'Healthy' : pct >= 70 ? 'At Risk' : 'Danger';
+      const hlColor = pct == null ? 'var(--t3)' : pct >= 80 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
+      const hlBadge = pct != null
+        ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:${hlColor}">${hlIcon} ${hlLabel}</span>`
+        : '';
+      const marksDisplay = cell.absent
+        ? `<span style="font-weight:700;color:var(--yellow)">Ab</span>`
+        : cell.marks != null
+          ? `<div style="display:flex;flex-direction:column;gap:1px">
+               <span style="font-weight:700;font-family:var(--font-mono,monospace);color:${perfColor}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:var(--t3)">/${cell.totalMarks}</span>` : ''}</span>
+               ${hlBadge}
+             </div>`
+          : `<span style="color:var(--t1)">—</span>`;
+      return `
+        ${_showMarks ? `<td class="rp-td-sep"
+            style="white-space:nowrap;padding:8px 10px;vertical-align:middle">
+          ${marksDisplay}
+        </td>` : ''}
+        ${_showStatus ? `<td${!_showMarks ? ' class="rp-td-sep"' : ''}>${this._statusBadge(cell.status)}</td>` : ''}
+        ${_showDate   ? `<td style="font-size:11.5px;color:var(--t1);white-space:nowrap">${cell.col.date ? formatDate(cell.col.date) : '—'}</td>` : ''}
+      `;
+    };
 
     const bodyHTML = tableRows.map((row, ri) => `
       <tr>
@@ -1197,54 +1322,21 @@ export const ResultProfile = {
         <td style="font-size:12px;color:var(--t1)">${row.studentId}</td>
         <td style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px"
             title="${row.studentName}">${row.studentName}</td>
-        ${row.cols.map(cell => {
-          const perfBg = cell.status === 'pass'    ? 'var(--green-dim)'
-                       : cell.status === 'fail'    ? 'var(--red-dim)'
-                       : cell.status === 'absent'  ? 'var(--yellow-dim)'
-                       : 'transparent';
-          const perfColor = cell.status === 'pass'   ? 'var(--green)'
-                          : cell.status === 'fail'   ? 'var(--red)'
-                          : cell.status === 'absent' ? 'var(--yellow)'
-                          : 'var(--t4)';
-          const pct = (cell.marks != null && !cell.absent && cell.totalMarks)
-            ? Math.round((Number(cell.marks) / Number(cell.totalMarks)) * 100)
-            : null;
-          const hlIcon  = pct == null ? '' : pct >= 80 ? '●' : pct >= 70 ? '▲' : '⚠';
-          const hlLabel = pct == null ? '' : pct >= 80 ? 'Healthy' : pct >= 70 ? 'At Risk' : 'Danger';
-          const hlColor = pct == null ? 'var(--t3)' : pct >= 80 ? 'var(--green)' : pct >= 70 ? 'var(--yellow)' : 'var(--red)';
-          const hlBadge = pct != null
-            ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:${hlColor}">${hlIcon} ${hlLabel}</span>`
-            : '';
-          const marksDisplay = cell.absent
-            ? `<span style="font-weight:700;color:var(--yellow)">Ab</span>`
-            : cell.marks != null
-              ? `<div style="display:flex;flex-direction:column;gap:1px">
-                   <span style="font-weight:700;font-family:var(--font-mono,monospace);color:${perfColor}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:var(--t3)">/${cell.totalMarks}</span>` : ''}</span>
-                   ${hlBadge}
-                 </div>`
-              : `<span style="color:var(--t1)">—</span>`;
-          return `
-          ${_showMarks ? `<td class="rp-td-sep"
-              style="white-space:nowrap;padding:8px 10px;vertical-align:middle">
-            ${marksDisplay}
-          </td>` : ''}
-          ${_showStatus ? `<td${!_showMarks ? ' class="rp-td-sep"' : ''}>${this._statusBadge(cell.status)}</td>` : ''}
-          ${_showDate   ? `<td style="font-size:11.5px;color:var(--t1);white-space:nowrap">${cell.col.date ? formatDate(cell.col.date) : '—'}</td>` : ''}
-        `}).join('')}
+        ${row.groupCells.map(gc => gc.attemptCells.map(cell => _renderCell(cell)).join('')).join('')}
       </tr>
     `).join('');
 
-    // ── Per-test stats strip HTML ───────────────────────────────
+    // ── Per-test stats strip HTML (effective stats, per group) ──
     const testStatsStripHTML = `
       <div class="rp-test-stats-strip">
-        ${labelledCols.map((col, ci) => {
-          const s = colStats[ci];
+        ${testGroups.map((g, gi) => {
+          const s = colStats[gi];
           return `
-          <div class="rp-test-stat-card${col.isMock ? ' is-mock' : ''}">
+          <div class="rp-test-stat-card${g.isMock ? ' is-mock' : ''}">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:2px">
               <div>
-                <div class="rp-test-stat-label${col.isMock ? ' is-mock' : ' is-test'}">${col.colLabel}</div>
-                ${col.date ? `<div class="rp-test-stat-date">${formatDate(col.date)}</div>` : ''}
+                <div class="rp-test-stat-label${g.isMock ? ' is-mock' : ' is-test'}">${g.colLabel}</div>
+                ${g.date ? `<div class="rp-test-stat-date">${formatDate(g.date)}</div>` : ''}
               </div>
               <span style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;
                            background:${s.hlBg};color:${s.hlColor};
@@ -1285,6 +1377,7 @@ export const ResultProfile = {
         <table class="rp-table" style="width:100%;table-layout:auto;min-width:unset">
           <thead>
             ${groupHeaderRow}
+            ${attemptHeaderRow}
             ${subHeaderRow}
           </thead>
           <tbody>
@@ -1295,7 +1388,7 @@ export const ResultProfile = {
     `;
 
     // Wire export buttons
-    const _exportData = { tableRows, labelledCols, campusName, batchDisplayName, session, subjectCode,
+    const _exportData = { tableRows, labelledCols, testGroups, campusName, batchDisplayName, session, subjectCode,
                           passC, failC, absentC, pendingC, appearedC, passRate, colStats,
                           testsDone, testsPending, batchAvgPct, bpLabel, bpColor };
     area.querySelector('#rpExportCSV')?.addEventListener('click', () => this._exportCSV(_exportData));
@@ -1407,6 +1500,7 @@ export const ResultProfile = {
           'Student':    row.studentName  || '—',
           'Student ID': row.studentId    || '—',
           'Test':       col.colLabel     || '—',
+          'Attempt':    col.attemptLabel || '1st Attempt',
           'Date':       col.date ? formatDate(col.date) : '—',
           'Marks':      cell.marks != null
             ? (cell.totalMarks ? `${cell.marks}/${cell.totalMarks}` : String(cell.marks))
@@ -1433,7 +1527,7 @@ export const ResultProfile = {
       `Result Profile Report`,
       `Generated: ${dateStr} ${timeStr}`,
       `Campus: ${d.campusName}  |  Batch: ${d.batchDisplayName}`,
-      `Total Students: ${d.tableRows.length}  |  Tests: ${d.labelledCols.length}`,
+      `Total Students: ${d.tableRows.length}  |  Tests: ${d.testGroups.length}`,
       `Tests Done: ${d.testsDone}  |  Tests Pending: ${d.testsPending}`,
       `Pass: ${d.passC}  Fail: ${d.failC}  Absent: ${d.absentC}  Pending: ${d.pendingC}  Pass Rate: ${d.passRate}%`,
       `Batch Performance: ${d.bpLabel}${d.batchAvgPct != null ? ` (${d.batchAvgPct}%)` : ''}`,
@@ -1471,11 +1565,11 @@ export const ResultProfile = {
       hlColor: s.avgPct == null ? '#64748b' : s.avgPct >= 80 ? '#15803d' : s.avgPct >= 70 ? '#b45309' : '#b91c1c',
     }));
 
-    // ── Per-test stats cards ────────────────────────────────────
-    const testStatCards = d.labelledCols.map((col, ci) => {
-      const s         = pdfColStats[ci];
-      const bgColor   = col.isMock ? '#f5f3ff' : '#eff6ff';
-      const nameColor = col.isMock ? '#6d28d9' : '#1d4ed8';
+    // ── Per-test stats cards (effective, per group) ─────────────
+    const testStatCards = d.testGroups.map((g, gi) => {
+      const s         = pdfColStats[gi];
+      const bgColor   = g.isMock ? '#f5f3ff' : '#eff6ff';
+      const nameColor = g.isMock ? '#6d28d9' : '#1d4ed8';
       const doneBadge = s.isDone
         ? `<span style="background:#dcfce7;color:#15803d;padding:1px 6px;border-radius:20px;font-size:8px;font-weight:700">✓ Done</span>`
         : `<span style="background:#f1f5f9;color:#64748b;padding:1px 6px;border-radius:20px;font-size:8px;font-weight:700">· Pending</span>`;
@@ -1488,10 +1582,10 @@ export const ResultProfile = {
       ].filter(Boolean).join(' ');
       return `<td style="text-align:left;padding:7px 10px;border-right:1px solid #e2e8f0;background:${bgColor};vertical-align:top;min-width:130px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
-          <div style="font-weight:700;font-size:11px;color:${nameColor}">${col.colLabel}</div>
+          <div style="font-weight:700;font-size:11px;color:${nameColor}">${g.colLabel}</div>
           ${healthBadge}
         </div>
-        ${col.date ? `<div style="font-size:8.5px;color:#64748b;margin-bottom:4px">${formatDate(col.date)}</div>` : '<div style="margin-bottom:4px"></div>'}
+        ${g.date ? `<div style="font-size:8.5px;color:#64748b;margin-bottom:4px">${formatDate(g.date)}</div>` : '<div style="margin-bottom:4px"></div>'}
         <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px">
           ${doneBadge}
           ${pills}
@@ -1510,43 +1604,58 @@ export const ResultProfile = {
       </td>`;
     }).join('');
 
-    // ── Grouped table headers ───────────────────────────────────
-    const groupThs = d.labelledCols.map(col => {
-      const bg    = col.isMock ? '#ede9fe' : '#dbeafe';
-      const color = col.isMock ? '#5b21b6' : '#1e40af';
-      return `<th colspan="3" style="text-align:center;background:${bg};color:${color};
+    // ── Grouped table headers (Test N → 1st Attempt / Retest #N → Marks/Status/Date) ──
+    const groupThs = d.testGroups.map(g => {
+      const bg    = g.isMock ? '#ede9fe' : '#dbeafe';
+      const color = g.isMock ? '#5b21b6' : '#1e40af';
+      const bc    = g.isMock ? '#c4b5fd' : '#93c5fd';
+      return `<th colspan="${g.attempts.length * 3}" style="text-align:center;background:${bg};color:${color};
                 font-size:9px;font-weight:700;padding:5px 8px;
-                border-left:2px solid ${col.isMock ? '#c4b5fd' : '#93c5fd'};
+                border-left:2px solid ${bc};
                 white-space:nowrap">
-        ${col.colLabel}${col.date ? `<br><span style="font-weight:500;font-size:8px;opacity:.8">${formatDate(col.date)}</span>` : ''}
+        ${g.colLabel}${g.date ? `<br><span style="font-weight:500;font-size:8px;opacity:.8">${formatDate(g.date)}</span>` : ''}
       </th>`;
     }).join('');
 
-    const subThs = d.labelledCols.map(col => {
-      const bc = col.isMock ? '#c4b5fd' : '#93c5fd';
-      return `<th style="border-left:2px solid ${bc}">Marks</th><th>Status</th><th>Date</th>`;
+    const attemptThs = d.testGroups.map(g => {
+      const bg = g.isMock ? '#ede9fe' : '#dbeafe';
+      const color = g.isMock ? '#5b21b6' : '#1e40af';
+      const bc = g.isMock ? '#c4b5fd' : '#93c5fd';
+      return g.attempts.map((ac, ai) => `<th colspan="3" style="text-align:center;background:${bg};color:${color};
+                font-size:8px;font-weight:600;padding:3px 8px;opacity:.85;
+                ${ai === 0 ? `border-left:2px solid ${bc};` : 'border-left:1px dashed rgba(0,0,0,0.15);'}
+                white-space:nowrap">${ac.attemptLabel}</th>`).join('');
+    }).join('');
+
+    const subThs = d.testGroups.map(g => {
+      const bc = g.isMock ? '#c4b5fd' : '#93c5fd';
+      return g.attempts.map((ac, ai) =>
+        `<th style="${ai === 0 ? `border-left:2px solid ${bc}` : ''}">Marks</th><th>Status</th><th>Date</th>`
+      ).join('');
     }).join('');
 
     const bodyRows = d.tableRows.map((row, ri) => {
-      const cells = d.labelledCols.map((col, ci) => {
-        const cell = row.cols[ci];
-        if (!cell) return `<td style="border-left:2px solid #e2e8f0">—</td><td>—</td><td>—</td><td>—</td>`;
-        const sc = { pass:'#16a34a', fail:'#dc2626', absent:'#d97706', pending:'#64748b' };
-        const sb = { pass:'#f0fdf4', fail:'#fef2f2', absent:'#fffbeb', pending:'#f8fafc' };
-        const bg  = sb[cell.status] || '#f8fafc';
-        const bc  = col.isMock ? '#c4b5fd' : '#93c5fd';
-        const pct = (cell.marks != null && !cell.absent && cell.totalMarks)
-          ? Math.round((Number(cell.marks) / Number(cell.totalMarks)) * 100) : null;
-        const hlIcon  = pct == null ? '' : pct >= 80 ? '●' : pct >= 70 ? '▲' : '⚠';
-        const hlLabel = pct == null ? '' : pct >= 80 ? 'Healthy' : pct >= 70 ? 'At Risk' : 'Danger';
-        const hlHex   = pct == null ? '#64748b' : pct >= 80 ? '#16a34a' : pct >= 70 ? '#d97706' : '#dc2626';
-        const marksCell = cell.absent
-          ? `<span style="color:#d97706;font-weight:700">Ab</span>`
-          : cell.marks != null
-            ? `<strong style="color:${sc[cell.status]||'#64748b'}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:#94a3b8">/${cell.totalMarks}</span>` : ''}</strong><br><span style="font-size:8px;font-weight:700;color:${hlHex}">${hlIcon} ${hlLabel}</span>`
-            : '—';
-        const statusBadge = `<span style="color:${sc[cell.status]||'#64748b'};background:${bg};padding:1px 7px;border-radius:20px;font-size:8px;font-weight:700;white-space:nowrap">${cell.status==='pass'?'Pass':cell.status==='fail'?'Fail':cell.status==='absent'?'Absent':'Pending'}</span>`;
-        return `<td style="border-left:2px solid ${bc};background:${bg}">${marksCell}</td><td style="background:${bg}">${statusBadge}</td><td style="color:#64748b;white-space:nowrap">${col.date ? formatDate(col.date) : '—'}</td>`;
+      const cells = d.testGroups.map((g, gi) => {
+        const gc = row.groupCells[gi];
+        const bc = g.isMock ? '#c4b5fd' : '#93c5fd';
+        return gc.attemptCells.map((cell, ai) => {
+          const sc = { pass:'#16a34a', fail:'#dc2626', absent:'#d97706', pending:'#64748b' };
+          const sb = { pass:'#f0fdf4', fail:'#fef2f2', absent:'#fffbeb', pending:'#f8fafc' };
+          const bg  = sb[cell.status] || '#f8fafc';
+          const pct = (cell.marks != null && !cell.absent && cell.totalMarks)
+            ? Math.round((Number(cell.marks) / Number(cell.totalMarks)) * 100) : null;
+          const hlIcon  = pct == null ? '' : pct >= 80 ? '●' : pct >= 70 ? '▲' : '⚠';
+          const hlLabel = pct == null ? '' : pct >= 80 ? 'Healthy' : pct >= 70 ? 'At Risk' : 'Danger';
+          const hlHex   = pct == null ? '#64748b' : pct >= 80 ? '#16a34a' : pct >= 70 ? '#d97706' : '#dc2626';
+          const marksCell = cell.absent
+            ? `<span style="color:#d97706;font-weight:700">Ab</span>`
+            : cell.marks != null
+              ? `<strong style="color:${sc[cell.status]||'#64748b'}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:#94a3b8">/${cell.totalMarks}</span>` : ''}</strong><br><span style="font-size:8px;font-weight:700;color:${hlHex}">${hlIcon} ${hlLabel}</span>`
+              : '—';
+          const statusBadge = `<span style="color:${sc[cell.status]||'#64748b'};background:${bg};padding:1px 7px;border-radius:20px;font-size:8px;font-weight:700;white-space:nowrap">${cell.status==='pass'?'Pass':cell.status==='fail'?'Fail':cell.status==='absent'?'Absent':'Pending'}</span>`;
+          const leftBorder = ai === 0 ? `border-left:2px solid ${bc};` : '';
+          return `<td style="${leftBorder}background:${bg}">${marksCell}</td><td style="background:${bg}">${statusBadge}</td><td style="color:#64748b;white-space:nowrap">${cell.col.date ? formatDate(cell.col.date) : '—'}</td>`;
+        }).join('');
       }).join('');
       return `<tr class="${ri%2===0?'even':'odd'}">
         <td style="color:#94a3b8">${ri+1}</td>
@@ -1580,6 +1689,7 @@ export const ResultProfile = {
   table.main{width:100%;border-collapse:collapse;font-size:8.5px}
   table.main thead tr.g-row th{background:#1e40af;color:#fff;font-weight:700;padding:5px 7px;text-align:center;font-size:8.5px;white-space:nowrap}
   table.main thead tr.g-row th.left-col{text-align:left;background:#1e40af}
+  table.main thead tr.g-row th[rowspan]{vertical-align:middle}
   table.main thead tr.s-row th{background:#1e3a8a;color:#93c5fd;font-size:7.5px;font-weight:600;padding:4px 7px;text-transform:uppercase;letter-spacing:.4px;text-align:left;white-space:nowrap}
   table.main tbody tr.even{background:#fff}table.main tbody tr.odd{background:#f8faff}
   table.main tbody td{padding:4px 6px;border-bottom:1px solid #e2e8f0;vertical-align:middle;color:#334155}
@@ -1599,7 +1709,7 @@ export const ResultProfile = {
     </div>
     <!-- Tests -->
     <div class="s-box">
-      <div class="num">${d.labelledCols.length}</div>
+      <div class="num">${d.testGroups.length}</div>
       <div class="lbl">Tests</div>
     </div>
     <!-- Tests Done: Done + Pending as pills, same as screen -->
@@ -1626,13 +1736,15 @@ export const ResultProfile = {
   <table class="main">
     <thead>
       <tr class="g-row">
-        <th class="left-col">#</th>
-        <th class="left-col">Student ID</th>
-        <th class="left-col">Student Name</th>
+        <th class="left-col" rowspan="3">#</th>
+        <th class="left-col" rowspan="3">Student ID</th>
+        <th class="left-col" rowspan="3">Student Name</th>
         ${groupThs}
       </tr>
+      <tr class="g-row">
+        ${attemptThs}
+      </tr>
       <tr class="s-row">
-        <th></th><th></th><th></th>
         ${subThs}
       </tr>
     </thead>
@@ -1640,7 +1752,7 @@ export const ResultProfile = {
   </table>
   <div class="footer">
     <span>Result Profile &nbsp;|&nbsp; ${d.batchDisplayName} &nbsp;|&nbsp; Exported ${dateStr} at ${timeStr}</span>
-    <span>${d.tableRows.length} student${d.tableRows.length!==1?'s':''} · ${d.labelledCols.length} test${d.labelledCols.length!==1?'s':''}</span>
+    <span>${d.tableRows.length} student${d.tableRows.length!==1?'s':''} · ${d.testGroups.length} test${d.testGroups.length!==1?'s':''}</span>
   </div>
   <div style="margin-top:8px;text-align:center;font-size:8.5px;color:#94a3b8">Powered by <strong style="color:#2563eb">Learnomist</strong></div>
   <div class="no-print" style="margin-top:14px;text-align:center">
