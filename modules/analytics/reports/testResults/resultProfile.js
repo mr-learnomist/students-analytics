@@ -1269,14 +1269,14 @@ export const ResultProfile = {
     // Count exactly how many <td>s the body renders per attempt
     const _visColspan = (_showMarks ? 1 : 0) + (_showStatus ? 1 : 0) + (_showDate ? 1 : 0) || 1;
 
-    // Row 1: Test group headers — colspan = totalAttempts × _visColspan
+    // Row 1: Test group headers — fixed cols rowspan="3", test colspan = totalAttempts × _visColspan
     let groupHeaderRow = `
       <tr class="rp-thead-group">
-        <th class="rp-th-left" colspan="1">#</th>
-        <th class="rp-th-left" colspan="1">Student ID</th>
-        <th class="rp-th-left" colspan="1">Student Name</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle">#</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle">Student ID</th>
+        <th class="rp-th-left" rowspan="3" style="vertical-align:middle">Student Name</th>
         ${testGroups.map((g, gi) => {
-          const s = colStats[gi];
+          const s             = colStats[gi];
           const totalAttempts = 1 + g.retests.length;
           const groupColspan  = totalAttempts * _visColspan;
           return `
@@ -1285,7 +1285,6 @@ export const ResultProfile = {
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
               <span style="font-size:11.5px;font-weight:800">${g.groupLabel}</span>
               ${g.original.date ? `<span style="font-size:9.5px;font-weight:500;opacity:.7">${formatDate(g.original.date)}</span>` : ''}
-              <!-- mini pass-rate bar using effective status -->
               <div style="width:100%;min-width:80px;margin-top:3px">
                 <div style="display:flex;justify-content:space-between;align-items:center;
                              margin-bottom:2px;gap:4px">
@@ -1305,10 +1304,9 @@ export const ResultProfile = {
         }).join('')}
       </tr>`;
 
-    // Row 2: Attempt labels — strict colspan="_visColspan" per attempt cell
+    // Row 2: NO fixed-col placeholders (rowspan="3" covers them) — strict colspan="_visColspan" per attempt
     let attemptHeaderRow = `
       <tr class="rp-thead-group" style="background:var(--surface3)">
-        <th colspan="1"></th><th colspan="1"></th><th colspan="1"></th>
         ${testGroups.map(g => {
           const attemptEntries = [g.original, ...g.retests];
           return attemptEntries.map((entry, ai) => {
@@ -1350,12 +1348,9 @@ export const ResultProfile = {
         </div>
       </div>`;
 
-    // Row 3: Sub-column labels (Marks / Status / Date) repeated per attempt per group
+    // Row 3: Sub-column labels — NO fixed-col placeholders (rowspan="3" covers them)
     let subHeaderRow = `
       <tr class="rp-thead-sub">
-        <th></th>
-        <th></th>
-        <th></th>
         ${testGroups.map(g => {
           const attemptEntries = [g.original, ...g.retests];
           return attemptEntries.map((entry, ai) => {
@@ -1470,8 +1465,10 @@ export const ResultProfile = {
       </div>`;
 
     area.innerHTML = statsHTML + testStatsStripHTML + infoBarHTML + `
-      <div class="rp-table-wrap" style="border-top:none;border-radius:0 0 12px 12px">
-        <table class="rp-table">
+      <div style="width:100%;overflow-x:scroll;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+                  border:1px solid var(--border);border-top:none;border-radius:0 0 12px 12px;
+                  scrollbar-width:thin;scrollbar-color:var(--border2) var(--surface2)">
+        <table class="rp-table" style="width:max-content;min-width:100%;border-collapse:collapse">
           <thead>
             ${groupHeaderRow}
             ${attemptHeaderRow}
