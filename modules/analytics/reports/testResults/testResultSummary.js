@@ -392,15 +392,18 @@ export const TestResultSummary = {
   mount(container) {
     if (!container) return;
     _injectStyles();
-    this._container     = container;
-    this._filterOpen    = false;
-    this._selCampus     = '';
-    this._selDiscipline = '';
-    this._selLevel      = '';
-    this._selSession    = '';
-    this._selSubject    = '';
-    this._selBatch      = '';
-    this._appliedFilter = null;
+    const isSameContainer = this._container === container;
+    this._container = container;
+    if (!isSameContainer) {
+      this._filterOpen    = false;
+      this._selCampus     = '';
+      this._selDiscipline = '';
+      this._selLevel      = '';
+      this._selSession    = '';
+      this._selSubject    = '';
+      this._selBatch      = '';
+      this._appliedFilter = null;
+    }
     this._render();
   },
 
