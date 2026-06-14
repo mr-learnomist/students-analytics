@@ -464,6 +464,23 @@ function _injectStyles() {
 .trs-table thead th.trs-th-left { z-index: 4; background: var(--surface2); }
 .trs-table thead tr.trs-thead-sub th.trs-th-left { background: var(--surface3); }
 
+/* ── Frozen header rows (vertical scroll) ── */
+.trs-table thead tr:first-child th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 41px;
+}
+.trs-table thead tr.trs-thead-sub th {
+  position: sticky;
+  top: 41px;
+  z-index: 3;
+}
+.trs-table thead tr:first-child th.trs-th-left,
+.trs-table thead tr.trs-thead-sub th.trs-th-left {
+  z-index: 5;
+}
+
 /* Shadow on Teacher column right edge to indicate freeze */
 .trs-table th.trs-th-left:nth-child(2),
 .trs-table td.trs-td-left:nth-child(2) {
@@ -845,6 +862,45 @@ export const TestResultSummary = {
     )));
     return chips.join('');
   },
+
+  /**
+   * Plain-text labels of the currently applied filters, grouped by
+   * category — used in PDF export header (no colors/HTML chips).
+   * Returns array of { label, values: string[] }
+   */
+  _appliedFilterSummary() {
+    const f = this._appliedFilter;
+    if (!f) return [];
+    const _arr = v => Array.isArray(v) ? v : (v ? [v] : []);
+    const groups = [];
+    const push = (label, values) => { if (values.length) groups.push({ label, values }); };
+
+    push('Campus', _arr(f.campus).map(id => {
+      const c = _getCampuses().find(c=>c.id===id);
+      return (c?.campusName||id).replace(/\s*campus$/i,'').trim();
+    }));
+    push('Discipline', _arr(f.discipline).map(id => {
+      const d = _getDisciplines().find(d=>d.id===id);
+      return d ? (d.abbreviation||d.fullName) : id;
+    }));
+    push('Level', _arr(f.level).map(id => {
+      const l = _getLevels().find(l=>l.id===id);
+      return l ? (l.levelName||l.name||id) : id;
+    }));
+    push('Session', _arr(f.session));
+    push('Subject', _arr(f.subject).map(id => {
+      const s = _getSubjects().find(s=>s.id===id);
+      return s ? (s.subjectCode||s.subjectName) : id;
+    }));
+    push('Batch', _arr(f.batch).map(id => {
+      const b = _getBatches().find(b=>b.id===id);
+      return b?.batchName||id;
+    }));
+    push('Status', _arr(f.status).map(s => s === 'active' ? 'Active' : 'Closed'));
+
+    return groups;
+  },
+
 
   // ── Bind multi-select dropdowns ──────────────────────────
   _bindMultiSelects(c) {
@@ -1361,7 +1417,7 @@ export const TestResultSummary = {
       </div>`;
 
     // ── Wire export buttons ───────────────────────────────────
-    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols };
+    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, filterSummary: this._appliedFilterSummary() };
     area.querySelector('#trsExportCSV')?.addEventListener('click', () => this._exportCSV(_exportData));
     area.querySelector('#trsExportPDF')?.addEventListener('click', () => this._exportPDF(_exportData));
 
@@ -1543,7 +1599,6 @@ export const TestResultSummary = {
       const bd = d.batchDataMap[batch.id];
       const teacherName  = _getTeacherName(batch);
       const batchDisplay = batch.batchName || (batch.batchNo ? `Batch ${String(batch.batchNo).padStart(2,'0')}` : batch.id);
-      const session      = batch.sessionPeriod || '—';
 
       const cells = d.unifiedGroups.map(ug => {
         const bgd = bd?.testGroups.find(g => g.groupLabel === ug.groupLabel);
@@ -1569,11 +1624,15 @@ export const TestResultSummary = {
       }).join('');
 
       return `<tr class="${ri%2===0?'even':'odd'}">
-        <td style="font-weight:600;white-space:nowrap">${batchDisplay}<br><span style="font-size:8px;color:#64748b">${session}</span></td>
-        <td style="white-space:nowrap">${teacherName}</td>
+        <td style="font-weight:600;white-space:nowrap">${batchDisplay}</td>
+        <td style="white-space:nowrap;text-align:left">${teacherName}</td>
         ${cells}
       </tr>`;
     }).join('');
+
+    const filterChipsHTML = (d.filterSummary || []).map(g =>
+      `<span class="filter-chip"><strong>${g.label}:</strong> ${g.values.join(', ')}</span>`
+    ).join('');
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
 <title>Test Result Summary</title>
@@ -1585,6 +1644,10 @@ export const TestResultSummary = {
   .header .sub{font-size:10px;color:#64748b;margin-top:2px}
   .header .right{text-align:right;font-size:10px;color:#64748b;line-height:1.6}
   .meta-bar{display:flex;align-items:center;gap:12px;padding:6px 12px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:9px;font-size:10px;color:#1e40af;font-weight:600}
+  .filters-bar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:9px;font-size:9px;color:#475569}
+  .filters-bar .filters-label{font-weight:700;color:#1e293b;margin-right:2px}
+  .filter-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;background:#eef2ff;color:#3730a3;font-weight:600;font-size:8.5px;white-space:nowrap}
+  .filter-chip strong{font-weight:700}
   table.main{width:100%;border-collapse:collapse;font-size:8.5px}
   table.main thead tr.g-row th{background:#1e40af;color:#fff;font-weight:700;padding:5px 7px;text-align:center;font-size:8.5px;white-space:nowrap}
   table.main thead tr.g-row th.left-col{text-align:left;background:#1e40af}
@@ -1599,6 +1662,7 @@ export const TestResultSummary = {
     <div class="right"><strong style="color:#1e293b">${dateStr}</strong><div>${timeStr}</div></div>
   </div>
   <div class="meta-bar">🏠 ${d.campusName} <span style="color:#bfdbfe">|</span> 📘 ${d.subjectDisplay}</div>
+  ${filterChipsHTML ? `<div class="filters-bar"><span class="filters-label">Filters:</span>${filterChipsHTML}</div>` : ''}
   <table class="main">
     <thead>
       <tr class="g-row">
