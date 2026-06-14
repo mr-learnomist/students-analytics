@@ -100,10 +100,45 @@ export const Sidebar = {
               <span class="sidebar-user-name" id="sidebarUserName">Loading…</span>
               <span class="sidebar-user-role" id="sidebarUserRole">—</span>
             </div>
-            <button class="sidebar-user-menu" title="Account menu">
+            <button class="sidebar-user-menu" title="Account menu" id="sidebarMenuBtn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
               </svg>
+            </button>
+          </div>
+
+          <!-- User context menu popup -->
+          <div class="sidebar-user-popup" id="sidebarUserPopup">
+            <div class="sup-header">
+              <div class="sup-avatar" id="supAvatar">UM</div>
+              <div class="sup-info">
+                <span class="sup-name" id="supName">Loading…</span>
+                <span class="sup-role" id="supRole">—</span>
+              </div>
+            </div>
+            <div class="sup-divider"></div>
+            <button class="sup-item" id="supProfileBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              My Profile
+            </button>
+            <button class="sup-item" id="supSettingsBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              Settings
+            </button>
+            <div class="sup-divider"></div>
+            <button class="sup-item sup-logout" id="supLogoutBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Logout
             </button>
           </div>
         </div>
@@ -153,14 +188,70 @@ export const Sidebar = {
         group.style.display = visible ? '' : 'none';
       });
     });
+
+    // ── User popup menu ─────────────────────────────────────────
+    const menuBtn   = el.querySelector('#sidebarMenuBtn');
+    const popup     = el.querySelector('#sidebarUserPopup');
+
+    const _togglePopup = (e) => {
+      e.stopPropagation();
+      // If sidebar is collapsed, expand it first so popup has room
+      sidebar.classList.remove('collapsed');
+      popup?.classList.toggle('open');
+    };
+
+    menuBtn?.addEventListener('click', _togglePopup);
+    // Also allow clicking on the whole user row to open popup
+    el.querySelector('#sidebarUser')?.addEventListener('click', _togglePopup);
+
+    // Close popup on outside click
+    document.addEventListener('click', (e) => {
+      if (!popup?.contains(e.target) && e.target !== menuBtn) {
+        popup?.classList.remove('open');
+      }
+    });
+
+    // Logout
+    el.querySelector('#supLogoutBtn')?.addEventListener('click', () => {
+      popup?.classList.remove('open');
+      // Fire a global logout event — app.js can listen
+      document.dispatchEvent(new CustomEvent('app:logout'));
+      // Fallback: clear auth + reload
+      try {
+        localStorage.removeItem('sms_auth');
+        localStorage.removeItem('sms_user');
+        sessionStorage.clear();
+      } catch(_) {}
+      // Short delay so any save-on-logout logic can run
+      setTimeout(() => {
+        window.location.href = '/index.html';
+      }, 120);
+    });
+
+    // Profile / Settings stubs
+    el.querySelector('#supProfileBtn')?.addEventListener('click', () => {
+      popup?.classList.remove('open');
+      document.dispatchEvent(new CustomEvent('app:navigate', { detail: { page: 'profile' } }));
+    });
+    el.querySelector('#supSettingsBtn')?.addEventListener('click', () => {
+      popup?.classList.remove('open');
+      document.dispatchEvent(new CustomEvent('app:navigate', { detail: { page: 'settings' } }));
+    });
   },
 
   updateUser(user) {
-    const name = document.getElementById('sidebarUserName');
-    const role = document.getElementById('sidebarUserRole');
+    const name   = document.getElementById('sidebarUserName');
+    const role   = document.getElementById('sidebarUserRole');
     const avatar = document.getElementById('sidebarAvatar');
-    if (name) name.textContent = user.name;
-    if (role) role.textContent = user.role;
-    if (avatar) avatar.textContent = user.avatar || user.name.slice(0, 2).toUpperCase();
+    const supName   = document.getElementById('supName');
+    const supRole   = document.getElementById('supRole');
+    const supAvatar = document.getElementById('supAvatar');
+    const initials  = user.avatar || (user.name || '').slice(0, 2).toUpperCase();
+    if (name)      name.textContent   = user.name;
+    if (role)      role.textContent   = user.role;
+    if (avatar)    avatar.textContent = initials;
+    if (supName)   supName.textContent   = user.name;
+    if (supRole)   supRole.textContent   = user.role;
+    if (supAvatar) supAvatar.textContent = initials;
   }
 };
