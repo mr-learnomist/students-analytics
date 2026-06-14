@@ -434,7 +434,46 @@ function _injectStyles() {
 .rp-chip-x { font-size:10px; cursor:pointer; opacity:.7; }
 .rp-chip-x:hover { opacity:1; }
 
-/* ── TRS table wrapper ── */
+/* ── Frozen left columns (Batch + Teacher) ── */
+.trs-table-scroll-container { isolation: isolate; }
+
+.trs-table th.trs-th-left,
+.trs-table td.trs-td-left {
+  position: sticky;
+  background: var(--surface);
+  z-index: 2;
+}
+
+/* Batch column — left:0 */
+.trs-table th.trs-th-left:nth-child(1),
+.trs-table td.trs-td-left:nth-child(1) {
+  left: 0;
+  min-width: 160px;
+  max-width: 200px;
+}
+
+/* Teacher column — left = Batch column width */
+.trs-table th.trs-th-left:nth-child(2),
+.trs-table td.trs-td-left:nth-child(2) {
+  left: 160px;
+  min-width: 150px;
+  border-right: 2px solid var(--border2);
+}
+
+/* Frozen header cells need higher z-index */
+.trs-table thead th.trs-th-left { z-index: 4; background: var(--surface2); }
+.trs-table thead tr.trs-thead-sub th.trs-th-left { background: var(--surface3); }
+
+/* Shadow on Teacher column right edge to indicate freeze */
+.trs-table th.trs-th-left:nth-child(2),
+.trs-table td.trs-td-left:nth-child(2) {
+  box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12);
+}
+
+/* Hover state: keep frozen bg solid */
+.trs-table tbody tr:hover td.trs-td-left {
+  background: var(--surface2);
+}
 .trs-table-wrap {
   border:1px solid var(--border);
   border-radius:12px;
@@ -1307,8 +1346,8 @@ export const TestResultSummary = {
         <table class="trs-table">
           <thead>
             <tr>
-              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;min-width:130px">Batch</th>
-              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;min-width:110px">Teacher</th>
+              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:160px;min-width:160px">Batch</th>
+              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:150px;min-width:150px">Teacher</th>
               ${groupHeaderCells}
             </tr>
             <tr class="trs-thead-sub">
