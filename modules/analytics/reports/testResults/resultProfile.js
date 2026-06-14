@@ -1457,10 +1457,14 @@ export const ResultProfile = {
                 : `<span style="color:var(--t3)">—</span>`;
             const leftBorder = isFirst ? 'border-left:2px solid var(--border2)' : '';
             const tdBg = isEffective && gc.attempts.length > 1 ? `background:${perfBg}` : '';
+
+            // Retest with no data at all (not absent, no marks) → all 3 cells blank
+            const isEmptyRetest = !isFirst && cell.marks == null && !cell.absent;
+
             return [
-              _showMarks  ? `<td style="white-space:nowrap;padding:8px 10px;vertical-align:middle;${leftBorder};${tdBg}">${marksDisplay}</td>` : '',
-              _showStatus ? `<td style="${!_showMarks && isFirst ? 'border-left:2px solid var(--border2);' : ''}padding:8px 10px;vertical-align:middle;${tdBg}">${this._statusBadge(cell.status)}</td>` : '',
-              _showDate   ? `<td style="${!_showMarks && !_showStatus && isFirst ? 'border-left:2px solid var(--border2);' : ''}font-size:11.5px;color:var(--t1);white-space:nowrap;padding:8px 10px;vertical-align:middle;${tdBg}">${cell.entry.date ? formatDate(cell.entry.date) : '—'}</td>` : '',
+              _showMarks  ? `<td style="white-space:nowrap;padding:8px 10px;vertical-align:middle;${leftBorder};${tdBg}">${isEmptyRetest ? '' : marksDisplay}</td>` : '',
+              _showStatus ? `<td style="${!_showMarks && isFirst ? 'border-left:2px solid var(--border2);' : ''}padding:8px 10px;vertical-align:middle;${tdBg}">${isEmptyRetest ? '' : this._statusBadge(cell.status)}</td>` : '',
+              _showDate   ? `<td style="${!_showMarks && !_showStatus && isFirst ? 'border-left:2px solid var(--border2);' : ''}font-size:11.5px;color:var(--t1);white-space:nowrap;padding:8px 10px;vertical-align:middle;${tdBg}">${isEmptyRetest ? '' : (cell.entry.date ? formatDate(cell.entry.date) : '—')}</td>` : '',
             ].join('');
           }).join('')
         ).join('')}
