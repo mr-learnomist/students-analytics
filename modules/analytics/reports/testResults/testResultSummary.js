@@ -81,12 +81,16 @@ function _getSubjectsFor({ disciplineId, levelId } = {}) {
 // ── Batch status helper ─────────────────────────────────────
 // Active = closeDate <= today (or no date)
 // Closed = closeDate > today
+// ── Batch status ────────────────────────────────────────────
+// Matches batch.js field: `endDate` (YYYY-MM-DD)
+// Active  = no endDate  OR  endDate > today  (batch still running)
+// Closed  = endDate <= today                 (batch has ended)
 function _batchStatus(batch) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const close = batch.closeDate || batch.endDate || batch.batchEndDate || '';
-  if (!close) return 'active';
-  const d = new Date(close); d.setHours(0,0,0,0);
-  return d <= today ? 'active' : 'closed';
+  const endDate = batch.endDate || '';
+  if (!endDate) return 'active'; // no end date → still active
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const end   = new Date(endDate); end.setHours(0, 0, 0, 0);
+  return end <= today ? 'closed' : 'active';
 }
 
 function _getBatchesFor({ disciplineId, levelId, subjectId, sessionId, campusId, status } = {}) {
