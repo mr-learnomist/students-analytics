@@ -140,13 +140,24 @@ function _injectStyles() {
 /* ── Table ── */
 .rp-table-wrap {
   overflow-x:auto;
+  overflow-y:auto;
+  max-height:calc(100vh - 320px);
   border:1px solid var(--border);
   border-radius:12px;
+  -webkit-overflow-scrolling:touch;
 }
+/* Custom scrollbar */
+.rp-table-wrap::-webkit-scrollbar { height:7px; width:7px; }
+.rp-table-wrap::-webkit-scrollbar-track { background:var(--surface2); border-radius:4px; }
+.rp-table-wrap::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
+.rp-table-wrap::-webkit-scrollbar-thumb:hover { background:var(--t4); }
 .rp-table {
-  width:100%; border-collapse:collapse; font-size:12.5px;
-  min-width:700px;
+  width:max-content; min-width:100%; border-collapse:collapse; font-size:12.5px;
 }
+/* Sticky thead — each row offset by the height of rows above it */
+.rp-table thead tr:nth-child(1) th { position:sticky; top:0;    z-index:3; }
+.rp-table thead tr:nth-child(2) th { position:sticky; top:56px; z-index:3; }
+.rp-table thead tr:nth-child(3) th { position:sticky; top:96px; z-index:3; }
 /* Group header row */
 .rp-table thead tr.rp-thead-group th {
   background:var(--surface2);
@@ -276,12 +287,13 @@ function _injectStyles() {
 
 /* ── Per-test stats strip ── */
 .rp-test-stats-strip {
-  display:flex; flex-wrap:wrap; gap:0;
+  display:flex; flex-wrap:nowrap; gap:0;
   background:var(--surface);
   border:1px solid var(--border);
   border-top:none;
   border-bottom:none;
-  overflow:hidden;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
 }
 .rp-test-stat-card {
   display:flex; flex-direction:column; gap:6px;
@@ -1457,8 +1469,8 @@ export const ResultProfile = {
       </div>`;
 
     area.innerHTML = statsHTML + testStatsStripHTML + infoBarHTML + `
-      <div class="rp-table-wrap" style="border-top:none;border-radius:0 0 12px 12px;overflow-x:auto;width:100%;max-width:100%">
-        <table class="rp-table" style="width:100%;table-layout:auto;min-width:unset">
+      <div class="rp-table-wrap" style="border-top:none;border-radius:0 0 12px 12px">
+        <table class="rp-table">
           <thead>
             ${groupHeaderRow}
             ${attemptHeaderRow}
