@@ -15,8 +15,9 @@ import { getSchedules, formatDate } from '../../../testing/testingService.js';
 // ── Base (fixed) columns — shown first in column manager ────
 // 'batch' is always visible and cannot be unchecked (locked).
 const TRS_BASE_COLS = [
-  { key: 'batch',   label: 'Batch',   locked: true  },
-  { key: 'teacher', label: 'Teacher', locked: false },
+  { key: 'batch',         label: 'Batch',         locked: true  },
+  { key: 'teacher',       label: 'Teacher',       locked: false },
+  { key: 'overallHealth', label: 'Overall Health', locked: false },
 ];
 
 // ── Sub-column definitions for column manager ──────────────
@@ -1244,7 +1245,15 @@ export const TestResultSummary = {
                  rateColor: rc, ...hl, students: studentIds.length };
       });
 
-      batchDataMap[batch.id] = { batch, testGroups, groupStats };
+      // ── Overall Health (mirrors resultProfile.js "Batch Performance") ──
+      // Equal-weight average of each DONE test's avgPct
+      const _doneAvgPcts = groupStats.filter(s => s.isDone && s.avgPct != null).map(s => s.avgPct / 100);
+      const batchAvgPct = _doneAvgPcts.length > 0
+        ? Math.round((_doneAvgPcts.reduce((a, b) => a + b, 0) / _doneAvgPcts.length) * 100)
+        : null;
+      const overallHealth = _health(batchAvgPct);
+
+      batchDataMap[batch.id] = { batch, testGroups, groupStats, batchAvgPct, overallHealth };
     });
 
     // ── Build unified column set ─────────────────────────────
@@ -1306,6 +1315,7 @@ export const TestResultSummary = {
     const _visibleCols = TRS_SUB_COLS.filter(sc => !_prefs.hidden.includes(sc.key));
     const STAT_COLS = _visibleCols.length || 1;
     const _showTeacher = !_prefs.hidden.includes('teacher');
+    const _showOverallHealth = !_prefs.hidden.includes('overallHealth');
 
     const groupHeaderCells = unifiedGroups.map(g => `
       <th colspan="${STAT_COLS}"
@@ -1416,6 +1426,10 @@ export const TestResultSummary = {
             <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${session} · ${bd.groupStats[0]?.students || 0} students</div>
           </td>
           ${_showTeacher ? `<td class="trs-td-left" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>` : ''}
+          ${_showOverallHealth ? `<td>${bd.batchAvgPct == null
+              ? `<span class="trs-pill" style="background:${bd.overallHealth.bg};color:${bd.overallHealth.color}">${bd.overallHealth.icon} ${bd.overallHealth.label}</span>`
+              : `<span class="trs-pill" style="background:${bd.overallHealth.bg};color:${bd.overallHealth.color}">${bd.overallHealth.icon} ${bd.overallHealth.label} (${bd.batchAvgPct}%)</span>`
+            }</td>` : ''}
           ${dataCells}
         </tr>`;
     }).join('');
@@ -1486,6 +1500,7 @@ export const TestResultSummary = {
             <tr>
               <th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:160px;min-width:160px">Batch</th>
               ${_showTeacher ? `<th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:150px;min-width:150px">Teacher</th>` : ''}
+              ${_showOverallHealth ? `<th rowspan="2" style="vertical-align:middle;width:130px;min-width:130px">Overall Health</th>` : ''}
               ${groupHeaderCells}
             </tr>
             <tr class="trs-thead-sub">
@@ -1493,13 +1508,13 @@ export const TestResultSummary = {
             </tr>
           </thead>
           <tbody>
-            ${bodyHTML || `<tr><td colspan="${(_showTeacher ? 2 : 1) + unifiedGroups.length * STAT_COLS}" style="text-align:center;padding:40px;color:var(--t3)">No data available</td></tr>`}
+            ${bodyHTML || `<tr><td colspan="${1 + (_showTeacher ? 1 : 0) + (_showOverallHealth ? 1 : 0) + unifiedGroups.length * STAT_COLS}" style="text-align:center;padding:40px;color:var(--t3)">No data available</td></tr>`}
           </tbody>
         </table>
       </div>`;
 
     // ── Wire export buttons ───────────────────────────────────
-    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, showTeacher: _showTeacher, filterSummary: this._appliedFilterSummary() };
+    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, showTeacher: _showTeacher, showOverallHealth: _showOverallHealth, filterSummary: this._appliedFilterSummary() };
     area.querySelector('#trsExportCSV')?.addEventListener('click', () => this._exportCSV(_exportData));
     area.querySelector('#trsExportPDF')?.addEventListener('click', () => this._exportPDF(_exportData));
 
@@ -1623,9 +1638,10 @@ export const TestResultSummary = {
   },
 
   // ── Build flat rows for CSV/PDF export ──────────────────────
-  _buildExportRows({ allBatches, batchDataMap, unifiedGroups, visibleCols, showTeacher }) {
+  _buildExportRows({ allBatches, batchDataMap, unifiedGroups, visibleCols, showTeacher, showOverallHealth }) {
     const cols = visibleCols || TRS_SUB_COLS; // [] = user hid all stat columns → export none
     const _showTeacher = showTeacher !== false; // default true if undefined
+    const _showOverallHealth = showOverallHealth !== false;
 
     const COL_LABELS = {
       pass:   'Pass',
@@ -1653,6 +1669,11 @@ export const TestResultSummary = {
           'Session': session,
         };
         if (_showTeacher) row['Teacher'] = teacherName;
+        if (_showOverallHealth) {
+          row['Overall Health'] = bd.batchAvgPct == null
+            ? bd.overallHealth.label
+            : `${bd.overallHealth.label} (${bd.batchAvgPct}%)`;
+        }
         row['Test'] = ug.groupLabel;
 
         let cellVals;
@@ -1724,6 +1745,7 @@ export const TestResultSummary = {
     const visibleCols = d.visibleCols || TRS_SUB_COLS; // [] = user hid all stat columns
     const STAT_COLS   = visibleCols.length || 1;
     const showTeacher = d.showTeacher !== false;
+    const showOverallHealth = d.showOverallHealth !== false;
 
     // ── Auto density: pick a column width based on how many stat
     // sub-columns each test occupies, so a single test-group doesn't
@@ -1745,7 +1767,7 @@ export const TestResultSummary = {
     // at 'tight' density, 28 at 'compact', 22 at 'normal'.
     // Batch ≈ 3 units, Teacher ≈ 2.2 units.
     const PAGE_BUDGET   = density === 'tight' ? 34 : density === 'compact' ? 28 : 22;
-    const leftColsUnits = 3 + (showTeacher ? 2.2 : 0);
+    const leftColsUnits = 3 + (showTeacher ? 2.2 : 0) + (showOverallHealth ? 2 : 0);
     const perTestUnits  = STAT_COLS; // each visible sub-col ≈ 1 unit
     const availUnits    = Math.max(PAGE_BUDGET - leftColsUnits, perTestUnits);
     const testsPerChunk = Math.max(1, Math.floor(availUnits / perTestUnits));
@@ -1811,9 +1833,14 @@ export const TestResultSummary = {
       const teacherName  = _getTeacherName(batch);
       const batchDisplay = batch.batchName || (batch.batchNo ? `Batch ${String(batch.batchNo).padStart(2,'0')}` : batch.id);
       const cells = groups.map(ug => _buildCellsForGroup(bd, ug)).join('');
+      const ohHex = { 'var(--green)':'#16a34a','var(--yellow)':'#d97706','var(--red)':'#dc2626','var(--t3)':'#64748b' }[bd?.overallHealth?.color] || '#64748b';
+      const ohCell = showOverallHealth
+        ? `<td style="white-space:nowrap;text-align:left"><span style="color:${ohHex};font-weight:700">${bd?.overallHealth?.label || '—'}${bd?.batchAvgPct != null ? ` (${bd.batchAvgPct}%)` : ''}</span></td>`
+        : '';
       return `<tr class="${ri%2===0?'even':'odd'}">
         <td style="font-weight:600;white-space:nowrap">${batchDisplay}</td>
         ${showTeacher ? `<td style="white-space:nowrap;text-align:left">${teacherName}</td>` : ''}
+        ${ohCell}
         ${cells}
       </tr>`;
     }).join('');
@@ -1826,6 +1853,7 @@ export const TestResultSummary = {
             <tr class="g-row">
               <th class="left-col" rowspan="2">Batch</th>
               ${showTeacher ? `<th class="left-col" rowspan="2">Teacher</th>` : ''}
+              ${showOverallHealth ? `<th class="left-col" rowspan="2">Overall Health</th>` : ''}
               ${_buildGroupThs(groups)}
             </tr>
             <tr class="s-row">${_buildSubThs(groups)}</tr>
