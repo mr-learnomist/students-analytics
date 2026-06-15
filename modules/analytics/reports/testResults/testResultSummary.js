@@ -55,6 +55,9 @@ function _getTeacherName(batch) {
   if (!t) return '—';
   return t.name || t.fullName || `${t.firstName||''} ${t.lastName||''}`.trim() || '—';
 }
+function _getTeacherId(batch) {
+  return batch.lecturerId || batch.teacherId || batch.instructorId || '';
+}
 
 function _getDisciplines(campusId = '') {
   const all = AppState.get('disciplines') || [];
@@ -717,7 +720,9 @@ export const TestResultSummary = {
   _selBatch:      [],
   _selStatus:     [],
   _selHealth:     [],
+  _selTeacher:    [],
   _appliedFilter: null,
+  _availableTeachers: [], // [{id, name}] — derived from last loaded table data
   _openMs:        null,  // id of currently open multi-select dropdown
 
   mount(container) {
@@ -733,7 +738,9 @@ export const TestResultSummary = {
     this._selBatch      = [];
     this._selStatus     = [];
     this._selHealth     = [];
+    this._selTeacher    = [];
     this._appliedFilter = null;
+    this._availableTeachers = [];
     this._openMs        = null;
     this._render();
   },
@@ -776,17 +783,17 @@ export const TestResultSummary = {
 
   _activeFilterCount() {
     if (!this._appliedFilter) return 0;
-    return ['campus','discipline','level','session','subject','batch','status','health']
+    return ['campus','discipline','level','session','subject','batch','status','health','teacher']
       .filter(k => { const v = this._appliedFilter[k]; return Array.isArray(v) ? v.length > 0 : !!v; }).length;
   },
 
   // ── Multi-select helper: render a custom dropdown ────────
   // opts: [{value, label}], selected: string[], stateKey: '_selXxx'
-  _msHTML(id, label, opts, selected, disabled = false) {
+  _msHTML(id, label, opts, selected, disabled = false, placeholderText = null) {
     const sel  = selected || [];
     const count = sel.length;
     const trigText = count === 0
-      ? `<span class="trs-ms-trigger-text placeholder">Select ${label}…</span>`
+      ? `<span class="trs-ms-trigger-text placeholder">${placeholderText || `Select ${label}…`}</span>`
       : count === 1
         ? `<span class="trs-ms-trigger-text">${(opts.find(o=>o.value===sel[0])?.label || sel[0])}</span>`
         : `<span class="trs-ms-trigger-text">${count} selected</span>`;
@@ -862,6 +869,10 @@ export const TestResultSummary = {
       { value: 'At Risk',  label: '▲ At Risk',  statusClass: 'trs-ms-health-risk' },
       { value: 'Danger',   label: '⚠ Danger',   statusClass: 'trs-ms-health-danger' },
     ];
+    // Teacher options are derived from the last loaded table data —
+    // populated after the table renders, so this list reflects the
+    // teachers actually present in the currently-applied result set.
+    const teacherOpts    = (this._availableTeachers || []).map(t => ({ value: t.id, label: t.name }));
 
     const chips = this._appliedChipsHTML();
 
@@ -875,6 +886,7 @@ export const TestResultSummary = {
         ${this._msHTML('trsSelBatch',      'Batch #',    batchOpts,      this._selBatch,      !this._selSubject.length)}
         ${this._msHTML('trsSelStatus',     'Status',     statusOpts,     this._selStatus)}
         ${this._msHTML('trsSelHealth',     'Health',     healthOpts,     this._selHealth)}
+        ${this._msHTML('trsSelTeacher',    'Teacher',    teacherOpts,    this._selTeacher,    !teacherOpts.length, !teacherOpts.length ? 'Apply filter first…' : null)}
       </div>
       <div class="rp-filter-actions">
         <button class="rp-filter-apply" id="trsApplyBtn">Apply Filter</button>
@@ -922,6 +934,10 @@ export const TestResultSummary = {
       const icon = h === 'Healthy' ? '●' : h === 'At Risk' ? '▲' : '⚠';
       chips.push(make(`${icon} ${h}`, hexColor));
     });
+    _arr(f.teacher).forEach(id => {
+      const t = (this._availableTeachers || []).find(t => t.id === id);
+      chips.push(make(t?.name || id, 'var(--violet,#8b5cf6)'));
+    });
     return chips.join('');
   },
 
@@ -960,6 +976,10 @@ export const TestResultSummary = {
     }));
     push('Status', _arr(f.status).map(s => s === 'active' ? 'Active' : 'Closed'));
     push('Health', _arr(f.health));
+    push('Teacher', _arr(f.teacher).map(id => {
+      const t = (this._availableTeachers || []).find(t => t.id === id);
+      return t?.name || id;
+    }));
 
     return groups;
   },
@@ -976,6 +996,7 @@ export const TestResultSummary = {
       { id: 'trsSelBatch',      key: '_selBatch',        cascadeReset: [] },
       { id: 'trsSelStatus',     key: '_selStatus',       cascadeReset: [] },
       { id: 'trsSelHealth',     key: '_selHealth',       cascadeReset: [] },
+      { id: 'trsSelTeacher',    key: '_selTeacher',      cascadeReset: [] },
     ];
 
     const _closeAll = (exceptId) => {
@@ -1119,6 +1140,7 @@ export const TestResultSummary = {
         batch:      [...this._selBatch],
         status:     [...this._selStatus],
         health:     [...this._selHealth],
+        teacher:    [...this._selTeacher],
       };
       this._filterOpen = false;
       this._renderTable(c);
@@ -1129,11 +1151,12 @@ export const TestResultSummary = {
     });
     c.querySelector('#trsClearBtn')?.addEventListener('click', () => {
       this._selCampus = this._selDiscipline = this._selLevel =
-        this._selSession = this._selSubject = this._selBatch = this._selStatus = this._selHealth = [];
+        this._selSession = this._selSubject = this._selBatch = this._selStatus = this._selHealth = this._selTeacher = [];
       // Re-assign as new arrays
       this._selCampus = []; this._selDiscipline = []; this._selLevel = [];
-      this._selSession = []; this._selSubject = []; this._selBatch = []; this._selStatus = []; this._selHealth = [];
+      this._selSession = []; this._selSubject = []; this._selBatch = []; this._selStatus = []; this._selHealth = []; this._selTeacher = [];
       this._appliedFilter = null;
+      this._availableTeachers = [];
       this._renderTable(c);
       this._rerenderFilterBody(c);
       this._rerenderFilterToggle(c);
@@ -1170,7 +1193,8 @@ export const TestResultSummary = {
     const f = this._appliedFilter;
     const _hasAny = (v) => Array.isArray(v) ? v.length > 0 : !!v;
 
-    if (!f || (!_hasAny(f.campus) && !_hasAny(f.subject) && !_hasAny(f.batch) && !_hasAny(f.status) && !_hasAny(f.health))) {
+    if (!f || (!_hasAny(f.campus) && !_hasAny(f.subject) && !_hasAny(f.batch) && !_hasAny(f.status) && !_hasAny(f.health) && !_hasAny(f.teacher))) {
+      this._availableTeachers = [];
       area.innerHTML = `
         <div class="trs-empty">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
@@ -1278,12 +1302,32 @@ export const TestResultSummary = {
     });
 
     // ── Apply Health filter (based on computed Overall Health) ──
-    let visibleBatches = allBatches;
+    let healthFiltered = allBatches;
     if (f.health?.length) {
-      visibleBatches = allBatches.filter(batch => {
+      healthFiltered = allBatches.filter(batch => {
         const bd = batchDataMap[batch.id];
         return bd && f.health.includes(bd.overallHealth.label);
       });
+    }
+
+    // ── Derive Teacher options from the currently-scoped batches ──
+    // (before applying the Teacher filter itself) so the dropdown
+    // always lists teachers present in the loaded data — populated
+    // for the NEXT time the filter panel is opened.
+    const _teacherMap  = new Map();
+    healthFiltered.forEach(batch => {
+      const tid = _getTeacherId(batch);
+      if (!tid || _teacherMap.has(tid)) return;
+      const name = _getTeacherName(batch);
+      if (name && name !== '—') _teacherMap.set(tid, name);
+    });
+    this._availableTeachers = Array.from(_teacherMap, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // ── Apply Teacher filter ────────────────────────────────────
+    let visibleBatches = healthFiltered;
+    if (f.teacher?.length) {
+      visibleBatches = healthFiltered.filter(batch => f.teacher.includes(_getTeacherId(batch)));
     }
 
     if (!visibleBatches.length) {
@@ -1293,7 +1337,7 @@ export const TestResultSummary = {
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
           </svg>
           <p>No batches found</p>
-          <span>No batches match the selected Health filter.</span>
+          <span>No batches match the selected filters.</span>
         </div>`;
       return;
     }
