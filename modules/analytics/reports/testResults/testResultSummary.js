@@ -442,7 +442,7 @@ function _injectStyles() {
 .rp-chip-x { font-size:10px; cursor:pointer; opacity:.7; }
 .rp-chip-x:hover { opacity:1; }
 
-/* ── Frozen left columns (Batch + Teacher) ── */
+/* ── Frozen left columns (Batch + Teacher + Overall Health) ── */
 .trs-table-scroll-container { isolation: isolate; }
 
 .trs-table th.trs-th-left,
@@ -452,7 +452,7 @@ function _injectStyles() {
   z-index: 2;
 }
 
-/* Batch column — left:0 */
+/* Batch column — always left:0 */
 .trs-table th.trs-th-left:nth-child(1),
 .trs-table td.trs-td-left:nth-child(1) {
   left: 0;
@@ -460,18 +460,30 @@ function _injectStyles() {
   max-width: 200px;
 }
 
-/* Teacher column — left = Batch column width */
-.trs-table th.trs-th-left:nth-child(2),
-.trs-table td.trs-td-left:nth-child(2) {
+/* Teacher column (when present) — left = Batch column width */
+.trs-table:not(.trs-table--no-teacher) th.trs-th-left:nth-child(2),
+.trs-table:not(.trs-table--no-teacher) td.trs-td-left:nth-child(2) {
   left: 160px;
   min-width: 150px;
-  border-right: 2px solid var(--border2);
 }
 
-/* When Teacher column is hidden, Batch becomes the sole frozen column */
-.trs-table.trs-table--no-teacher th.trs-th-left:nth-child(1),
-.trs-table.trs-table--no-teacher td.trs-td-left:nth-child(1) {
+/* Overall Health column — position depends on whether Teacher is shown */
+.trs-table:not(.trs-table--no-teacher) th.trs-th-left:nth-child(3),
+.trs-table:not(.trs-table--no-teacher) td.trs-td-left:nth-child(3) {
+  left: 310px; /* 160 (Batch) + 150 (Teacher) */
+  min-width: 130px;
+}
+.trs-table--no-teacher th.trs-th-left:nth-child(2),
+.trs-table--no-teacher td.trs-td-left:nth-child(2) {
+  left: 160px; /* Batch only before this */
+  min-width: 130px;
+}
+
+/* Right border + shadow on the LAST frozen column (applied via .trs-freeze-end class) */
+.trs-table th.trs-freeze-end,
+.trs-table td.trs-freeze-end {
   border-right: 2px solid var(--border2);
+  box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12);
 }
 
 /* Frozen header cells need higher z-index */
@@ -493,16 +505,6 @@ function _injectStyles() {
 .trs-table thead tr:first-child th.trs-th-left,
 .trs-table thead tr.trs-thead-sub th.trs-th-left {
   z-index: 5;
-}
-
-/* Shadow on Teacher column right edge to indicate freeze */
-.trs-table th.trs-th-left:nth-child(2),
-.trs-table td.trs-td-left:nth-child(2) {
-  box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12);
-}
-.trs-table.trs-table--no-teacher th.trs-th-left:nth-child(1),
-.trs-table.trs-table--no-teacher td.trs-td-left:nth-child(1) {
-  box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12);
 }
 
 /* Hover state: keep frozen bg solid */
@@ -1316,6 +1318,8 @@ export const TestResultSummary = {
     const STAT_COLS = _visibleCols.length || 1;
     const _showTeacher = !_prefs.hidden.includes('teacher');
     const _showOverallHealth = !_prefs.hidden.includes('overallHealth');
+    // Determine which frozen column is last (gets the right border/shadow)
+    const _freezeEndCol = _showOverallHealth ? 'overallHealth' : _showTeacher ? 'teacher' : 'batch';
 
     const groupHeaderCells = unifiedGroups.map(g => `
       <th colspan="${STAT_COLS}"
@@ -1364,22 +1368,31 @@ export const TestResultSummary = {
         }
 
         // Group not scheduled for this batch at all (e.g. another batch
-        // has more tests than this one) → N/A, not "no data"
+        // has more tests than this one) → N/A only in Health column,
+        // other visible columns show a plain dash for a cleaner look
         if (!bgd) {
-          return _visibleCols.map((sc, i) =>
-            i === 0
-              ? `<td class="${sepClass}" style="${sepStyle}"><span class="trs-na-pill">N/A</span></td>`
-              : `<td><span class="trs-na-pill">N/A</span></td>`
-          ).join('');
+          return _visibleCols.map((sc, i) => {
+            const cls   = i === 0 ? sepClass : '';
+            const style = i === 0 ? ` style="${sepStyle}"` : '';
+            const content = sc.key === 'health'
+              ? `<span class="trs-na-pill">N/A</span>`
+              : `<span style="color:var(--t4)">—</span>`;
+            return `<td class="${cls}"${style}>${content}</td>`;
+          }).join('');
         }
 
-        // Group scheduled for this batch, but no results entered yet
+        // Group scheduled for this batch, but no results entered yet →
+        // Pending only in Health column, other visible columns show a
+        // plain dash for a cleaner look
         if (!s.isDone) {
-          return _visibleCols.map((sc, i) =>
-            i === 0
-              ? `<td class="${sepClass}" style="${sepStyle}"><span class="trs-pending-pill">· Pending</span></td>`
-              : `<td><span class="trs-pending-pill">· Pending</span></td>`
-          ).join('');
+          return _visibleCols.map((sc, i) => {
+            const cls   = i === 0 ? sepClass : '';
+            const style = i === 0 ? ` style="${sepStyle}"` : '';
+            const content = sc.key === 'health'
+              ? `<span class="trs-pending-pill">· Pending</span>`
+              : `<span style="color:var(--t4)">—</span>`;
+            return `<td class="${cls}"${style}>${content}</td>`;
+          }).join('');
         }
 
         const hl = _health(s.avgPct);
@@ -1418,15 +1431,15 @@ export const TestResultSummary = {
 
       return `
         <tr style="${rowBg}">
-          <td class="trs-td-left" style="font-weight:700;color:var(--t1);white-space:nowrap">
+          <td class="trs-td-left${_freezeEndCol==='batch' ? ' trs-freeze-end' : ''}" style="font-weight:700;color:var(--t1);white-space:nowrap">
             <div style="display:flex;align-items:center;gap:6px">
               <span style="font-size:12.5px;font-weight:700">${batchDisplay}</span>
               ${statusPill}
             </div>
             <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${session} · ${bd.groupStats[0]?.students || 0} students</div>
           </td>
-          ${_showTeacher ? `<td class="trs-td-left" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>` : ''}
-          ${_showOverallHealth ? `<td>${bd.batchAvgPct == null
+          ${_showTeacher ? `<td class="trs-td-left${_freezeEndCol==='teacher' ? ' trs-freeze-end' : ''}" style="font-size:12px;color:var(--t2);white-space:nowrap">${teacherName}</td>` : ''}
+          ${_showOverallHealth ? `<td class="trs-td-left${_freezeEndCol==='overallHealth' ? ' trs-freeze-end' : ''}">${bd.batchAvgPct == null
               ? `<span class="trs-pill" style="background:${bd.overallHealth.bg};color:${bd.overallHealth.color}">${bd.overallHealth.icon} ${bd.overallHealth.label}</span>`
               : `<span class="trs-pill" style="background:${bd.overallHealth.bg};color:${bd.overallHealth.color}">${bd.overallHealth.icon} ${bd.overallHealth.label} (${bd.batchAvgPct}%)</span>`
             }</td>` : ''}
@@ -1498,9 +1511,9 @@ export const TestResultSummary = {
         <table class="trs-table${_showTeacher ? '' : ' trs-table--no-teacher'}">
           <thead>
             <tr>
-              <th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:160px;min-width:160px">Batch</th>
-              ${_showTeacher ? `<th class="trs-th-left" rowspan="2" style="vertical-align:middle;width:150px;min-width:150px">Teacher</th>` : ''}
-              ${_showOverallHealth ? `<th rowspan="2" style="vertical-align:middle;width:130px;min-width:130px">Overall Health</th>` : ''}
+              <th class="trs-th-left${_freezeEndCol==='batch' ? ' trs-freeze-end' : ''}" rowspan="2" style="vertical-align:middle;width:160px;min-width:160px">Batch</th>
+              ${_showTeacher ? `<th class="trs-th-left${_freezeEndCol==='teacher' ? ' trs-freeze-end' : ''}" rowspan="2" style="vertical-align:middle;width:150px;min-width:150px">Teacher</th>` : ''}
+              ${_showOverallHealth ? `<th class="trs-th-left${_freezeEndCol==='overallHealth' ? ' trs-freeze-end' : ''}" rowspan="2" style="vertical-align:middle;width:130px;min-width:130px">Overall Health</th>` : ''}
               ${groupHeaderCells}
             </tr>
             <tr class="trs-thead-sub">
@@ -1807,10 +1820,16 @@ export const TestResultSummary = {
         return `<td style="border-left:2px solid ${bc}">—</td>`;
       }
       if (!bgd) {
-        return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>N/A</td>`).join('');
+        return visibleCols.map((sc, i) => {
+          const style = i === 0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"';
+          return `<td${style}>${sc.key === 'health' ? 'N/A' : '—'}</td>`;
+        }).join('');
       }
       if (!s.isDone) {
-        return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>Pending</td>`).join('');
+        return visibleCols.map((sc, i) => {
+          const style = i === 0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"';
+          return `<td${style}>${sc.key === 'health' ? 'Pending' : '—'}</td>`;
+        }).join('');
       }
       const hl = _health(s.avgPct);
       const rateColor = s.rate >= 80 ? '#16a34a' : s.rate >= 60 ? '#d97706' : s.appeared > 0 ? '#dc2626' : '#94a3b8';
