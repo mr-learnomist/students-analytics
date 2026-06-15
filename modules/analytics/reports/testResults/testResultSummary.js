@@ -358,6 +358,9 @@ function _injectStyles() {
 /* Status option pills */
 .trs-ms-status-active { color:var(--green); }
 .trs-ms-status-closed { color:var(--yellow); }
+.trs-ms-health-healthy { color:var(--green); }
+.trs-ms-health-risk    { color:var(--yellow); }
+.trs-ms-health-danger  { color:var(--red); }
 
 /* ── Filter bar card — sticky to page-content scroll container ── */
 .rp-filter-card {
@@ -713,6 +716,7 @@ export const TestResultSummary = {
   _selSubject:    [],
   _selBatch:      [],
   _selStatus:     [],
+  _selHealth:     [],
   _appliedFilter: null,
   _openMs:        null,  // id of currently open multi-select dropdown
 
@@ -728,6 +732,7 @@ export const TestResultSummary = {
     this._selSubject    = [];
     this._selBatch      = [];
     this._selStatus     = [];
+    this._selHealth     = [];
     this._appliedFilter = null;
     this._openMs        = null;
     this._render();
@@ -771,7 +776,7 @@ export const TestResultSummary = {
 
   _activeFilterCount() {
     if (!this._appliedFilter) return 0;
-    return ['campus','discipline','level','session','subject','batch','status']
+    return ['campus','discipline','level','session','subject','batch','status','health']
       .filter(k => { const v = this._appliedFilter[k]; return Array.isArray(v) ? v.length > 0 : !!v; }).length;
   },
 
@@ -852,6 +857,11 @@ export const TestResultSummary = {
       { value: 'active', label: '● Active',  statusClass: 'trs-ms-status-active' },
       { value: 'closed', label: '◐ Closed',  statusClass: 'trs-ms-status-closed' },
     ];
+    const healthOpts     = [
+      { value: 'Healthy',  label: '● Healthy',  statusClass: 'trs-ms-health-healthy' },
+      { value: 'At Risk',  label: '▲ At Risk',  statusClass: 'trs-ms-health-risk' },
+      { value: 'Danger',   label: '⚠ Danger',   statusClass: 'trs-ms-health-danger' },
+    ];
 
     const chips = this._appliedChipsHTML();
 
@@ -864,6 +874,7 @@ export const TestResultSummary = {
         ${this._msHTML('trsSelSubject',    'Subject',    subjectOpts,    this._selSubject,    !hasCampus)}
         ${this._msHTML('trsSelBatch',      'Batch #',    batchOpts,      this._selBatch,      !this._selSubject.length)}
         ${this._msHTML('trsSelStatus',     'Status',     statusOpts,     this._selStatus)}
+        ${this._msHTML('trsSelHealth',     'Health',     healthOpts,     this._selHealth)}
       </div>
       <div class="rp-filter-actions">
         <button class="rp-filter-apply" id="trsApplyBtn">Apply Filter</button>
@@ -906,6 +917,11 @@ export const TestResultSummary = {
       s === 'active' ? '● Active' : '◐ Closed',
       s === 'active' ? 'var(--green)' : 'var(--yellow)'
     )));
+    _arr(f.health).forEach(h => {
+      const hexColor = h === 'Healthy' ? 'var(--green)' : h === 'At Risk' ? 'var(--yellow)' : 'var(--red)';
+      const icon = h === 'Healthy' ? '●' : h === 'At Risk' ? '▲' : '⚠';
+      chips.push(make(`${icon} ${h}`, hexColor));
+    });
     return chips.join('');
   },
 
@@ -943,6 +959,7 @@ export const TestResultSummary = {
       return b?.batchName||id;
     }));
     push('Status', _arr(f.status).map(s => s === 'active' ? 'Active' : 'Closed'));
+    push('Health', _arr(f.health));
 
     return groups;
   },
@@ -958,6 +975,7 @@ export const TestResultSummary = {
       { id: 'trsSelSubject',    key: '_selSubject',      cascadeReset: ['_selBatch'] },
       { id: 'trsSelBatch',      key: '_selBatch',        cascadeReset: [] },
       { id: 'trsSelStatus',     key: '_selStatus',       cascadeReset: [] },
+      { id: 'trsSelHealth',     key: '_selHealth',       cascadeReset: [] },
     ];
 
     const _closeAll = (exceptId) => {
@@ -1100,6 +1118,7 @@ export const TestResultSummary = {
         subject:    [...this._selSubject],
         batch:      [...this._selBatch],
         status:     [...this._selStatus],
+        health:     [...this._selHealth],
       };
       this._filterOpen = false;
       this._renderTable(c);
@@ -1110,10 +1129,10 @@ export const TestResultSummary = {
     });
     c.querySelector('#trsClearBtn')?.addEventListener('click', () => {
       this._selCampus = this._selDiscipline = this._selLevel =
-        this._selSession = this._selSubject = this._selBatch = this._selStatus = [];
+        this._selSession = this._selSubject = this._selBatch = this._selStatus = this._selHealth = [];
       // Re-assign as new arrays
       this._selCampus = []; this._selDiscipline = []; this._selLevel = [];
-      this._selSession = []; this._selSubject = []; this._selBatch = []; this._selStatus = [];
+      this._selSession = []; this._selSubject = []; this._selBatch = []; this._selStatus = []; this._selHealth = [];
       this._appliedFilter = null;
       this._renderTable(c);
       this._rerenderFilterBody(c);
@@ -1151,7 +1170,7 @@ export const TestResultSummary = {
     const f = this._appliedFilter;
     const _hasAny = (v) => Array.isArray(v) ? v.length > 0 : !!v;
 
-    if (!f || (!_hasAny(f.campus) && !_hasAny(f.subject) && !_hasAny(f.batch) && !_hasAny(f.status))) {
+    if (!f || (!_hasAny(f.campus) && !_hasAny(f.subject) && !_hasAny(f.batch) && !_hasAny(f.status) && !_hasAny(f.health))) {
       area.innerHTML = `
         <div class="trs-empty">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
@@ -1258,6 +1277,27 @@ export const TestResultSummary = {
       batchDataMap[batch.id] = { batch, testGroups, groupStats, batchAvgPct, overallHealth };
     });
 
+    // ── Apply Health filter (based on computed Overall Health) ──
+    let visibleBatches = allBatches;
+    if (f.health?.length) {
+      visibleBatches = allBatches.filter(batch => {
+        const bd = batchDataMap[batch.id];
+        return bd && f.health.includes(bd.overallHealth.label);
+      });
+    }
+
+    if (!visibleBatches.length) {
+      area.innerHTML = `
+        <div class="trs-empty">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          </svg>
+          <p>No batches found</p>
+          <span>No batches match the selected Health filter.</span>
+        </div>`;
+      return;
+    }
+
     // ── Build unified column set ─────────────────────────────
     // Union of ALL batches' test groups by groupLabel — batches may have
     // a different number of tests (e.g. one batch has Test 1-2, another
@@ -1271,7 +1311,8 @@ export const TestResultSummary = {
       return [0, m ? parseInt(m[1], 10) : 0];
     };
     const _unifiedMap = new Map(); // groupLabel → group shape { groupLabel, isMock, retests:[] }
-    Object.values(batchDataMap).forEach(bd => {
+    visibleBatches.forEach(batch => {
+      const bd = batchDataMap[batch.id];
       bd.testGroups.forEach(g => {
         if (!_unifiedMap.has(g.groupLabel)) {
           _unifiedMap.set(g.groupLabel, { groupLabel: g.groupLabel, isMock: g.isMock, retests: g.retests });
@@ -1307,7 +1348,7 @@ export const TestResultSummary = {
           ? `${subjectObj.subjectCode} — ${subjectObj.subjectName||''}`.trim()
           : subjectObj.subjectName || '—')
       : 'All Subjects';
-    const resolvedCampusId = (Array.isArray(f.campus) ? f.campus[0] : f.campus) || allBatches[0]?.campusId;
+    const resolvedCampusId = (Array.isArray(f.campus) ? f.campus[0] : f.campus) || visibleBatches[0]?.campusId;
     const campusObj = _getCampuses().find(c => c.id === resolvedCampusId) || {};
     const campusName = (campusObj.campusName || '').replace(/\s*campus$/i,'').trim() || '—';
 
@@ -1342,7 +1383,7 @@ export const TestResultSummary = {
     }).join('');
 
     // Body rows
-    const bodyHTML = allBatches.map((batch, bi) => {
+    const bodyHTML = visibleBatches.map((batch, bi) => {
       const bd = batchDataMap[batch.id];
       if (!bd) return '';
       const teacherName   = _getTeacherName(batch);
@@ -1462,7 +1503,7 @@ export const TestResultSummary = {
         </svg>
         <span style="font-size:12.5px;font-weight:700;color:var(--blue)">${subjectDisplay}</span>
         <span style="font-size:11.5px;color:var(--t3);margin-left:8px">
-          ${allBatches.length} batch${allBatches.length !== 1 ? 'es' : ''} · ${unifiedGroups.length} test${unifiedGroups.length !== 1 ? 's' : ''}
+          ${visibleBatches.length} batch${visibleBatches.length !== 1 ? 'es' : ''} · ${unifiedGroups.length} test${unifiedGroups.length !== 1 ? 's' : ''}
           · effective stats (latest attempt per student)
         </span>
         <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
@@ -1527,7 +1568,7 @@ export const TestResultSummary = {
       </div>`;
 
     // ── Wire export buttons ───────────────────────────────────
-    const _exportData = { allBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, showTeacher: _showTeacher, showOverallHealth: _showOverallHealth, filterSummary: this._appliedFilterSummary() };
+    const _exportData = { allBatches: visibleBatches, batchDataMap, unifiedGroups, campusName, subjectDisplay, visibleCols: _visibleCols, showTeacher: _showTeacher, showOverallHealth: _showOverallHealth, filterSummary: this._appliedFilterSummary() };
     area.querySelector('#trsExportCSV')?.addEventListener('click', () => this._exportCSV(_exportData));
     area.querySelector('#trsExportPDF')?.addEventListener('click', () => this._exportPDF(_exportData));
 
