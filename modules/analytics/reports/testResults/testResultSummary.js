@@ -1725,16 +1725,47 @@ export const TestResultSummary = {
     const STAT_COLS   = visibleCols.length || 1;
     const showTeacher = d.showTeacher !== false;
 
-    const groupThs = d.unifiedGroups.map(g => {
+    // ── Auto density: pick a column width based on how many stat
+    // sub-columns each test occupies, so a single test-group doesn't
+    // get squeezed unreadably even before we start chunking.
+    // 'normal' (>=80px/col), 'compact' (~62px/col), 'tight' (~48px/col)
+    const density = STAT_COLS <= 2 ? 'normal' : STAT_COLS <= 4 ? 'compact' : 'tight';
+    const DENSITY_CFG = {
+      normal:  { fontSize: '9px',   thPad: '5px 8px',  tdPad: '5px 8px',  subFont: '8px'   },
+      compact: { fontSize: '8.5px', thPad: '4px 6px',  tdPad: '4px 6px',  subFont: '7.5px' },
+      tight:   { fontSize: '8px',   thPad: '3px 4px',  tdPad: '3px 4px',  subFont: '7px'   },
+    };
+    const dc = DENSITY_CFG[density];
+
+    // ── Horizontal pagination: split unifiedGroups into chunks so
+    // each printed page (A4 landscape, ~277mm usable width) stays
+    // within a comfortable column budget. Frozen left columns
+    // (Batch + Teacher) repeat on every page.
+    // Rough budget in "stat-column widths": landscape page ≈ 34 units
+    // at 'tight' density, 28 at 'compact', 22 at 'normal'.
+    // Batch ≈ 3 units, Teacher ≈ 2.2 units.
+    const PAGE_BUDGET   = density === 'tight' ? 34 : density === 'compact' ? 28 : 22;
+    const leftColsUnits = 3 + (showTeacher ? 2.2 : 0);
+    const perTestUnits  = STAT_COLS; // each visible sub-col ≈ 1 unit
+    const availUnits    = Math.max(PAGE_BUDGET - leftColsUnits, perTestUnits);
+    const testsPerChunk = Math.max(1, Math.floor(availUnits / perTestUnits));
+
+    const chunks = [];
+    for (let i = 0; i < d.unifiedGroups.length; i += testsPerChunk) {
+      chunks.push(d.unifiedGroups.slice(i, i + testsPerChunk));
+    }
+    const multiPage = chunks.length > 1;
+
+    const _buildGroupThs = (groups) => groups.map(g => {
       const bg    = g.isMock ? '#ede9fe' : '#dbeafe';
       const color = g.isMock ? '#5b21b6' : '#1e40af';
       return `<th colspan="${STAT_COLS}" style="text-align:center;background:${bg};color:${color};
-                font-size:9px;font-weight:700;padding:5px 8px;
+                font-size:${dc.fontSize};font-weight:700;padding:${dc.thPad};
                 border-left:2px solid ${g.isMock ? '#c4b5fd' : '#93c5fd'};
                 white-space:nowrap">${g.groupLabel}</th>`;
     }).join('');
 
-    const subThs = d.unifiedGroups.map(g => {
+    const _buildSubThs = (groups) => groups.map(g => {
       const bc = g.isMock ? '#c4b5fd' : '#93c5fd';
       if (!visibleCols.length) {
         return `<th style="border-left:2px solid ${bc}">—</th>`;
@@ -1744,48 +1775,66 @@ export const TestResultSummary = {
       ).join('');
     }).join('');
 
-    const bodyRows = d.allBatches.map((batch, ri) => {
+    const _buildCellsForGroup = (bd, ug) => {
+      const bgd = bd?.testGroups.find(g => g.groupLabel === ug.groupLabel);
+      const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
+      const bc  = ug.isMock ? '#c4b5fd' : '#93c5fd';
+      if (!visibleCols.length) {
+        if (!bgd) return `<td style="border-left:2px solid ${bc};color:#94a3b8">N/A</td>`;
+        if (!s.isDone) return `<td style="border-left:2px solid ${bc};color:#94a3b8">Pending</td>`;
+        return `<td style="border-left:2px solid ${bc}">—</td>`;
+      }
+      if (!bgd) {
+        return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>N/A</td>`).join('');
+      }
+      if (!s.isDone) {
+        return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>Pending</td>`).join('');
+      }
+      const hl = _health(s.avgPct);
+      const rateColor = s.rate >= 80 ? '#16a34a' : s.rate >= 60 ? '#d97706' : s.appeared > 0 ? '#dc2626' : '#94a3b8';
+      const hlHex = { 'var(--green)':'#16a34a','var(--yellow)':'#d97706','var(--red)':'#dc2626','var(--t3)':'#64748b' }[hl.color] || '#64748b';
+      const cellVals = {
+        pass:   s.p,
+        fail:   s.f,
+        absent: s.ab,
+        avg:    s.avg != null ? s.avg : '—',
+        rate:   s.appeared > 0 ? `<span style="color:${rateColor};font-weight:700">${s.rate}%</span>` : '—',
+        health: `<span style="color:${hlHex};font-weight:700">${hl.label}${s.avgPct != null ? ` (${s.avgPct}%)` : ''}</span>`,
+      };
+      return visibleCols.map((sc, i) =>
+        `<td${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>${cellVals[sc.key]}</td>`
+      ).join('');
+    };
+
+    const _buildBodyRows = (groups) => d.allBatches.map((batch, ri) => {
       const bd = d.batchDataMap[batch.id];
       const teacherName  = _getTeacherName(batch);
       const batchDisplay = batch.batchName || (batch.batchNo ? `Batch ${String(batch.batchNo).padStart(2,'0')}` : batch.id);
-
-      const cells = d.unifiedGroups.map(ug => {
-        const bgd = bd?.testGroups.find(g => g.groupLabel === ug.groupLabel);
-        const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
-        const bc  = ug.isMock ? '#c4b5fd' : '#93c5fd';
-        if (!visibleCols.length) {
-          if (!bgd) return `<td style="border-left:2px solid ${bc};color:#94a3b8">N/A</td>`;
-          if (!s.isDone) return `<td style="border-left:2px solid ${bc};color:#94a3b8">Pending</td>`;
-          return `<td style="border-left:2px solid ${bc}">—</td>`;
-        }
-        if (!bgd) {
-          return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>N/A</td>`).join('');
-        }
-        if (!s.isDone) {
-          return visibleCols.map((sc, i) => `<td${i===0 ? ` style="border-left:2px solid ${bc};color:#94a3b8"` : ' style="color:#94a3b8"'}>Pending</td>`).join('');
-        }
-        const hl = _health(s.avgPct);
-        const rateColor = s.rate >= 80 ? '#16a34a' : s.rate >= 60 ? '#d97706' : s.appeared > 0 ? '#dc2626' : '#94a3b8';
-        const hlHex = { 'var(--green)':'#16a34a','var(--yellow)':'#d97706','var(--red)':'#dc2626','var(--t3)':'#64748b' }[hl.color] || '#64748b';
-        const cellVals = {
-          pass:   s.p,
-          fail:   s.f,
-          absent: s.ab,
-          avg:    s.avg != null ? s.avg : '—',
-          rate:   s.appeared > 0 ? `<span style="color:${rateColor};font-weight:700">${s.rate}%</span>` : '—',
-          health: `<span style="color:${hlHex};font-weight:700">${hl.label}${s.avgPct != null ? ` (${s.avgPct}%)` : ''}</span>`,
-        };
-        return visibleCols.map((sc, i) =>
-          `<td${i===0 ? ` style="border-left:2px solid ${bc}"` : ''}>${cellVals[sc.key]}</td>`
-        ).join('');
-      }).join('');
-
+      const cells = groups.map(ug => _buildCellsForGroup(bd, ug)).join('');
       return `<tr class="${ri%2===0?'even':'odd'}">
         <td style="font-weight:600;white-space:nowrap">${batchDisplay}</td>
         ${showTeacher ? `<td style="white-space:nowrap;text-align:left">${teacherName}</td>` : ''}
         ${cells}
       </tr>`;
     }).join('');
+
+    const _buildTablePage = (groups, pageIdx) => `
+      <div class="table-page"${pageIdx < chunks.length - 1 ? ' style="page-break-after:always"' : ''}>
+        ${multiPage ? `<div class="page-label">Tests: ${groups.map(g=>g.groupLabel).join(', ')} &nbsp;(Page ${pageIdx+1} of ${chunks.length})</div>` : ''}
+        <table class="main">
+          <thead>
+            <tr class="g-row">
+              <th class="left-col" rowspan="2">Batch</th>
+              ${showTeacher ? `<th class="left-col" rowspan="2">Teacher</th>` : ''}
+              ${_buildGroupThs(groups)}
+            </tr>
+            <tr class="s-row">${_buildSubThs(groups)}</tr>
+          </thead>
+          <tbody>${_buildBodyRows(groups)}</tbody>
+        </table>
+      </div>`;
+
+    const tablePagesHTML = chunks.map((groups, i) => _buildTablePage(groups, i)).join('');
 
     const filterChipsHTML = (d.filterSummary || []).map(g =>
       `<span class="filter-chip"><strong>${g.label}:</strong> ${g.values.join(', ')}</span>`
@@ -1805,14 +1854,21 @@ export const TestResultSummary = {
   .filters-bar .filters-label{font-weight:700;color:#1e293b;margin-right:2px}
   .filter-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;background:#eef2ff;color:#3730a3;font-weight:600;font-size:8.5px;white-space:nowrap}
   .filter-chip strong{font-weight:700}
-  table.main{width:100%;border-collapse:collapse;font-size:8.5px}
-  table.main thead tr.g-row th{background:#1e40af;color:#fff;font-weight:700;padding:5px 7px;text-align:center;font-size:8.5px;white-space:nowrap}
-  table.main thead tr.g-row th.left-col{text-align:left;background:#1e40af}
-  table.main thead tr.s-row th{background:#1e3a8a;color:#93c5fd;font-size:7.5px;font-weight:600;padding:4px 7px;text-transform:uppercase;letter-spacing:.4px;text-align:center;white-space:nowrap}
+  .page-label{font-size:9.5px;font-weight:700;color:#1e40af;margin-bottom:5px;padding:4px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;display:inline-block}
+  .table-page{margin-bottom:14px}
+  table.main{width:100%;border-collapse:collapse;font-size:${dc.fontSize};table-layout:fixed}
+  table.main thead tr.g-row th{background:#1e40af;color:#fff;font-weight:700;padding:${dc.thPad};text-align:center;font-size:${dc.fontSize};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table.main thead tr.g-row th.left-col{text-align:left;background:#1e40af;width:110px}
+  table.main thead tr.s-row th{background:#1e3a8a;color:#93c5fd;font-size:${dc.subFont};font-weight:600;padding:${dc.tdPad};text-transform:uppercase;letter-spacing:.3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   table.main tbody tr.even{background:#fff}table.main tbody tr.odd{background:#f8faff}
-  table.main tbody td{padding:4px 6px;border-bottom:1px solid #e2e8f0;vertical-align:middle;color:#334155;text-align:center}
+  table.main tbody td{padding:${dc.tdPad};border-bottom:1px solid #e2e8f0;vertical-align:middle;color:#334155;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .footer{margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:8.5px;color:#94a3b8}
-  @media print{body{padding:8px 10px}@page{size:A4 landscape;margin:6mm}.no-print{display:none}}
+  @media print{
+    body{padding:8px 10px}
+    @page{size:A4 landscape;margin:6mm}
+    .no-print{display:none}
+    .table-page{margin-bottom:0}
+  }
 </style></head><body>
   <div class="header">
     <div><div class="title">Test Result Summary Report</div><div class="sub">Batch-wise test performance overview</div></div>
@@ -1820,20 +1876,10 @@ export const TestResultSummary = {
   </div>
   <div class="meta-bar">🏠 ${d.campusName} <span style="color:#bfdbfe">|</span> 📘 ${d.subjectDisplay}</div>
   ${filterChipsHTML ? `<div class="filters-bar"><span class="filters-label">Filters:</span>${filterChipsHTML}</div>` : ''}
-  <table class="main">
-    <thead>
-      <tr class="g-row">
-        <th class="left-col" rowspan="2">Batch</th>
-        ${showTeacher ? `<th class="left-col" rowspan="2">Teacher</th>` : ''}
-        ${groupThs}
-      </tr>
-      <tr class="s-row">${subThs}</tr>
-    </thead>
-    <tbody>${bodyRows}</tbody>
-  </table>
+  ${tablePagesHTML}
   <div class="footer">
     <span>Test Result Summary &nbsp;|&nbsp; Exported ${dateStr} at ${timeStr}</span>
-    <span>${d.allBatches.length} batch${d.allBatches.length!==1?'es':''} · ${d.unifiedGroups.length} test${d.unifiedGroups.length!==1?'s':''}</span>
+    <span>${d.allBatches.length} batch${d.allBatches.length!==1?'es':''} · ${d.unifiedGroups.length} test${d.unifiedGroups.length!==1?'s':''}${multiPage ? ` · ${chunks.length} pages` : ''}</span>
   </div>
   <div style="margin-top:8px;text-align:center;font-size:8.5px;color:#94a3b8">Powered by <strong style="color:#2563eb">Learnomist</strong></div>
   <div class="no-print" style="margin-top:14px;text-align:center">
