@@ -40,6 +40,70 @@ const LP_TEST_TYPES = new Set(['test', 'midterm', 'mock']);
 const SOURCE_LP       = 'lp';       // derived from lecture plan
 const SOURCE_SCHEDULE = 'schedule'; // from testingService schedules
 
+// ── Column definitions (for the column manager / selector) ────
+// 'locked' columns are always visible and cannot be hidden.
+// Order here = display order in the table and in exports.
+const AC_COLUMNS = [
+  { key: 'date',    label: 'Date',       locked: true  },
+  { key: 'name',    label: 'Assessment', locked: true  },
+  { key: 'batch',   label: 'Batch',      locked: false },
+  { key: 'campus',  label: 'Campus',     locked: false },
+  { key: 'subject', label: 'Subject',    locked: false },
+  { key: 'room',    label: 'Room',       locked: false },
+  { key: 'teacher', label: 'Teacher',    locked: false },
+  { key: 'status',  label: 'Status',     locked: false },
+  { key: 'source',  label: 'Source',     locked: false },
+];
+const AC_SORTABLE_COLS = new Set(['date', 'name', 'batch', 'campus', 'subject', 'status', 'source']);
+const AC_COL_PREF_KEY  = 'ac_col_prefs';
+
+function _getAcColPrefs() {
+  try {
+    const raw = AppState.get(AC_COL_PREF_KEY);
+    if (raw && Array.isArray(raw.hidden)) return raw;
+  } catch (e) {}
+  return { hidden: [] };
+}
+function _saveAcColPrefs(prefs) { AppState.set(AC_COL_PREF_KEY, prefs); }
+
+// ── Room overrides ──────────────────────────────────────────
+// Room is a manually-entered field (not derived from any data
+// source), kept per-entry so it survives re-renders / re-filters.
+const AC_ROOM_PREF_KEY = 'ac_room_overrides';
+
+function _getRoomOverrides() {
+  try {
+    const raw = AppState.get(AC_ROOM_PREF_KEY);
+    if (raw && typeof raw === 'object') return raw;
+  } catch (e) {}
+  return {};
+}
+function _saveRoomOverrides(map) { AppState.set(AC_ROOM_PREF_KEY, map); }
+function _getRoomForEntry(entryId) {
+  const map = _getRoomOverrides();
+  return map[entryId] || '';
+}
+function _setRoomForEntry(entryId, value) {
+  const map = _getRoomOverrides();
+  const v = (value || '').trim();
+  if (v) map[entryId] = v; else delete map[entryId];
+  _saveRoomOverrides(map);
+}
+
+// ── Teacher lookup ──────────────────────────────────────────
+// Same resolution rule used by the Test Result Summary report:
+// a batch's assigned teacher can live under any of these keys
+// depending on how the batch record was created.
+function _getTeacherName(batch) {
+  if (!batch) return '—';
+  const tid = batch.lecturerId || batch.teacherId || batch.instructorId || '';
+  if (!tid) return '—';
+  const pool = AppState.get('lecturers') || AppState.get('teachers') || AppState.get('instructors') || [];
+  const t = pool.find(x => x.id === tid);
+  if (!t) return '—';
+  return t.name || t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || '—';
+}
+
 // ── LP Topic validator ────────────────────────────────────────
 // Checks whether a row's topic string is actually a test label
 // (e.g. "Test", "Test 1", "Midterm", "Mock", "Mock 2") rather
@@ -350,6 +414,27 @@ export const AssessmentCalendarTab = {
               </svg>
               PDF
             </button>
+            <div class="ac-col-mgr-wrap" id="acColMgrWrap">
+              <button class="ac-col-mgr-btn" id="acColMgrBtn" title="Show / hide columns">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="18" rx="1"/>
+                  <rect x="14" y="3" width="7" height="18" rx="1"/>
+                </svg>
+              </button>
+              <div class="ac-col-mgr-panel" id="acColMgrPanel">
+                <div class="ac-col-mgr-head">
+                  <span class="ac-col-mgr-title">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                    </svg>
+                    Columns
+                  </span>
+                  <button class="ac-col-mgr-link" id="acColMgrShowAll">Show All</button>
+                </div>
+                <div class="ac-col-mgr-list" id="acColMgrList"></div>
+                <div class="ac-col-mgr-foot">Selected columns are also used for export</div>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -643,6 +728,9 @@ export const AssessmentCalendarTab = {
         btn.style.background  = 'var(--surface2)';
       });
     });
+
+    // ── Column manager ──────────────────────────────────────────
+    this._wireColManager(container);
 
     // ── Multi-select dropdowns ─────────────────────────────────
     this._initMultiSelect(container, {
@@ -1084,6 +1172,8 @@ export const AssessmentCalendarTab = {
 
   // ── Table view renderer ──────────────────────────────────────
   _renderTable(entries, wrap) {
+    const visibleCols = this._visibleAcCols();
+
     // Sort entries
     const sorted = [...entries].sort((a, b) => {
       let va, vb;
@@ -1133,24 +1223,96 @@ export const AssessmentCalendarTab = {
     const thStyle = `padding:9px 12px;font-size:11.5px;font-weight:700;color:var(--t3);
                      text-align:left;text-transform:uppercase;letter-spacing:.04em;
                      cursor:pointer;user-select:none;white-space:nowrap;`;
+    const thStyleStatic = `padding:9px 12px;font-size:11.5px;font-weight:700;color:var(--t3);
+                     text-align:left;text-transform:uppercase;letter-spacing:.04em;
+                     cursor:default;user-select:none;white-space:nowrap;`;
+
+    // Header cells — built from the columns the column manager has visible
+    const headerCells = visibleCols.map(col => {
+      if (AC_SORTABLE_COLS.has(col.key)) {
+        return `<th data-sort="${col.key}" style="${thStyle}">${col.label} ${arrow(col.key)}</th>`;
+      }
+      return `<th style="${thStyleStatic}">${col.label}</th>`;
+    }).join('');
+
+    // Body cells — one branch per column key, given the row's context
+    const buildCell = (col, ctx) => {
+      switch (col.key) {
+        case 'date':
+          return `<td style="padding:9px 12px;font-size:12.5px;color:var(--t1);white-space:nowrap;font-weight:600">
+                     ${ctx.entry.date ? formatDate(ctx.entry.date) : '—'}
+                   </td>`;
+        case 'name':
+          return `<td style="padding:9px 12px;font-size:12.5px;color:var(--t1);max-width:200px">
+                     ${ctx.entry.testName || '—'}
+                   </td>`;
+        case 'batch':
+          return `<td style="padding:9px 12px;font-size:12.5px;color:var(--t2)">
+                     ${this._batchNumberFromName(ctx.batchName)}
+                   </td>`;
+        case 'campus':
+          return `<td style="padding:9px 12px;font-size:12px;color:var(--t3)">${ctx.campusLabel}</td>`;
+        case 'subject':
+          return `<td style="padding:9px 12px;font-size:12px;color:var(--t3);max-width:180px;
+                              overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ctx.subjectLabel}</td>`;
+        case 'room':
+          return `<td class="ac-room-cell" data-entry-id="${ctx.entry.id}" style="padding:9px 12px;font-size:12.5px;color:var(--t2)">
+                     <span class="ac-room-display">
+                       <span class="ac-room-text">${ctx.roomVal || '—'}</span>
+                       <button class="ac-room-edit-btn" data-entry-id="${ctx.entry.id}" type="button" title="Edit room">
+                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                           <path d="M12 20h9"/>
+                           <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                         </svg>
+                       </button>
+                     </span>
+                   </td>`;
+        case 'teacher':
+          return `<td style="padding:9px 12px;font-size:12px;color:var(--t3)">${ctx.teacherName}</td>`;
+        case 'status':
+          return `<td style="padding:9px 12px">
+                     <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;
+                                  font-weight:700;color:${ctx.sMeta.color};background:${ctx.sMeta.bg}">
+                       ${ctx.sMeta.label}
+                     </span>
+                   </td>`;
+        case 'source':
+          return `<td style="padding:9px 12px">
+                     <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;
+                                  font-weight:700;
+                                  color:${ctx.isLP ? 'var(--violet)' : 'var(--blue)'};
+                                  background:${ctx.isLP ? 'var(--violet-dim)' : 'var(--blue-dim)'}">
+                       ${ctx.isLP ? 'Lecture Plan' : 'Scheduled'}
+                     </span>
+                   </td>`;
+        default:
+          return `<td></td>`;
+      }
+    };
 
     const rows = sorted.length === 0
-      ? `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--t4);font-size:13px">
+      ? `<tr><td colspan="${visibleCols.length}" style="padding:40px;text-align:center;color:var(--t4);font-size:13px">
            No assessments found for this week.
          </td></tr>`
       : sorted.map((entry, i) => {
           const isLP    = entry.source === SOURCE_LP;
           const status  = isLP ? getLPEntryStatus(entry) : getScheduleStatus(entry);
           const sMeta     = STATUS_META[status] || STATUS_META.draft;
+          const batchObj  = AppState.findById('batches', entry.batchId);
           const batchName = isLP
             ? (entry.batchName || '—')
-            : ((function(){ var _b = AppState.findById("batches", entry.batchId); return _b ? _b.batchName : undefined; }()) || '—');
+            : ((batchObj && batchObj.batchName) || '—');
           // Subject: first segment of batch name (e.g. "SBR-JUNE-26-01" → "SBR")
           const subjectLabel = this._subjectFromBatch(batchName);
           // Campus
-          const batchObj  = AppState.findById('batches', entry.batchId);
           const campusObj = (batchObj && batchObj.campusId) ? AppState.findById('campuses', batchObj.campusId) : null;
           const campusLabel = campusObj ? campusObj.campusName : '—';
+          // Teacher assigned to the batch
+          const teacherName = _getTeacherName(batchObj);
+          // Room — manually entered, blank until set via the edit icon
+          const roomVal = _getRoomForEntry(entry.id);
+
+          const ctx = { entry, isLP, sMeta, batchName, subjectLabel, campusLabel, teacherName, roomVal };
 
           const zebra = i % 2 === 0 ? 'var(--surface)' : 'var(--surface2)';
 
@@ -1158,32 +1320,7 @@ export const AssessmentCalendarTab = {
             <tr class="ac-table-row" data-id="${entry.id}" data-src="${entry.source}"
                 style="background:${zebra};cursor:pointer;transition:background .1s;
                        border-bottom:1px solid var(--border)">
-              <td style="padding:9px 12px;font-size:12.5px;color:var(--t1);white-space:nowrap;font-weight:600">
-                ${entry.date ? formatDate(entry.date) : '—'}
-              </td>
-              <td style="padding:9px 12px;font-size:12.5px;color:var(--t1);max-width:200px">
-                ${isLP ? `<span style="font-size:9.5px;font-weight:800;background:var(--violet);color:#fff;
-                            border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:middle">LP</span>` : ''}
-                ${entry.testName || '—'}
-              </td>
-              <td style="padding:9px 12px;font-size:12.5px;color:var(--t2)">${batchName}</td>
-              <td style="padding:9px 12px;font-size:12px;color:var(--t3)">${campusLabel}</td>
-              <td style="padding:9px 12px;font-size:12px;color:var(--t3);max-width:180px;
-                         overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subjectLabel}</td>
-              <td style="padding:9px 12px">
-                <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;
-                             font-weight:700;color:${sMeta.color};background:${sMeta.bg}">
-                  ${sMeta.label}
-                </span>
-              </td>
-              <td style="padding:9px 12px">
-                <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;
-                             font-weight:700;
-                             color:${isLP ? 'var(--violet)' : 'var(--blue)'};
-                             background:${isLP ? 'var(--violet-dim)' : 'var(--blue-dim)'}">
-                  ${isLP ? 'Lecture Plan' : 'Scheduled'}
-                </span>
-              </td>
+              ${visibleCols.map(col => buildCell(col, ctx)).join('')}
             </tr>
           `;
         }).join('');
@@ -1194,13 +1331,7 @@ export const AssessmentCalendarTab = {
           <table id="acTable" style="width:100%;border-collapse:collapse">
             <thead>
               <tr style="background:var(--surface2);border-bottom:2px solid var(--border)">
-                <th data-sort="date"   style="${thStyle}">Date ${arrow('date')}</th>
-                <th data-sort="name"   style="${thStyle}">Assessment ${arrow('name')}</th>
-                <th data-sort="batch"  style="${thStyle}">Batch ${arrow('batch')}</th>
-                <th data-sort="campus" style="${thStyle}">Campus ${arrow('campus')}</th>
-                <th data-sort="subject" style="${thStyle}">Subject ${arrow('subject')}</th>
-                <th data-sort="status" style="${thStyle}">Status ${arrow('status')}</th>
-                <th data-sort="source" style="${thStyle}">Source ${arrow('source')}</th>
+                ${headerCells}
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -1249,6 +1380,36 @@ export const AssessmentCalendarTab = {
           const sch = getSchedules().find(s => s.id === id);
           if (sch) this._showDetail(sch);
         }
+      });
+    });
+
+    // Room column → click edit icon to type a room inline
+    wrap.querySelectorAll('.ac-room-edit-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const id   = btn.dataset.entryId;
+        const cell = btn.closest('.ac-room-cell');
+        if (!cell) return;
+        const current = _getRoomForEntry(id);
+        cell.innerHTML = `
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="text" class="ac-room-input" value="${current.replace(/"/g, '&quot;')}" placeholder="Room"/>
+            <button class="ac-room-save-btn" type="button" title="Save">✓</button>
+          </div>`;
+        const input = cell.querySelector('.ac-room-input');
+        const saveBtn = cell.querySelector('.ac-room-save-btn');
+        input.addEventListener('click', ev => ev.stopPropagation());
+        input.focus();
+        input.select();
+        const save = () => {
+          _setRoomForEntry(id, input.value);
+          this._renderTable(entries, wrap);
+        };
+        saveBtn.addEventListener('click', ev => { ev.stopPropagation(); save(); });
+        input.addEventListener('keydown', ev => {
+          if (ev.key === 'Enter')  { ev.stopPropagation(); save(); }
+          if (ev.key === 'Escape') { ev.stopPropagation(); this._renderTable(entries, wrap); }
+        });
       });
     });
   },
@@ -1551,6 +1712,104 @@ export const AssessmentCalendarTab = {
     return batchName.split('-')[0] || '—';
   },
 
+  // ── Extract just the trailing batch number from a batch code ──
+  // Rule: take everything after the LAST dash in the batch name.
+  // "MA1-JUNE-26-06" → "06" | "SBR-JUNE-26-01" → "01"
+  _batchNumberFromName(batchName) {
+    if (!batchName || batchName === '—') return '—';
+    const parts = batchName.split('-');
+    return parts[parts.length - 1] || batchName;
+  },
+
+  // ── Which columns are currently visible (column manager state) ─
+  _visibleAcCols() {
+    const prefs = _getAcColPrefs();
+    return AC_COLUMNS.filter(c => c.locked || !prefs.hidden.includes(c.key));
+  },
+
+  // ── Column manager (show/hide columns; drives the table AND export) ─
+  _wireColManager(container) {
+    const btn   = container.querySelector('#acColMgrBtn');
+    const panel = container.querySelector('#acColMgrPanel');
+    const list  = container.querySelector('#acColMgrList');
+    if (!btn || !panel || !list) return;
+
+    const _positionPanel = () => {
+      const r      = btn.getBoundingClientRect();
+      const panelW = 200;
+      let left = r.right - panelW;
+      left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+      panel.style.left = left + 'px';
+      panel.style.top  = (r.bottom + 6) + 'px';
+    };
+
+    const _renderList = () => {
+      const prefs = _getAcColPrefs();
+      list.innerHTML = '';
+
+      AC_COLUMNS.forEach(col => {
+        const isVisible = col.locked ? true : !prefs.hidden.includes(col.key);
+        const item = document.createElement('div');
+        item.className = 'ac-col-mgr-item' + (isVisible ? '' : ' col-hidden') + (col.locked ? ' col-locked' : '');
+        item.innerHTML =
+          `<input type="checkbox" class="ac-col-mgr-chk" id="ac_chk_${col.key}"${isVisible ? ' checked' : ''}${col.locked ? ' disabled title="Always visible"' : ''}/>` +
+          `<label class="ac-col-mgr-lbl" for="ac_chk_${col.key}">${col.label}${col.locked ? ' <span class="ac-col-mgr-lock">🔒</span>' : ''}</label>`;
+        if (!col.locked) {
+          item.querySelector('.ac-col-mgr-chk').addEventListener('change', e => {
+            const p = _getAcColPrefs();
+            if (e.target.checked) {
+              p.hidden = p.hidden.filter(h => h !== col.key);
+              item.classList.remove('col-hidden');
+            } else {
+              if (!p.hidden.includes(col.key)) p.hidden.push(col.key);
+              item.classList.add('col-hidden');
+            }
+            _saveAcColPrefs(p);
+            panel.classList.remove('open');
+            this._renderCalendar();
+          });
+        }
+        list.appendChild(item);
+      });
+    };
+
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        panel.classList.remove('open');
+      } else {
+        _renderList();
+        _positionPanel();
+        panel.classList.add('open');
+        btn.style.borderColor = 'var(--blue)';
+        btn.style.color = 'var(--blue)';
+        btn.style.background = 'var(--blue-dim)';
+      }
+    });
+
+    container.querySelector('#acColMgrShowAll')?.addEventListener('click', () => {
+      _saveAcColPrefs({ hidden: [] });
+      panel.classList.remove('open');
+      this._renderCalendar();
+    });
+
+    const _outsideClick = e => {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.classList.remove('open');
+        btn.style.borderColor = 'var(--border)';
+        btn.style.color = 'var(--t3)';
+        btn.style.background = 'var(--surface2)';
+      }
+    };
+    document.addEventListener('click', _outsideClick);
+    this._unsubscribers.push(() => document.removeEventListener('click', _outsideClick));
+
+    window.addEventListener('scroll', () => {
+      if (panel.classList.contains('open')) _positionPanel();
+    }, true);
+  },
+
   // ── Build readable filter labels for export header ───────────
   _getFilterLabels() {
     const labels = [];
@@ -1626,12 +1885,14 @@ export const AssessmentCalendarTab = {
 
   // ── Build flat rows for export ───────────────────────────────
   _buildExportRows(entries) {
+    const visibleCols = this._visibleAcCols();
+
     return entries.map(entry => {
       const isLP   = entry.source === SOURCE_LP;
       const status = isLP ? getLPEntryStatus(entry) : getScheduleStatus(entry);
       const sMeta  = STATUS_META[status] || STATUS_META.draft;
 
-      // Batch: full batch code (e.g. "F6-JUNE-26-01")
+      // Batch: full batch code (e.g. "F6-JUNE-26-01") — used to derive Subject
       const batchObj  = AppState.findById('batches', entry.batchId);
       const batchCode = isLP
         ? (entry.batchName || '—')
@@ -1641,21 +1902,32 @@ export const AssessmentCalendarTab = {
       // "SBR-JUNE-26-01" → "SBR" | "F6-JUNE-26-01" → "F6"
       const subjectName = this._subjectFromBatch(batchCode);
 
-      const campus = (() => {
-        const b = batchObj || AppState.findById('batches', entry.batchId);
-        return (b && b.campusId) ? AppState.findById('campuses', b.campusId) : null;
-      })();
+      const campus = (batchObj && batchObj.campusId) ? AppState.findById('campuses', batchObj.campusId) : null;
 
-      return {
-        'Campus':     campus ? campus.campusName : '—',
-        'Date':       entry.date     || '—',
-        'Assessment': entry.testName || '—',
-        'Type':       entry.testType || '—',
-        'Batch':      batchCode,
-        'Subject':    subjectName,
-        'Status':     sMeta.label || status,
-        'Source':     isLP ? 'Lecture Plan' : 'Scheduled',
+      // Teacher assigned to the batch
+      const teacherName = _getTeacherName(batchObj);
+
+      // Room — manually entered on screen, blank until set
+      const roomVal = _getRoomForEntry(entry.id);
+
+      // Build every possible value once, keyed by column key, then pick
+      // only the ones the column manager currently has visible — this
+      // keeps export columns in sync with what's shown on screen.
+      const valuesByKey = {
+        date:    entry.date     || '—',
+        name:    entry.testName || '—',
+        batch:   this._batchNumberFromName(batchCode),
+        campus:  campus ? campus.campusName : '—',
+        subject: subjectName,
+        room:    roomVal || '—',
+        teacher: teacherName,
+        status:  sMeta.label || status,
+        source:  isLP ? 'Lecture Plan' : 'Scheduled',
       };
+
+      const row = {};
+      visibleCols.forEach(col => { row[col.label] = valuesByKey[col.key]; });
+      return row;
     });
   },
 
@@ -1670,34 +1942,12 @@ export const AssessmentCalendarTab = {
     const headers = Object.keys(data[0]);
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-    const rangeLabel = this._dateMode === 'today'
-      ? `Today — ${formatDate(this._toDateStr(new Date()))}`
-      : this._dateMode === 'week'
-      ? this._weekRangeLabel(this._weekStart)
-      : (this._dateFrom || this._dateTo
-          ? `${formatDate(this._dateFrom) || 'Start'} → ${formatDate(this._dateTo) || 'End'}`
-          : 'All dates');
-
-    const filterLabels = this._getFilterLabels();
-    const filterLine   = filterLabels.length
-      ? filterLabels.map(f => `${f.key}: ${f.val}`).join(' | ')
-      : 'No filters applied — showing all data';
-
-    const metaLines = [
-      `Assessment Calendar Report`,
-      `Generated: ${dateStr} ${timeStr}`,
-      `Date Range: ${rangeLabel}`,
-      `Filters: ${filterLine}`,
-      `Total Entries: ${entries.length}`,
-      '',
-    ].join('\n');
-
+    // Sheet starts directly at the column headings — no report title,
+    // generated-on line, or filter summary above the data.
     const csvRows = [
-      metaLines,
       headers.join(','),
-      ...data.map(r => headers.map(h => `"${(r[h] || '').replace(/"/g, '""')}"`).join(',')),
+      ...data.map(r => headers.map(h => `"${String(r[h] || '').replace(/"/g, '""')}"`).join(',')),
     ];
 
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1732,12 +1982,13 @@ export const AssessmentCalendarTab = {
     const fromSch = entries.filter(e => e.source === SOURCE_SCHEDULE).length;
 
     const colWidths = {
-      'Campus':     75,
       'Date':       72,
       'Assessment': 110,
-      'Type':       55,
-      'Batch':      105,
+      'Batch':      55,
+      'Campus':     75,
       'Subject':    60,
+      'Room':       55,
+      'Teacher':    90,
       'Status':     60,
       'Source':     70,
     };
@@ -2224,6 +2475,87 @@ export const AssessmentCalendarTab = {
         transition:all .12s; white-space:nowrap;
       }
       .ac-clear-all-btn:hover { border-color:var(--red); color:var(--red); }
+
+      /* Column manager */
+      .ac-col-mgr-wrap  { position:relative; }
+      .ac-col-mgr-btn {
+        display:inline-flex; align-items:center; justify-content:center;
+        width:30px; height:30px; border-radius:8px;
+        border:1px solid var(--border); background:var(--surface2);
+        color:var(--t3); cursor:pointer; transition:all .15s;
+      }
+      .ac-col-mgr-btn:hover { border-color:var(--blue); color:var(--blue); }
+      .ac-col-mgr-panel {
+        position:fixed; z-index:9999;
+        width:200px; background:var(--surface);
+        border:1px solid var(--border); border-radius:10px;
+        box-shadow:0 8px 32px rgba(0,0,0,.18);
+        display:none; flex-direction:column; overflow:hidden;
+        max-height:min(340px, calc(100vh - 24px));
+      }
+      .ac-col-mgr-panel.open { display:flex; }
+      .ac-col-mgr-head {
+        padding:9px 13px 7px;
+        border-bottom:1px solid var(--border);
+        display:flex; align-items:center;
+        justify-content:space-between; flex-shrink:0;
+      }
+      .ac-col-mgr-title {
+        font-size:11.5px; font-weight:700; color:var(--t1);
+        display:flex; align-items:center; gap:6px;
+      }
+      .ac-col-mgr-link {
+        font-size:11px; color:var(--blue); cursor:pointer;
+        background:none; border:none; padding:0;
+        text-decoration:underline; font-weight:600;
+      }
+      .ac-col-mgr-link:hover { opacity:.8; }
+      .ac-col-mgr-list { padding:4px 0; overflow-y:auto; flex:1; }
+      .ac-col-mgr-item {
+        display:flex; align-items:center; gap:8px;
+        padding:7px 12px; cursor:default; user-select:none;
+        transition:background .1s;
+      }
+      .ac-col-mgr-item:hover { background:var(--surface2); }
+      .ac-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+      .ac-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
+      .ac-col-mgr-item.col-hidden .ac-col-mgr-lbl { color:var(--t4); }
+      .ac-col-mgr-item.col-locked { cursor:default; }
+      .ac-col-mgr-item.col-locked .ac-col-mgr-chk { cursor:default; opacity:.6; }
+      .ac-col-mgr-item.col-locked .ac-col-mgr-lbl { cursor:default; }
+      .ac-col-mgr-lock { font-size:10px; opacity:.6; margin-left:2px; }
+      .ac-col-mgr-foot {
+        padding:6px 12px; border-top:1px solid var(--border);
+        font-size:10.5px; color:var(--t3); text-align:center;
+        flex-shrink:0; background:var(--surface2);
+      }
+
+      /* Room cell — inline edit */
+      .ac-room-display {
+        display:flex; align-items:center; gap:6px;
+      }
+      .ac-room-text {
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:90px;
+      }
+      .ac-room-edit-btn {
+        display:inline-flex; align-items:center; justify-content:center;
+        width:20px; height:20px; border-radius:5px;
+        border:none; background:transparent;
+        color:var(--t4); cursor:pointer; opacity:.7; transition:all .12s; flex-shrink:0;
+      }
+      .ac-room-edit-btn:hover { opacity:1; background:var(--surface2); color:var(--blue); }
+      .ac-room-input {
+        height:26px; padding:0 6px; width:90px;
+        border:1px solid var(--blue); border-radius:6px;
+        background:var(--surface2); color:var(--t1);
+        font-size:12px; font-family:var(--font-body); outline:none;
+      }
+      .ac-room-save-btn {
+        display:inline-flex; align-items:center; justify-content:center;
+        width:22px; height:22px; border-radius:5px; flex-shrink:0;
+        border:1px solid var(--green); background:var(--green-dim);
+        color:var(--green); cursor:pointer; font-size:12px; font-weight:700;
+      }
     `;
     document.head.appendChild(st);
   },
