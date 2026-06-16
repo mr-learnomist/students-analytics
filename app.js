@@ -57,6 +57,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (liveUser) {
           stateUser.customPermissions = liveUser.customPermissions || [];
           stateUser.role = liveUser.role;
+          // ✅ FIX: campus access bhi live user se sync karo, warna
+          // F8-restricted user purana/stale campus access carry karta rahega
+          stateUser.campusId = liveUser.campusId || null;
+          stateUser.campusIds = Array.isArray(liveUser.campusIds) && liveUser.campusIds.length
+                                   ? liveUser.campusIds
+                                   : (liveUser.campusId ? [liveUser.campusId] : []);
         } else if (!stateUser.customPermissions) {
           stateUser.customPermissions = [];
         }
@@ -274,16 +280,56 @@ function registerRoutes() {
   });
 }
 
+// ── Admin tab → required permission map ─────────────────────
+// Har admin tab ki apni granular permission hoti hai. Agar user ke
+// paas wo permission nahi hai to tab ka button hi hide ho jata hai
+// — koi "access denied" message nahi dikhta.
+const ADMIN_TAB_PERMISSIONS = {
+  institutes:    'institutes',
+  campuses:      'campuses',
+  disciplines:   'disciplines',
+  levels:        'levels',
+  subjects:      'subjects',
+  rooms:         'rooms',
+  users:         'users',
+  teachers:      'teachers',
+  holidays:      'holidays',
+  feeStructures: 'fee',
+  policies:      'policies',
+  bank:          'bank',
+  backup:        'backup',
+};
+
 function initAdminTabs() {
+  // ── Sirf wahi tabs dikhao jin ki permission user ke paas hai ──
+  document.querySelectorAll('#adminTabs .tab-btn[data-tab]').forEach(btn => {
+    const perm    = ADMIN_TAB_PERMISSIONS[btn.dataset.tab];
+    const allowed = !perm || Auth.can(perm);
+    btn.style.display = allowed ? '' : 'none';
+  });
+
   document.getElementById('adminTabs')?.addEventListener('click', e => {
     const btn = e.target.closest('.tab-btn');
     if (btn?.dataset.tab) activateAdminTab(btn.dataset.tab);
   });
-  const saved = localStorage.getItem('sms_admin_tab') || 'institutes';
-  activateAdminTab(saved);
+
+  // Saved tab tabhi use karo agar abhi bhi permitted hai, warna
+  // pehla visible tab default ban jaye
+  const saved        = localStorage.getItem('sms_admin_tab');
+  const savedPerm     = saved && ADMIN_TAB_PERMISSIONS[saved];
+  const savedAllowed  = saved && (!savedPerm || Auth.can(savedPerm));
+  const firstVisible  = [...document.querySelectorAll('#adminTabs .tab-btn[data-tab]')]
+                           .find(b => b.style.display !== 'none');
+
+  activateAdminTab(savedAllowed ? saved : (firstVisible?.dataset.tab || 'institutes'));
 }
 
 function activateAdminTab(tab) {
+  // ✅ FIX: agar permission nahi hai to silently kuch na karo —
+  // koi error/denied message nahi, tab simply switch nahi hoga
+  const perm = ADMIN_TAB_PERMISSIONS[tab];
+  if (perm && !Auth.can(perm)) return;
+
   document.querySelectorAll('#adminTabs .tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab)
   );
