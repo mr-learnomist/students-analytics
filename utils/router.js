@@ -24,9 +24,15 @@ export const Router = {
     const route = _routes.get(id);
     if (!route) { console.warn(`[Router] Unknown route: ${id}`); return; }
 
-    // Permission check
+    // Permission check — ✅ FIX: koi "Access Denied" message nahi dikhana.
+    // Agar permission nahi hai to silently dashboard pe le jao (jahan
+    // permission ho), warna current view ko hi rehne do. User ko kabhi
+    // feel nahi hona chahiye ke usay kisi cheez se rok diya gaya hai.
     if (route.permission && !Auth.can(route.permission)) {
-      this._showAccessDenied();
+      console.warn(`[Router] "${id}" blocked silently — user lacks "${route.permission}" permission.`);
+      if (id !== 'dashboard' && Auth.can('dashboard')) {
+        this.navigate('dashboard');
+      }
       return;
     }
 
@@ -96,26 +102,5 @@ export const Router = {
 
   _routeFromHash() {
     return window.location.hash?.slice(1) || null;
-  },
-
-  _showAccessDenied() {
-    document.querySelectorAll('[data-view]').forEach(el => {
-      el.style.display = 'none';
-      el.classList.remove('view--active');
-    });
-    const denied = document.getElementById('accessDeniedView');
-    if (denied) { denied.style.display = ''; }
-    else {
-      const div = document.createElement('div');
-      div.id = 'accessDeniedView';
-      div.style.cssText = 'display:flex;align-items:center;justify-content:center;min-height:400px;flex-direction:column;gap:12px;';
-      div.innerHTML = `
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4a5270" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-        </svg>
-        <h3 style="font-size:16px;font-weight:700;color:#e8eaf6">Access Denied</h3>
-        <p style="font-size:13px;color:#4a5270">You don't have permission to view this section.</p>`;
-      document.getElementById('viewContainer')?.appendChild(div);
-    }
   },
 };
