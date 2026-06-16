@@ -60,11 +60,29 @@ const AC_COL_PREF_KEY  = 'ac_col_prefs';
 function _getAcColPrefs() {
   try {
     const raw = AppState.get(AC_COL_PREF_KEY);
-    if (raw && Array.isArray(raw.hidden)) return raw;
+    if (raw && Array.isArray(raw.hidden)) {
+      if (!Array.isArray(raw.order)) raw.order = [];
+      return raw;
+    }
   } catch (e) {}
-  return { hidden: [] };
+  return { hidden: [], order: [] };
 }
 function _saveAcColPrefs(prefs) { AppState.set(AC_COL_PREF_KEY, prefs); }
+
+// ── Column order ──────────────────────────────────────────
+// Returns AC_COLUMNS rearranged per the user's saved order.
+// Any column not yet present in the saved order (e.g. newly added
+// columns) is appended at the end in its default position.
+function _getOrderedAcColumns() {
+  const prefs = _getAcColPrefs();
+  const order = Array.isArray(prefs.order) ? prefs.order : [];
+  const byKey = {};
+  AC_COLUMNS.forEach(c => { byKey[c.key] = c; });
+  const ordered = [];
+  order.forEach(k => { if (byKey[k] && !ordered.includes(byKey[k])) ordered.push(byKey[k]); });
+  AC_COLUMNS.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
+  return ordered;
+}
 
 // ── Room overrides ──────────────────────────────────────────
 // Room is a manually-entered field (not derived from any data
@@ -432,7 +450,7 @@ export const AssessmentCalendarTab = {
                   <button class="ac-col-mgr-link" id="acColMgrShowAll">Show All</button>
                 </div>
                 <div class="ac-col-mgr-list" id="acColMgrList"></div>
-                <div class="ac-col-mgr-foot">Selected columns are also used for export</div>
+                <div class="ac-col-mgr-foot">Drag to reorder · order applies to export too</div>
               </div>
             </div>
           </div>
@@ -1722,9 +1740,11 @@ export const AssessmentCalendarTab = {
   },
 
   // ── Which columns are currently visible (column manager state) ─
+  // Order here drives both the table header/row order AND the
+  // export column order, since both consume this same array.
   _visibleAcCols() {
     const prefs = _getAcColPrefs();
-    return AC_COLUMNS.filter(c => c.locked || !prefs.hidden.includes(c.key));
+    return _getOrderedAcColumns().filter(c => c.locked || !prefs.hidden.includes(c.key));
   },
 
   // ── Column manager (show/hide columns; drives the table AND export) ─
@@ -1743,15 +1763,32 @@ export const AssessmentCalendarTab = {
       panel.style.top  = (r.bottom + 6) + 'px';
     };
 
+    let _dragEl = null;
+
+    const _persistOrderFromDOM = () => {
+      const p = _getAcColPrefs();
+      p.order = [...list.children].map(el => el.dataset.colKey);
+      _saveAcColPrefs(p);
+    };
+
     const _renderList = () => {
       const prefs = _getAcColPrefs();
       list.innerHTML = '';
 
-      AC_COLUMNS.forEach(col => {
+      _getOrderedAcColumns().forEach(col => {
         const isVisible = col.locked ? true : !prefs.hidden.includes(col.key);
         const item = document.createElement('div');
         item.className = 'ac-col-mgr-item' + (isVisible ? '' : ' col-hidden') + (col.locked ? ' col-locked' : '');
+        item.draggable = true;
+        item.dataset.colKey = col.key;
         item.innerHTML =
+          `<span class="ac-col-mgr-handle" title="Drag to reorder">
+             <svg width="9" height="13" viewBox="0 0 9 13" fill="currentColor">
+               <circle cx="1.5" cy="1.5" r="1.3"/><circle cx="7.5" cy="1.5" r="1.3"/>
+               <circle cx="1.5" cy="6.5" r="1.3"/><circle cx="7.5" cy="6.5" r="1.3"/>
+               <circle cx="1.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/>
+             </svg>
+           </span>` +
           `<input type="checkbox" class="ac-col-mgr-chk" id="ac_chk_${col.key}"${isVisible ? ' checked' : ''}${col.locked ? ' disabled title="Always visible"' : ''}/>` +
           `<label class="ac-col-mgr-lbl" for="ac_chk_${col.key}">${col.label}${col.locked ? ' <span class="ac-col-mgr-lock">🔒</span>' : ''}</label>`;
         if (!col.locked) {
@@ -1769,6 +1806,28 @@ export const AssessmentCalendarTab = {
             this._renderCalendar();
           });
         }
+
+        // ── Drag to reorder ───────────────────────────────────
+        item.addEventListener('dragstart', e => {
+          _dragEl = item;
+          item.classList.add('col-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', col.key); } catch (err) {}
+        });
+        item.addEventListener('dragover', e => {
+          e.preventDefault();
+          if (!_dragEl || _dragEl === item) return;
+          const rect   = item.getBoundingClientRect();
+          const before = (e.clientY - rect.top) < rect.height / 2;
+          list.insertBefore(_dragEl, before ? item : item.nextSibling);
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('col-dragging');
+          _dragEl = null;
+          _persistOrderFromDOM();
+          this._renderCalendar();
+        });
+
         list.appendChild(item);
       });
     };
@@ -1789,7 +1848,9 @@ export const AssessmentCalendarTab = {
     });
 
     container.querySelector('#acColMgrShowAll')?.addEventListener('click', () => {
-      _saveAcColPrefs({ hidden: [] });
+      const p = _getAcColPrefs();
+      p.hidden = [];
+      _saveAcColPrefs(p);
       panel.classList.remove('open');
       this._renderCalendar();
     });
@@ -2524,6 +2585,12 @@ export const AssessmentCalendarTab = {
       .ac-col-mgr-item.col-locked .ac-col-mgr-chk { cursor:default; opacity:.6; }
       .ac-col-mgr-item.col-locked .ac-col-mgr-lbl { cursor:default; }
       .ac-col-mgr-lock { font-size:10px; opacity:.6; margin-left:2px; }
+      .ac-col-mgr-handle {
+        display:inline-flex; align-items:center; justify-content:center;
+        color:var(--t4); cursor:grab; flex-shrink:0; opacity:.6;
+      }
+      .ac-col-mgr-item:hover .ac-col-mgr-handle { opacity:1; }
+      .ac-col-mgr-item.col-dragging { opacity:.4; background:var(--surface2); }
       .ac-col-mgr-foot {
         padding:6px 12px; border-top:1px solid var(--border);
         font-size:10.5px; color:var(--t3); text-align:center;
