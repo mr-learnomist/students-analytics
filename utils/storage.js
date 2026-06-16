@@ -24,7 +24,8 @@ const Storage = (() => {
           'Content-Type': 'application/json',
           'x-api-key':    SECRET_KEY,
         },
-        body: JSON.stringify(data),
+        body:  JSON.stringify(data),
+        cache: 'no-store',
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -94,8 +95,13 @@ const Storage = (() => {
     // ── loadAll() — GET pe bhi auth header ───────────────────
     async loadAll() {
       try {
-        const res = await fetch(API, {
-          headers: { 'x-api-key': SECRET_KEY }
+        // ✅ FIX: cache:'no-store' + timestamp param — browser ya koi
+        // bhi proxy/CDN purana (stale) users/password data serve na kare.
+        // Yehi wajah thi ke login 2-3 dafa fail hota tha aur sirf hard
+        // refresh (Ctrl+Shift+R) se fix hota tha.
+        const res = await fetch(`${API}?_=${Date.now()}`, {
+          headers: { 'x-api-key': SECRET_KEY },
+          cache: 'no-store',
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -116,8 +122,9 @@ const Storage = (() => {
     // ── isServerAvailable() ──────────────────────────────────
     async isServerAvailable() {
       try {
-        const res = await fetch(API, {
-          headers: { 'x-api-key': SECRET_KEY }
+        const res = await fetch(`${API}?_=${Date.now()}`, {
+          headers: { 'x-api-key': SECRET_KEY },
+          cache: 'no-store',
         });
         return res.ok;
       } catch {
