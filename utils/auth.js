@@ -34,6 +34,10 @@ const ROLE_PERMISSIONS = {
     'lecturePlan', 'lecturePlan:create', 'lecturePlan:edit', 'lecturePlan:delete',
     'admissions', 'admissions:create', 'admissions:edit', 'admissions:delete',
     'fee', 'fee:create', 'fee:edit', 'fee:delete', 'fee:payment',
+    'rooms', 'rooms:create', 'rooms:edit', 'rooms:delete',
+    'policies', 'policies:create', 'policies:edit', 'policies:delete',
+    'bank', 'bank:create', 'bank:edit', 'bank:delete',
+    'backup',
   ],
 
   // ── Campus Admin — apna campus manage kare ────────────────────
@@ -135,6 +139,12 @@ export const Auth = {
         avatar:           user.avatar,
         institute:        user.institute,
         campusId:         user.campusId || null,
+        // ✅ FIX: carry the full multi-campus list into the session.
+        // Falls back to wrapping the legacy single campusId so old user
+        // records keep working without any data migration.
+        campusIds:        Array.isArray(user.campusIds) && user.campusIds.length
+                             ? user.campusIds
+                             : (user.campusId ? [user.campusId] : []),
         customPermissions: user.customPermissions || [],   // ← granular perms
         loginAt:          Date.now(),
       };
@@ -161,6 +171,7 @@ export const Auth = {
         avatar:    teacher.fullName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
         institute: '',
         campusId:  teacherCampusId,          // ← teacher ka campus
+        campusIds: Array.isArray(teacher.campuses) ? teacher.campuses : [],
         loginAt:   Date.now(),
         isTeacher: true,
       };
@@ -199,6 +210,11 @@ export const Auth = {
       if (liveUser) {
         session.customPermissions = liveUser.customPermissions || [];
         session.role = liveUser.role;
+        // ✅ FIX: keep campus access in sync with the live user record
+        session.campusId = liveUser.campusId || null;
+        session.campusIds = Array.isArray(liveUser.campusIds) && liveUser.campusIds.length
+                               ? liveUser.campusIds
+                               : (liveUser.campusId ? [liveUser.campusId] : []);
       } else if (!session.customPermissions) {
         session.customPermissions = [];
       }
@@ -214,12 +230,37 @@ export const Auth = {
   },
 
   // ── Campus-aware data filter ──────────────────────────────────
-  // Kisi bhi list ko current user ke campus se filter karo
+  // Kisi bhi list ko current user ke allowed campus(es) se filter karo
   // campusKey = us list me campus field ka naam (default: 'campusId')
+  // ✅ FIX: ab campusIds (multi-campus) ko bhi support karta hai —
+  // pehle sirf single campusId check hota tha, isi wajah se jin
+  // users ko multiple ya specific campus (e.g. F8) allow kiya gaya
+  // tha unhe dusre campuses ka data (jaise Tests) bhi dikh raha tha.
   filterByCampus(list, campusKey = 'campusId') {
     const user = this.getCurrentUser();
-    if (!user || !user.campusId) return list; // admin = sab
-    return list.filter(item => item[campusKey] === user.campusId);
+    if (!user || user.role === 'admin') return list; // admin = sab
+    const ids = this.getCampusIds();
+    if (ids.length === 0) return list; // koi restriction nahi = sab campuses
+    return list.filter(item => ids.includes(item[campusKey]));
+  },
+
+  // Current user ke allowed campus IDs ki list (empty array = restriction nahi, sab allowed)
+  getCampusIds() {
+    const user = this.getCurrentUser();
+    if (!user) return [];
+    if (Array.isArray(user.campusIds) && user.campusIds.length) return user.campusIds;
+    if (user.campusId) return [user.campusId];
+    return [];
+  },
+
+  // Check karo ke current user ko ek specific campus ka access hai ya nahi
+  hasCampusAccess(campusId) {
+    const user = this.getCurrentUser();
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    const ids = this.getCampusIds();
+    if (ids.length === 0) return true; // restriction nahi = sab campuses allowed
+    return ids.includes(campusId);
   },
 
   // ── Permission checks ─────────────────────────────────────────
@@ -294,6 +335,11 @@ export const Auth = {
     { group: 'Institutes',     perms: ['institutes', 'institutes:create', 'institutes:edit', 'institutes:delete'] },
     { group: 'Holidays',       perms: ['holidays', 'holidays:create', 'holidays:edit', 'holidays:delete'] },
     { group: 'Users (Admin)',  perms: ['users', 'users:create', 'users:edit', 'users:delete'] },
+    { group: 'Admin Panel',    perms: ['admin'] },
+    { group: 'Rooms',          perms: ['rooms', 'rooms:create', 'rooms:edit', 'rooms:delete'] },
+    { group: 'Policies',       perms: ['policies', 'policies:create', 'policies:edit', 'policies:delete'] },
+    { group: 'Bank',           perms: ['bank', 'bank:create', 'bank:edit', 'bank:delete'] },
+    { group: 'Backup',         perms: ['backup'] },
   ],
 
   applyToDOM() {
