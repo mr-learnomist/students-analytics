@@ -420,7 +420,10 @@ export const UsersModule = {
                 const timeout = setTimeout(() => reject(new Error('timeout')), 4000);
                 const check = async () => {
                   try {
-                    const res  = await fetch('/api/data', {headers:{'x-api-key':'malik@2020'}});
+                    // ✅ FIX: cache:'no-store' + timestamp — warna ye check
+                    // purana (save se pehle wala) cached response dekh ke
+                    // ghalat "Save failed" dikha sakta tha
+                    const res  = await fetch(`/api/data?_=${Date.now()}`, {headers:{'x-api-key':'malik@2020'}, cache: 'no-store'});
                     const json = await res.json();
                     // ✅ FIX: Handle all possible MongoDB response structures
                     const users = json.data?.appState?.users
