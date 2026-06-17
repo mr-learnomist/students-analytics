@@ -11,13 +11,17 @@ import { Auth } from '../utils/auth.js';
 
 const KEY = 'users';
 
-const ROLES = ['admin', 'campusAdmin', 'teacher', 'viewer'];
+const ROLES = ['admin', 'campusAdmin', 'teacher', 'viewer', 'hoa', 'governance', 'principal', 'coordinator'];
 
 const ROLE_COLORS = {
   admin:       { bg: 'rgba(79,133,247,0.12)',  color: '#4f85f7' },
   campusAdmin: { bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b' },
   teacher:     { bg: 'rgba(16,185,129,0.12)',  color: '#10b981' },
   viewer:      { bg: 'rgba(136,146,180,0.12)', color: '#8892b4' },
+  hoa:         { bg: 'rgba(124,58,237,0.12)',  color: '#7c3aed' },
+  governance:  { bg: 'rgba(6,182,212,0.12)',   color: '#06b6d4' },
+  principal:   { bg: 'rgba(239,68,68,0.12)',   color: '#ef4444' },
+  coordinator: { bg: 'rgba(236,72,153,0.12)',  color: '#ec4899' },
 };
 
 const RULES = {
@@ -84,7 +88,7 @@ export const UsersModule = {
           width: '120px',
           render: (val) => {
             const c = ROLE_COLORS[val] || ROLE_COLORS.viewer;
-            const labelMap = { admin: 'Admin', campusAdmin: 'Campus Admin', teacher: 'Teacher', viewer: 'Viewer' };
+            const labelMap = { admin: 'Admin', campusAdmin: 'Campus Admin', teacher: 'Teacher', viewer: 'Viewer', hoa: 'HOA', governance: 'Governance', principal: 'Principal', coordinator: 'Coordinator' };
             const label = labelMap[val] || (val ? val.charAt(0).toUpperCase() + val.slice(1) : 'Viewer');
             return `<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:${c.bg};color:${c.color}">${label}</span>`;
           }
@@ -235,7 +239,7 @@ export const UsersModule = {
             <select name="role" id="userRoleSelect" class="form-input">
               <option value="">— Select a role —</option>
               ${ROLES.map(r => {
-                const labelMap = { admin: 'Admin', campusAdmin: 'Campus Admin', teacher: 'Teacher', viewer: 'Viewer' };
+                const labelMap = { admin: 'Admin', campusAdmin: 'Campus Admin', teacher: 'Teacher', viewer: 'Viewer', hoa: 'HOA', governance: 'Governance', principal: 'Principal', coordinator: 'Coordinator' };
                 return `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${labelMap[r] || r}</option>`;
               }).join('')}
             </select>
