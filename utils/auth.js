@@ -28,8 +28,7 @@ const ROLE_PERMISSIONS = {
     'users', 'users:create', 'users:edit', 'users:delete',
     'teachers', 'teachers:create', 'teachers:edit', 'teachers:delete',
     'roles', 'admin',
-    'analytics',
-    'enrolment',
+    'analytics', 'analytics:reports',
     'timetable',
     'lecturePlan', 'lecturePlan:create', 'lecturePlan:edit', 'lecturePlan:delete',
     'admissions', 'admissions:create', 'admissions:edit', 'admissions:delete',
@@ -94,7 +93,7 @@ const ROLE_PERMISSIONS = {
 
   // ── HOA (Head of Accounts) — fee/bank ki poori zimmedari ───────
   hoa: [
-    'dashboard', 'analytics',
+    'dashboard', 'analytics', 'analytics:reports',
     'fee', 'fee:create', 'fee:edit', 'fee:payment',
     'bank', 'bank:create', 'bank:edit',
     'admissions',          // read-only
@@ -105,7 +104,7 @@ const ROLE_PERMISSIONS = {
 
   // ── Governance — board/oversight, zyada tar read-only ──────────
   governance: [
-    'dashboard', 'analytics',
+    'dashboard', 'analytics', 'analytics:reports',
     'students', 'attendance', 'tests', 'batches', 'admissions', 'fee',
     'disciplines', 'levels', 'subjects', 'campuses', 'institutes',
     'holidays', 'teachers', 'lecturePlan', 'timetable', 'enrolment',
@@ -113,7 +112,7 @@ const ROLE_PERMISSIONS = {
 
   // ── Principal — institute-wide managerial access ───────────────
   principal: [
-    'dashboard', 'analytics',
+    'dashboard', 'analytics', 'analytics:reports',
     'students', 'students:create', 'students:edit',
     'attendance', 'attendance:create', 'attendance:edit',
     'tests', 'tests:create', 'tests:edit',
@@ -440,15 +439,34 @@ export const Auth = {
   },
 
   getRoleBadgeHTML(role) {
+    const r = this._roleMeta(role);
+    return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;background:${r.bg};color:${r.color}">${r.label}</span>`;
+  },
+
+  // ✅ FIX: sidebar wala role text (naam ke neeche) bhi isi se label le —
+  // taake "campusAdmin" → "CampusAdmin" ya "hoa" → "Hoa" jaisi ghalat
+  // capitalization na ho, aur topbar pill ke label se hamesha match kare
+  getRoleLabel(role) {
+    return this._roleMeta(role).label;
+  },
+
+  _roleMeta(role) {
     const map = {
       admin:       { label: 'Admin',        color: '#4f85f7', bg: 'rgba(79,133,247,0.12)'  },
       campusAdmin: { label: 'Campus Admin', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
       teacher:     { label: 'Teacher',      color: '#10b981', bg: 'rgba(16,185,129,0.12)'  },
       accounts:    { label: 'Accounts',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)'  },
       viewer:      { label: 'Viewer',       color: '#8892b4', bg: 'rgba(136,146,180,0.12)' },
+      // ✅ FIX: ye 4 naye roles map mein missing thay, isliye har
+      // naye role wale user ko "Viewer" dikhta tha (fallback hit ho
+      // raha tha) chahe usay Governance/HOA/Principal/Coordinator
+      // assign kiya gaya ho.
+      hoa:         { label: 'HOA',          color: '#7c3aed', bg: 'rgba(124,58,237,0.12)' },
+      governance:  { label: 'Governance',   color: '#06b6d4', bg: 'rgba(6,182,212,0.12)'  },
+      principal:   { label: 'Principal',    color: '#ef4444', bg: 'rgba(239,68,68,0.12)'  },
+      coordinator: { label: 'Coordinator',  color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
     };
-    const r = map[role] || map.viewer;
-    return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;background:${r.bg};color:${r.color}">${r.label}</span>`;
+    return map[role] || map.viewer;
   },
 };
 
@@ -480,7 +498,6 @@ export const TeacherService = {
       fullName, qualification, contactNumber,
       email, disciplines = [], campuses = [],
       profilePicture = null,
-      teachingSubjects = [], campusSchedules = {},
     } = data;
 
     if (!fullName?.trim())      return { success: false, message: 'Full name is required.' };
@@ -502,19 +519,17 @@ export const TeacherService = {
     const plainPassword = generatePassword();
 
     const teacher = {
-      id:               generateTeacherID(),
-      fullName:         fullName.trim(),
-      qualification:    qualification.trim(),
-      contactNumber:    (contactNumber || '').trim(),
-      email:            normalizedEmail,
-      loginPassword:    plainPassword,
+      id:             generateTeacherID(),
+      fullName:       fullName.trim(),
+      qualification:  qualification.trim(),
+      contactNumber:  (contactNumber || '').trim(),
+      email:          normalizedEmail,
+      loginPassword:  plainPassword,
       disciplines,
       campuses,
-      teachingSubjects,
-      campusSchedules,
-      profilePicture:   profilePicture || null,
-      createdAt:        new Date().toISOString(),
-      isActive:         true,
+      profilePicture: profilePicture || null,
+      createdAt:      new Date().toISOString(),
+      isActive:       true,
     };
 
     AppState.add('teachers', teacher);
