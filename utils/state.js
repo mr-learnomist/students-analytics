@@ -37,6 +37,20 @@ export const AppState = {
 
   async loadState() {
     const fileData = await Storage.loadAll();
+
+    // ✅ FIX: agar server se data load HI nahi ho saka (network down,
+    // flaky connection, server timeout) to Storage.loadAll() ab `null`
+    // deta hai — is case mein HARGIZ fresh-install samajh ke seed
+    // default data mat banao, warna real users/students/sab data
+    // server pe overwrite ho jata (yehi wajah thi "kabhi password
+    // accept karta kabhi nahi" ki). _loaded ko false hi rehne do
+    // taake galti se koi saveState() bhi na chal jaye.
+    if (fileData === null) {
+      console.error('[AppState] Server se data load nahi ho saka — seed/save BLOCKED hai. Connection check karke page reload karein.');
+      _state = structuredClone(DEFAULT_STATE);
+      throw new Error('EDUTRACK_LOAD_FAILED');
+    }
+
     const saved = fileData[STORAGE_KEY] || null;
 
     if (saved) {
