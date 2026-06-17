@@ -489,10 +489,18 @@ function renderBatchAllocation(el, state) {
       );
       if (!sortedTeachers.length) return;
       allRows.push([`Session: ${session}`]);
-      allRows.push(['Teacher', ...Array.from({ length: maxBatches }, (_, i) => `Batch ${i + 1}`), 'Total']);
+      allRows.push(['Teacher', ...Array.from({ length: maxBatches }, (_, i) => `Batch ${i + 1}`), 'Total', 'Total Students', 'Avg Strength']);
       sortedTeachers.forEach(name => {
         const batches = byTeacher[name];
-        allRows.push([name, ...Array.from({ length: maxBatches }, (_, i) => batches[i]?.tag || '—'), batches.length]);
+        const totalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
+        const avgStrength   = batches.length ? (totalStudents / batches.length).toFixed(1) : '0.0';
+        allRows.push([
+          name,
+          ...Array.from({ length: maxBatches }, (_, i) => batches[i] ? `${batches[i].tag} (${batches[i].strength})` : '—'),
+          batches.length,
+          totalStudents,
+          avgStrength,
+        ]);
       });
       allRows.push([]);
     });
@@ -557,6 +565,7 @@ function renderBatchAllocation(el, state) {
     let tableBodyHTML = '';
     let totalTeachers = 0;
     let totalBatches  = 0;
+    let totalStudents = 0;
     let globalMax     = 0;
 
     sessions.forEach(session => {
@@ -569,7 +578,7 @@ function renderBatchAllocation(el, state) {
       totalBatches  += sessionBatches.length;
 
       // Session separator row
-      tableBodyHTML += `<tr><td colspan="${globalMax + 2}"
+      tableBodyHTML += `<tr><td colspan="${globalMax + 4}"
         style="background:#1e40af;color:#fff;font-size:11px;font-weight:800;
                text-transform:uppercase;letter-spacing:.06em;padding:7px 14px;
                border-bottom:1px solid rgba(255,255,255,.15)">
@@ -580,15 +589,22 @@ function renderBatchAllocation(el, state) {
         const batches = byTeacher[name];
         const bg = idx % 2 === 0 ? '#f8faff' : '#fff';
         const tdBatches = Array.from({ length: globalMax }, (_, i) => {
-          const tag = batches[i]?.tag;
+          const b = batches[i];
           return `<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:11px;background:${bg};border-right:1px solid #e2e8f0">
-            ${tag ? `<span style="background:#eff6ff;color:#2563eb;padding:2px 7px;border-radius:5px;font-weight:600">${tag}</span>` : `<span style="color:#cbd5e1">—</span>`}
+            ${b
+              ? `<div style="font-weight:600;color:#1e293b">${b.tag}</div><div style="font-size:9.5px;color:#94a3b8;margin-top:1px">${b.strength} student${b.strength !== 1 ? 's' : ''}</div>`
+              : `<span style="color:#cbd5e1">—</span>`}
           </td>`;
         }).join('');
+        const teacherTotalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
+        const teacherAvgStrength   = batches.length ? (teacherTotalStudents / batches.length).toFixed(1) : '0.0';
+        totalStudents += teacherTotalStudents;
         tableBodyHTML += `<tr>
           <td style="padding:7px 14px;border-bottom:1px solid #e2e8f0;font-size:11.5px;font-weight:600;color:#1e293b;background:${bg};border-right:1px solid #e2e8f0;white-space:nowrap">${name}</td>
           ${tdBatches}
           <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${batches.length}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${teacherTotalStudents}</td>
+          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${teacherAvgStrength}</td>
         </tr>`;
       });
     });
@@ -599,6 +615,8 @@ function renderBatchAllocation(el, state) {
         `<th style="background:#1e3a8a;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;min-width:80px">${i + 1}</th>`
       ),
       `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Total</th>`,
+      `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Total<br>Students</th>`,
+      `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Avg<br>Strength</th>`,
     ].join('');
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
@@ -630,6 +648,7 @@ function renderBatchAllocation(el, state) {
   <div class="stat-row">
     <div class="stat"><div class="stat-n">${totalTeachers}</div><div class="stat-l">Teachers</div></div>
     <div class="stat"><div class="stat-n">${totalBatches}</div><div class="stat-l">Total Batches</div></div>
+    <div class="stat"><div class="stat-n">${totalStudents}</div><div class="stat-l">Total Students</div></div>
     <div class="stat"><div class="stat-n">${sessions.length}</div><div class="stat-l">Sessions</div></div>
   </div>
   <table>
@@ -638,7 +657,7 @@ function renderBatchAllocation(el, state) {
   </table>
   <div class="footer">
     <span>Batch Allocation Report &nbsp;|&nbsp; ${dateStr} at ${timeStr}</span>
-    <span>${totalTeachers} teacher${totalTeachers !== 1 ? 's' : ''} · ${totalBatches} batch${totalBatches !== 1 ? 'es' : ''}</span>
+    <span>${totalTeachers} teacher${totalTeachers !== 1 ? 's' : ''} · ${totalBatches} batch${totalBatches !== 1 ? 'es' : ''} · ${totalStudents} student${totalStudents !== 1 ? 's' : ''}</span>
   </div>
   <div class="no-print" style="margin-top:18px;text-align:center">
     <button onclick="window.print()"
