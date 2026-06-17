@@ -54,6 +54,39 @@ const Storage = (() => {
     if (_pending) { _pending = false; _queueSave(); }
   }
 
+  // ── Internal load with retry — ✅ FIX ──────────────────────
+  // Pehle sirf EK attempt hoti thi aur fail hone par {} return
+  // hota tha — jisay state.js "fresh install" samajh ke default
+  // users seed kar deta aur turant server pe OVERWRITE kar deta
+  // tha. Slow/flaky internet pe ye kabhi-kabhi real data ko
+  // factory-default se replace kar deta tha (isi se "kabhi
+  // password accept karta kabhi nahi" hota tha). Ab 3 baar retry
+  // karte hain, aur total fail hone par {} ke bajaye `null`
+  // return karte hain — taake "load fail hui" aur "server pe
+  // waqai koi data nahi" do alag cheezein confuse na hon.
+  async function _doLoad(attempt = 1) {
+    try {
+      const res = await fetch(`${API}?_=${Date.now()}`, {
+        headers: { 'x-api-key': SECRET_KEY },
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const json = await res.json();
+      _cache = (json && typeof json === 'object') ? (json.data ?? json) : {};
+      return _cache;
+
+    } catch (err) {
+      console.error(`[Storage] loadAll attempt ${attempt} failed:`, err.message);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 800 * attempt));
+        return _doLoad(attempt + 1);
+      }
+      console.error('[Storage] All loadAll attempts failed — server unreachable.');
+      return null; // ✅ sentinel: "load fail", NAHI "fresh install"
+    }
+  }
+
   return {
 
     // ── set(key, value) ──────────────────────────────────────
@@ -92,31 +125,9 @@ const Storage = (() => {
       );
     },
 
-    // ── loadAll() — GET pe bhi auth header ───────────────────
+    // ── loadAll() — GET pe bhi auth header, retry + safe-fail ──
     async loadAll() {
-      try {
-        // ✅ FIX: cache:'no-store' + timestamp param — browser ya koi
-        // bhi proxy/CDN purana (stale) users/password data serve na kare.
-        // Yehi wajah thi ke login 2-3 dafa fail hota tha aur sirf hard
-        // refresh (Ctrl+Shift+R) se fix hota tha.
-        const res = await fetch(`${API}?_=${Date.now()}`, {
-          headers: { 'x-api-key': SECRET_KEY },
-          cache: 'no-store',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const json = await res.json();
-        if (json && typeof json === 'object') {
-          _cache = json.data ?? json;
-        } else {
-          _cache = {};
-        }
-        return _cache;
-      } catch (err) {
-        console.error('[Storage] loadAll failed:', err.message);
-        _cache = {};
-        return {};
-      }
+      return _doLoad();
     },
 
     // ── isServerAvailable() ──────────────────────────────────
