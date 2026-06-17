@@ -154,10 +154,12 @@ function _injectStyles() {
       font-size:13px; font-weight:700; color:var(--blue);
     }
     .ba-batch-tag {
-      display:inline-block; padding:3px 9px;
-      border-radius:6px; font-size:11.5px; font-weight:600;
-      background:var(--blue-dim); color:var(--blue);
-      white-space:nowrap;
+      display:block; font-size:12.5px; font-weight:600;
+      color:var(--t1); white-space:nowrap;
+    }
+    .ba-batch-strength {
+      display:block; font-size:10.5px; font-weight:500;
+      color:var(--t3); margin-top:2px; white-space:nowrap;
     }
     .ba-dash { color:var(--t4); font-size:13px; }
 
@@ -175,7 +177,35 @@ function _injectStyles() {
   document.head.appendChild(st);
 }
 
-// ── Multi-filter widget ───────────────────────────────────────
+// ── Batch strength lookup ───────────────────────────────────────
+// Counts how many students are currently enrolled in a given batch.
+// Enrolment records can store the batch link in two shapes:
+//   • Newer records: e.subjects = [{ subjectId, batchId, status, ... }, ...]
+//   • Legacy records (no subjects array): e.batchId directly on the record
+// Students explicitly marked as having left ('left_study'/'left_campus' at
+// subject level, or 'dropped' at the enrolment level) are excluded.
+const LEFT_SUBJECT_STATUSES = new Set(['left_study', 'left_campus']);
+
+function _getBatchStrength(batchId) {
+  if (!batchId) return 0;
+  const enrolments = AppState.get('enrolments') || [];
+  let count = 0;
+
+  enrolments.forEach(e => {
+    const subjects = Array.isArray(e.subjects) && e.subjects.length ? e.subjects : null;
+    if (subjects) {
+      subjects.forEach(sub => {
+        if (sub.batchId === batchId && !LEFT_SUBJECT_STATUSES.has(sub.status)) count++;
+      });
+    } else if (e.batchId === batchId && e.status !== 'dropped') {
+      count++;
+    }
+  });
+
+  return count;
+}
+
+
 function _initMultiFilter(wrap, allLabel, items, onchange) {
   wrap._mfItems    = items;
   wrap._mfSelected = wrap._mfSelected || new Set();
@@ -647,6 +677,7 @@ function _buildSessionData(sessionBatches, teachers, subjects, allAssign) {
       code: subjectCode(b),
       no:   batchNo(b),
       tag:  batchNo(b) ? `${subjectCode(b)}-${batchNo(b)}` : subjectCode(b),
+      strength: _getBatchStrength(b.id),
     });
   });
 
@@ -694,6 +725,9 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
   const totalTeachers = new Set(sessionData.flatMap(sd => sd.sortedTeachers)).size;
   const totalBatches  = sessionData.reduce((sum, sd) => sum + sd.sessionBatches.length, 0);
   const maxLoad       = Math.max(...sessionData.flatMap(sd => sd.sortedTeachers.map(t => sd.byTeacher[t].length)), 0);
+  const totalStudents = sessionData.reduce((sum, sd) =>
+    sum + sd.sortedTeachers.reduce((s2, name) =>
+      s2 + sd.byTeacher[name].reduce((s3, b) => s3 + (b.strength || 0), 0), 0), 0);
 
   // Build thead — if multi-session: group headers on top row, then batch cols below
   // If single session: normal single header row
@@ -702,7 +736,7 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
         <tr>
           <th class="ba-th-teacher" rowspan="2">Teacher</th>
           ${sessionData.map(sd =>
-            `<th class="ba-th-session-group" colspan="${sd.maxBatches + 1}">${sd.session}</th>`
+            `<th class="ba-th-session-group" colspan="${sd.maxBatches + 3}">${sd.session}</th>`
           ).join('')}
         </tr>
         <tr>
@@ -711,6 +745,8 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
               `<th class="ba-th-batch" style="top:39px">${i + 1}</th>`
             ),
             `<th class="ba-th-total" style="top:39px">Total</th>`,
+            `<th class="ba-th-total" style="top:39px">Total<br>Students</th>`,
+            `<th class="ba-th-total" style="top:39px">Avg<br>Strength</th>`,
           ].join('')).join('')}
         </tr>
       </thead>`
@@ -719,6 +755,8 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
           <th class="ba-th-teacher">Teacher</th>
           ${Array.from({ length: globalMax }, (_, i) => `<th class="ba-th-batch">${i + 1}</th>`).join('')}
           <th class="ba-th-total">Total</th>
+          <th class="ba-th-total">Total Students</th>
+          <th class="ba-th-total">Avg Strength</th>
         </tr>
       </thead>`;
 
@@ -739,10 +777,17 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
         const batchCells = Array.from({ length: sd.maxBatches }, (_, i) => {
           const b = batches[i];
           return `<td class="ba-td-batch">
-            ${b ? `<span class="ba-batch-tag">${b.tag}</span>` : `<span class="ba-dash">—</span>`}
+            ${b
+              ? `<span class="ba-batch-tag">${b.tag}</span><span class="ba-batch-strength">${b.strength} student${b.strength !== 1 ? 's' : ''}</span>`
+              : `<span class="ba-dash">—</span>`}
           </td>`;
         }).join('');
-        return batchCells + `<td class="ba-td-total">${batches.length || '—'}</td>`;
+        const totalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
+        const avgStrength    = batches.length ? (totalStudents / batches.length).toFixed(1) : '—';
+        return batchCells
+          + `<td class="ba-td-total">${batches.length || '—'}</td>`
+          + `<td class="ba-td-total">${batches.length ? totalStudents : '—'}</td>`
+          + `<td class="ba-td-total">${avgStrength}</td>`;
       }).join('');
       return `<tr><td class="ba-td-teacher">${name}</td>${cells}</tr>`;
     }).join('');
@@ -755,13 +800,19 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
         const batchCells = Array.from({ length: globalMax }, (_, i) => {
           const b = batches[i];
           return `<td class="ba-td-batch">
-            ${b ? `<span class="ba-batch-tag">${b.tag}</span>` : `<span class="ba-dash">—</span>`}
+            ${b
+              ? `<span class="ba-batch-tag">${b.tag}</span><span class="ba-batch-strength">${b.strength} student${b.strength !== 1 ? 's' : ''}</span>`
+              : `<span class="ba-dash">—</span>`}
           </td>`;
         }).join('');
+        const totalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
+        const avgStrength    = batches.length ? (totalStudents / batches.length).toFixed(1) : '—';
         tbodyHTML += `<tr>
           <td class="ba-td-teacher">${name}</td>
           ${batchCells}
           <td class="ba-td-total">${batches.length}</td>
+          <td class="ba-td-total">${totalStudents}</td>
+          <td class="ba-td-total">${avgStrength}</td>
         </tr>`;
       });
     });
@@ -780,6 +831,7 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
     <div class="ba-summary" style="margin-bottom:14px">
       <div class="ba-stat"><span class="ba-stat-n">${totalTeachers}</span><span class="ba-stat-l">Teachers</span></div>
       <div class="ba-stat"><span class="ba-stat-n">${totalBatches}</span><span class="ba-stat-l">Total Batches</span></div>
+      <div class="ba-stat"><span class="ba-stat-n">${totalStudents}</span><span class="ba-stat-l">Total Students</span></div>
       <div class="ba-stat"><span class="ba-stat-n">${maxLoad}</span><span class="ba-stat-l">Max Load</span></div>
       ${sessionsToShow.length > 1 ? `<div class="ba-stat"><span class="ba-stat-n">${sessionsToShow.length}</span><span class="ba-stat-l">Sessions</span></div>` : ''}
     </div>
