@@ -255,7 +255,7 @@ function showApp(user) {
 
   G('sbAvatar').textContent  = init;
   G('sbName').textContent    = user.name;
-  G('sbRole').textContent    = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+  G('sbRole').textContent    = Auth.getRoleLabel(user.role);
   G('nbAvatar').textContent  = init;
   G('nbName').textContent    = user.name;
   G('nbRolePill').innerHTML  = Auth.getRoleBadgeHTML(user.role);
