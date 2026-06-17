@@ -93,7 +93,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   } catch (err) {
     console.error('[EduTrack] Boot failed:', err);
-    _showLoginFallback();
+    if (err?.message === 'EDUTRACK_LOAD_FAILED') {
+      _showLoadFailedScreen();
+    } else {
+      _showLoginFallback();
+    }
   }
 });
 
@@ -107,6 +111,35 @@ function _showLoginFallback() {
   const appShell    = document.getElementById('appShell');
   if (loginScreen) loginScreen.style.display = 'flex';
   if (appShell)    appShell.style.display    = 'none';
+}
+
+// ✅ FIX: jab server se data load HI nahi ho saka (connection issue),
+// to khaali/confusing login form dikhane ke bajaye saaf message
+// dikhao + Retry button — taake user "ghalat password" na samjhe
+function _showLoadFailedScreen() {
+  const loginScreen = document.getElementById('loginScreen');
+  const appShell     = document.getElementById('appShell');
+  if (appShell) appShell.style.display = 'none';
+  if (!loginScreen) return;
+  loginScreen.style.display = 'flex';
+
+  const errEl     = document.getElementById('loginErr');
+  const resetWrap = document.getElementById('resetWrap');
+  const formEls   = ['loginUser', 'loginPass', 'loginBtn'];
+  formEls.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  if (resetWrap) resetWrap.style.display = 'none';
+  if (errEl) {
+    errEl.innerHTML = `Connection se data load nahi ho saka. Internet check karein aur
+      <a href="#" id="ldRetryBtn" style="color:inherit;text-decoration:underline;font-weight:700">reload</a> karein.`;
+    errEl.style.display = 'block';
+    document.getElementById('ldRetryBtn')?.addEventListener('click', e => {
+      e.preventDefault();
+      window.location.reload();
+    });
+  }
 }
 
 // ── Login screen ──────────────────────────────────────────────
