@@ -173,11 +173,125 @@ function _injectStyles() {
     }
     .ba-stat-n { font-size:20px; font-weight:700; color:var(--blue); }
     .ba-stat-l { font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:.04em; margin-top:1px; }
+
+    /* Column manager */
+    .ba-col-mgr-wrap  { position:relative; }
+    .ba-col-mgr-btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:32px; height:32px; border-radius:7px;
+      border:1px solid var(--border); background:var(--surface2);
+      color:var(--t3); cursor:pointer; transition:all .15s;
+    }
+    .ba-col-mgr-btn:hover { border-color:var(--blue); color:var(--blue); }
+    .ba-col-mgr-panel {
+      position:fixed; z-index:9999;
+      width:210px; background:var(--surface);
+      border:1px solid var(--border); border-radius:10px;
+      box-shadow:0 8px 32px rgba(0,0,0,.18);
+      display:none; flex-direction:column; overflow:hidden;
+      max-height:min(340px, calc(100vh - 24px));
+    }
+    .ba-col-mgr-panel.open { display:flex; }
+    .ba-col-mgr-head {
+      padding:9px 13px 7px;
+      border-bottom:1px solid var(--border);
+      display:flex; align-items:center;
+      justify-content:space-between; flex-shrink:0;
+    }
+    .ba-col-mgr-title {
+      font-size:11.5px; font-weight:700; color:var(--t1);
+      display:flex; align-items:center; gap:6px;
+    }
+    .ba-col-mgr-link {
+      font-size:11px; color:var(--blue); cursor:pointer;
+      background:none; border:none; padding:0;
+      text-decoration:underline; font-weight:600;
+    }
+    .ba-col-mgr-link:hover { opacity:.8; }
+    .ba-col-mgr-list { padding:4px 0; overflow-y:auto; flex:1; }
+    .ba-col-mgr-item {
+      display:flex; align-items:center; gap:8px;
+      padding:7px 12px; cursor:default; user-select:none;
+      transition:background .1s;
+    }
+    .ba-col-mgr-item:hover { background:var(--surface2); }
+    .ba-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+    .ba-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
+    .ba-col-mgr-item.col-hidden .ba-col-mgr-lbl { color:var(--t4); }
+    .ba-col-mgr-item.col-locked { cursor:default; }
+    .ba-col-mgr-item.col-locked .ba-col-mgr-chk { cursor:default; opacity:.6; }
+    .ba-col-mgr-item.col-locked .ba-col-mgr-lbl { cursor:default; }
+    .ba-col-mgr-lock { font-size:10px; opacity:.6; margin-left:2px; }
+    .ba-col-mgr-handle {
+      display:inline-flex; align-items:center; justify-content:center;
+      color:var(--t4); cursor:grab; flex-shrink:0; opacity:.6;
+    }
+    .ba-col-mgr-item:hover .ba-col-mgr-handle { opacity:1; }
+    .ba-col-mgr-item.col-dragging { opacity:.4; background:var(--surface2); }
+    .ba-col-mgr-foot {
+      padding:6px 12px; border-top:1px solid var(--border);
+      font-size:10.5px; color:var(--t3); text-align:center;
+      flex-shrink:0; background:var(--surface2);
+    }
   `;
   document.head.appendChild(st);
 }
 
-// ── Batch strength lookup ───────────────────────────────────────
+// ── Column manager ───────────────────────────────────────────
+// Manageable columns: Teacher (locked, always first & always
+// visible) plus the three summary columns. Batch-number columns
+// (1, 2, 3…) are core grid content and are not user-manageable —
+// they always render between Teacher and these columns, in order.
+const BA_COLUMNS = [
+  { key: 'teacher',       label: 'Teacher',          locked: true  },
+  { key: 'total',         label: 'Total',            locked: false, shortLabel: 'Total',
+    getValue: (batches) => batches.length || '—' },
+  { key: 'totalStudents', label: 'Total Students',   locked: false, shortLabel: 'Total<br>Students',
+    getValue: (batches) => batches.length ? batches.reduce((s, b) => s + (b.strength || 0), 0) : '—' },
+  { key: 'avgStrength',   label: 'Avg Strength',     locked: false, shortLabel: 'Avg<br>Strength',
+    getValue: (batches) => batches.length
+      ? (batches.reduce((s, b) => s + (b.strength || 0), 0) / batches.length).toFixed(1)
+      : '—' },
+];
+const BA_COL_PREF_KEY = 'ba_col_prefs';
+
+function _getBaColPrefs() {
+  try {
+    const raw = AppState.get(BA_COL_PREF_KEY);
+    if (raw && Array.isArray(raw.hidden)) {
+      if (!Array.isArray(raw.order)) raw.order = [];
+      return raw;
+    }
+  } catch (e) {}
+  return { hidden: [], order: [] };
+}
+function _saveBaColPrefs(prefs) { AppState.set(BA_COL_PREF_KEY, prefs); }
+
+// Returns BA_COLUMNS rearranged per the user's saved order. Any
+// column not yet present in the saved order is appended at the end
+// in its default position.
+function _getOrderedBaColumns() {
+  const prefs = _getBaColPrefs();
+  const order = Array.isArray(prefs.order) ? prefs.order : [];
+  const byKey = {};
+  BA_COLUMNS.forEach(c => { byKey[c.key] = c; });
+  const ordered = [];
+  order.forEach(k => { if (byKey[k] && !ordered.includes(byKey[k])) ordered.push(byKey[k]); });
+  BA_COLUMNS.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
+  return ordered;
+}
+
+// Visible columns in saved order (locked columns always included).
+// Excludes 'teacher' since that's structurally always the first,
+// fixed table column — callers that need the "tail" summary
+// columns (everything after the batch-number columns) should
+// filter it out, e.g. `_visibleBaCols().filter(c => c.key !== 'teacher')`.
+function _visibleBaCols() {
+  const prefs = _getBaColPrefs();
+  return _getOrderedBaColumns().filter(c => c.locked || !prefs.hidden.includes(c.key));
+}
+
+
 // Counts how many students are currently enrolled in a given batch.
 // Enrolment records can store the batch link in two shapes:
 //   • Newer records: e.subjects = [{ subjectId, batchId, status, ... }, ...]
@@ -289,6 +403,122 @@ function _initMultiFilter(wrap, allLabel, items, onchange) {
   });
 }
 
+// ── Column manager widget (show/hide + drag-to-reorder columns) ──
+// Drives both the live table AND the CSV/PDF exports, since both
+// read column visibility/order via _visibleBaCols(). 'onChange' is
+// called after every change so the caller can re-render.
+function _wireColManager(container, onChange) {
+  const btn   = container.querySelector('#baColMgrBtn');
+  const panel = container.querySelector('#baColMgrPanel');
+  const list  = container.querySelector('#baColMgrList');
+  if (!btn || !panel || !list) return;
+
+  const _positionPanel = () => {
+    const r      = btn.getBoundingClientRect();
+    const panelW = 210;
+    let left = r.right - panelW;
+    left = Math.max(8, Math.min(left, window.innerWidth - panelW - 8));
+    panel.style.left = left + 'px';
+    panel.style.top  = (r.bottom + 6) + 'px';
+  };
+
+  let _dragEl = null;
+
+  const _persistOrderFromDOM = () => {
+    const p = _getBaColPrefs();
+    p.order = [...list.children].map(el => el.dataset.colKey);
+    _saveBaColPrefs(p);
+  };
+
+  const _renderList = () => {
+    const prefs = _getBaColPrefs();
+    list.innerHTML = '';
+
+    _getOrderedBaColumns().forEach(col => {
+      const isVisible = col.locked ? true : !prefs.hidden.includes(col.key);
+      const item = document.createElement('div');
+      item.className = 'ba-col-mgr-item' + (isVisible ? '' : ' col-hidden') + (col.locked ? ' col-locked' : '');
+      item.draggable = !col.locked; // Teacher always stays first
+      item.dataset.colKey = col.key;
+      item.innerHTML =
+        `<span class="ba-col-mgr-handle" title="Drag to reorder">
+           <svg width="9" height="13" viewBox="0 0 9 13" fill="currentColor">
+             <circle cx="1.5" cy="1.5" r="1.3"/><circle cx="7.5" cy="1.5" r="1.3"/>
+             <circle cx="1.5" cy="6.5" r="1.3"/><circle cx="7.5" cy="6.5" r="1.3"/>
+             <circle cx="1.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/>
+           </svg>
+         </span>` +
+        `<input type="checkbox" class="ba-col-mgr-chk" id="ba_chk_${col.key}"${isVisible ? ' checked' : ''}${col.locked ? ' disabled title="Always visible"' : ''}/>` +
+        `<label class="ba-col-mgr-lbl" for="ba_chk_${col.key}">${col.label}${col.locked ? ' <span class="ba-col-mgr-lock">🔒</span>' : ''}</label>`;
+      if (!col.locked) {
+        item.querySelector('.ba-col-mgr-chk').addEventListener('change', e => {
+          const p = _getBaColPrefs();
+          if (e.target.checked) {
+            p.hidden = p.hidden.filter(h => h !== col.key);
+            item.classList.remove('col-hidden');
+          } else {
+            if (!p.hidden.includes(col.key)) p.hidden.push(col.key);
+            item.classList.add('col-hidden');
+          }
+          _saveBaColPrefs(p);
+          panel.classList.remove('open');
+          onChange();
+        });
+
+        // ── Drag to reorder ───────────────────────────────────
+        item.addEventListener('dragstart', e => {
+          _dragEl = item;
+          item.classList.add('col-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', col.key); } catch (err) {}
+        });
+        item.addEventListener('dragover', e => {
+          e.preventDefault();
+          if (!_dragEl || _dragEl === item) return;
+          const rect   = item.getBoundingClientRect();
+          const before = (e.clientY - rect.top) < rect.height / 2;
+          list.insertBefore(_dragEl, before ? item : item.nextSibling);
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('col-dragging');
+          _dragEl = null;
+          _persistOrderFromDOM();
+          onChange();
+        });
+      }
+
+      list.appendChild(item);
+    });
+  };
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+      panel.classList.remove('open');
+    } else {
+      _renderList();
+      _positionPanel();
+      panel.classList.add('open');
+    }
+  });
+
+  container.querySelector('#baColMgrShowAll')?.addEventListener('click', () => {
+    const p = _getBaColPrefs();
+    p.hidden = [];
+    _saveBaColPrefs(p);
+    panel.classList.remove('open');
+    onChange();
+  });
+
+  const _outsideClick = e => {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.remove('open');
+    }
+  };
+  document.addEventListener('click', _outsideClick);
+}
+
 // ── Main render ──────────────────────────────────────────────
 function renderBatchAllocation(el, state) {
   _injectStyles();
@@ -387,7 +617,28 @@ function renderBatchAllocation(el, state) {
               <polyline points="14 2 14 8 20 8"/>
               <line x1="9" y1="15" x2="15" y2="15"/>
             </svg>
-          </button>` : ''}
+          </button>
+          <div class="ba-col-mgr-wrap" id="baColMgrWrap">
+            <button class="ba-col-mgr-btn" id="baColMgrBtn" title="Show / hide columns">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="18" rx="1"/>
+                <rect x="14" y="3" width="7" height="18" rx="1"/>
+              </svg>
+            </button>
+            <div class="ba-col-mgr-panel" id="baColMgrPanel">
+              <div class="ba-col-mgr-head">
+                <span class="ba-col-mgr-title">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                  </svg>
+                  Columns
+                </span>
+                <button class="ba-col-mgr-link" id="baColMgrShowAll">Show All</button>
+              </div>
+              <div class="ba-col-mgr-list" id="baColMgrList"></div>
+              <div class="ba-col-mgr-foot">Drag to reorder · order applies to export too</div>
+            </div>
+          </div>` : ''}
       </div>
 
       <!-- Content -->
@@ -471,6 +722,9 @@ function renderBatchAllocation(el, state) {
     renderBatchAllocation(el, state);
   });
 
+  // ── Column manager (show/hide/reorder columns) ──────────────────
+  _wireColManager(el, () => renderBatchAllocation(el, state));
+
   // ── CSV export ────────────────────────────────────────────────
   el.querySelector('#baExportCSV')?.addEventListener('click', () => {
     if (!state.applied) return;
@@ -482,6 +736,8 @@ function renderBatchAllocation(el, state) {
       ? uniqueSessions.filter(s => state.sessionFilter.includes(s))
       : uniqueSessions.filter(s => filtered.some(b => b.sessionPeriod === s));
 
+    const tailCols = _visibleBaCols().filter(c => c.key !== 'teacher');
+
     const allRows = [];
     sessions.forEach(session => {
       const { byTeacher, sortedTeachers, maxBatches } = _buildSessionData(
@@ -489,17 +745,13 @@ function renderBatchAllocation(el, state) {
       );
       if (!sortedTeachers.length) return;
       allRows.push([`Session: ${session}`]);
-      allRows.push(['Teacher', ...Array.from({ length: maxBatches }, (_, i) => `Batch ${i + 1}`), 'Total', 'Total Students', 'Avg Strength']);
+      allRows.push(['Teacher', ...Array.from({ length: maxBatches }, (_, i) => `Batch ${i + 1}`), ...tailCols.map(c => c.label)]);
       sortedTeachers.forEach(name => {
         const batches = byTeacher[name];
-        const totalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
-        const avgStrength   = batches.length ? (totalStudents / batches.length).toFixed(1) : '0.0';
         allRows.push([
           name,
           ...Array.from({ length: maxBatches }, (_, i) => batches[i] ? `${batches[i].tag} (${batches[i].strength})` : '—'),
-          batches.length,
-          totalStudents,
-          avgStrength,
+          ...tailCols.map(c => c.getValue(batches)),
         ]);
       });
       allRows.push([]);
@@ -562,6 +814,8 @@ function renderBatchAllocation(el, state) {
       ? uniqueSessions.filter(s => state.sessionFilter.includes(s))
       : uniqueSessions.filter(s => filtered.some(b => b.sessionPeriod === s));
 
+    const tailCols = _visibleBaCols().filter(c => c.key !== 'teacher');
+
     let tableBodyHTML = '';
     let totalTeachers = 0;
     let totalBatches  = 0;
@@ -578,7 +832,7 @@ function renderBatchAllocation(el, state) {
       totalBatches  += sessionBatches.length;
 
       // Session separator row
-      tableBodyHTML += `<tr><td colspan="${globalMax + 4}"
+      tableBodyHTML += `<tr><td colspan="${globalMax + tailCols.length + 1}"
         style="background:#1e40af;color:#fff;font-size:11px;font-weight:800;
                text-transform:uppercase;letter-spacing:.06em;padding:7px 14px;
                border-bottom:1px solid rgba(255,255,255,.15)">
@@ -597,14 +851,14 @@ function renderBatchAllocation(el, state) {
           </td>`;
         }).join('');
         const teacherTotalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
-        const teacherAvgStrength   = batches.length ? (teacherTotalStudents / batches.length).toFixed(1) : '0.0';
         totalStudents += teacherTotalStudents;
+        const tdTail = tailCols.map(c =>
+          `<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${c.getValue(batches)}</td>`
+        ).join('');
         tableBodyHTML += `<tr>
           <td style="padding:7px 14px;border-bottom:1px solid #e2e8f0;font-size:11.5px;font-weight:600;color:#1e293b;background:${bg};border-right:1px solid #e2e8f0;white-space:nowrap">${name}</td>
           ${tdBatches}
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${batches.length}</td>
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${teacherTotalStudents}</td>
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:700;color:#2563eb;background:${bg}">${teacherAvgStrength}</td>
+          ${tdTail}
         </tr>`;
       });
     });
@@ -614,9 +868,9 @@ function renderBatchAllocation(el, state) {
       ...Array.from({ length: globalMax }, (_, i) =>
         `<th style="background:#1e3a8a;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;min-width:80px">${i + 1}</th>`
       ),
-      `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Total</th>`,
-      `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Total<br>Students</th>`,
-      `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Avg<br>Strength</th>`,
+      ...tailCols.map(c =>
+        `<th style="background:#1e293b;color:#fff;padding:9px 12px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${c.shortLabel}</th>`
+      ),
     ].join('');
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
@@ -748,6 +1002,11 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
     sum + sd.sortedTeachers.reduce((s2, name) =>
       s2 + sd.byTeacher[name].reduce((s3, b) => s3 + (b.strength || 0), 0), 0), 0);
 
+  // User-configurable summary columns (Total / Total Students / Avg
+  // Strength), in their saved order, minus whichever are hidden.
+  // 'teacher' is excluded here since it's a fixed, always-first column.
+  const tailCols = _visibleBaCols().filter(c => c.key !== 'teacher');
+
   // Build thead — if multi-session: group headers on top row, then batch cols below
   // If single session: normal single header row
   const theadHTML = multiSession
@@ -755,7 +1014,7 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
         <tr>
           <th class="ba-th-teacher" rowspan="2">Teacher</th>
           ${sessionData.map(sd =>
-            `<th class="ba-th-session-group" colspan="${sd.maxBatches + 3}">${sd.session}</th>`
+            `<th class="ba-th-session-group" colspan="${sd.maxBatches + tailCols.length}">${sd.session}</th>`
           ).join('')}
         </tr>
         <tr>
@@ -763,9 +1022,7 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
             ...Array.from({ length: sd.maxBatches }, (_, i) =>
               `<th class="ba-th-batch" style="top:39px">${i + 1}</th>`
             ),
-            `<th class="ba-th-total" style="top:39px">Total</th>`,
-            `<th class="ba-th-total" style="top:39px">Total<br>Students</th>`,
-            `<th class="ba-th-total" style="top:39px">Avg<br>Strength</th>`,
+            ...tailCols.map(c => `<th class="ba-th-total" style="top:39px">${c.shortLabel}</th>`),
           ].join('')).join('')}
         </tr>
       </thead>`
@@ -773,9 +1030,7 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
         <tr>
           <th class="ba-th-teacher">Teacher</th>
           ${Array.from({ length: globalMax }, (_, i) => `<th class="ba-th-batch">${i + 1}</th>`).join('')}
-          <th class="ba-th-total">Total</th>
-          <th class="ba-th-total">Total Students</th>
-          <th class="ba-th-total">Avg Strength</th>
+          ${tailCols.map(c => `<th class="ba-th-total">${c.label}</th>`).join('')}
         </tr>
       </thead>`;
 
@@ -801,12 +1056,8 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
               : `<span class="ba-dash">—</span>`}
           </td>`;
         }).join('');
-        const totalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
-        const avgStrength    = batches.length ? (totalStudents / batches.length).toFixed(1) : '—';
-        return batchCells
-          + `<td class="ba-td-total">${batches.length || '—'}</td>`
-          + `<td class="ba-td-total">${batches.length ? totalStudents : '—'}</td>`
-          + `<td class="ba-td-total">${avgStrength}</td>`;
+        const tailCells = tailCols.map(c => `<td class="ba-td-total">${c.getValue(batches)}</td>`).join('');
+        return batchCells + tailCells;
       }).join('');
       return `<tr><td class="ba-td-teacher">${name}</td>${cells}</tr>`;
     }).join('');
@@ -824,14 +1075,11 @@ function _tableHTML(filtered, teachers, subjects, allAssign, allSessions, sessio
               : `<span class="ba-dash">—</span>`}
           </td>`;
         }).join('');
-        const totalStudents = batches.reduce((sum, b) => sum + (b.strength || 0), 0);
-        const avgStrength    = batches.length ? (totalStudents / batches.length).toFixed(1) : '—';
+        const tailCells = tailCols.map(c => `<td class="ba-td-total">${c.getValue(batches)}</td>`).join('');
         tbodyHTML += `<tr>
           <td class="ba-td-teacher">${name}</td>
           ${batchCells}
-          <td class="ba-td-total">${batches.length}</td>
-          <td class="ba-td-total">${totalStudents}</td>
-          <td class="ba-td-total">${avgStrength}</td>
+          ${tailCells}
         </tr>`;
       });
     });
