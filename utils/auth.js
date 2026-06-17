@@ -91,6 +91,56 @@ const ROLE_PERMISSIONS = {
     'batches',            // read-only
     'disciplines', 'levels', 'campuses', 'institutes',
   ],
+
+  // ── HOA (Head of Accounts) — fee/bank ki poori zimmedari ───────
+  hoa: [
+    'dashboard', 'analytics',
+    'fee', 'fee:create', 'fee:edit', 'fee:payment',
+    'bank', 'bank:create', 'bank:edit',
+    'admissions',          // read-only
+    'students',            // read-only
+    'batches',             // read-only
+    'disciplines', 'levels', 'campuses', 'institutes', 'holidays',
+  ],
+
+  // ── Governance — board/oversight, zyada tar read-only ──────────
+  governance: [
+    'dashboard', 'analytics',
+    'students', 'attendance', 'tests', 'batches', 'admissions', 'fee',
+    'disciplines', 'levels', 'subjects', 'campuses', 'institutes',
+    'holidays', 'teachers', 'lecturePlan', 'timetable', 'enrolment',
+  ],
+
+  // ── Principal — institute-wide managerial access ───────────────
+  principal: [
+    'dashboard', 'analytics',
+    'students', 'students:create', 'students:edit',
+    'attendance', 'attendance:create', 'attendance:edit',
+    'tests', 'tests:create', 'tests:edit',
+    'revision', 'revision:create', 'revision:edit',
+    'batches', 'batches:create', 'batches:edit',
+    'teachers', 'teachers:create', 'teachers:edit',
+    'disciplines', 'campuses', 'institutes', 'levels', 'subjects',
+    'holidays', 'holidays:create', 'holidays:edit',
+    'lecturePlan', 'lecturePlan:create', 'lecturePlan:edit',
+    'timetable', 'enrolment',
+    'admissions', 'admissions:create', 'admissions:edit',
+    'fee', 'fee:create', 'fee:edit', 'fee:payment',
+  ],
+
+  // ── Coordinator — academic scheduling/coordination ──────────────
+  coordinator: [
+    'dashboard',
+    'students',
+    'attendance', 'attendance:create', 'attendance:edit',
+    'batches',
+    'lecturePlan', 'lecturePlan:create', 'lecturePlan:edit',
+    'timetable',
+    'tests', 'revision',
+    'disciplines', 'levels', 'subjects', 'campuses', 'institutes',
+    'teachers',     // read-only
+    'admissions',   // read-only
+  ],
 };
 
 // ── Seed default users ─────────────────────────────────────────
