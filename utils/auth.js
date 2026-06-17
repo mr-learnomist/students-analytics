@@ -480,6 +480,7 @@ export const TeacherService = {
       fullName, qualification, contactNumber,
       email, disciplines = [], campuses = [],
       profilePicture = null,
+      teachingSubjects = [], campusSchedules = {},
     } = data;
 
     if (!fullName?.trim())      return { success: false, message: 'Full name is required.' };
@@ -501,17 +502,19 @@ export const TeacherService = {
     const plainPassword = generatePassword();
 
     const teacher = {
-      id:             generateTeacherID(),
-      fullName:       fullName.trim(),
-      qualification:  qualification.trim(),
-      contactNumber:  (contactNumber || '').trim(),
-      email:          normalizedEmail,
-      loginPassword:  plainPassword,
+      id:               generateTeacherID(),
+      fullName:         fullName.trim(),
+      qualification:    qualification.trim(),
+      contactNumber:    (contactNumber || '').trim(),
+      email:            normalizedEmail,
+      loginPassword:    plainPassword,
       disciplines,
       campuses,
-      profilePicture: profilePicture || null,
-      createdAt:      new Date().toISOString(),
-      isActive:       true,
+      teachingSubjects,
+      campusSchedules,
+      profilePicture:   profilePicture || null,
+      createdAt:        new Date().toISOString(),
+      isActive:         true,
     };
 
     AppState.add('teachers', teacher);
