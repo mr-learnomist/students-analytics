@@ -34,6 +34,12 @@ import { BackupModule }     from './modules/backupUI.js';
 import { BackupManager }    from './utils/backupManager.js';
 
 // ── Boot sequence ─────────────────────────────────────────────
+// ✅ FIX: doLogin() ka reference yahan rakhte hain taake showLogin()
+// jab #loginPass field ko naye element se replace kare (Chrome
+// password-manager popup se bachne ke liye), to naye field pe
+// dobara Enter-key submit wire ho sake.
+let _doLogin = null;
+
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     // Step 1: Load all data from server into cache FIRST (async)
@@ -117,6 +123,11 @@ function showLogin() {
     fresh.placeholder = 'Enter password';
     fresh.setAttribute('autocomplete', 'off');
     fresh.setAttribute('data-lpignore', 'true');
+    // ✅ FIX: naye (swapped) password field pe Enter-key submit
+    // dobara wire karo — yahan _doLogin ek live reference hai,
+    // isliye chahe ye field kitni baar bhi replace ho, hamesha
+    // sahi/current doLogin chalega
+    fresh.addEventListener('keydown', e => { if (e.key === 'Enter') _doLogin?.(); });
     old.replaceWith(fresh);
   }
   // setTimeout(() => document.getElementById('loginUser')?.focus(), 100);
@@ -124,11 +135,23 @@ function showLogin() {
 
 function wireLogin() {
   const btn   = document.getElementById('loginBtn');
-  const uInp  = document.getElementById('loginUser');
-  const pInp  = document.getElementById('loginPass');
   const errEl = document.getElementById('loginErr');
 
   const doLogin = () => {
+    // ✅ FIX (root cause): pehle uInp/pInp wireLogin() ke shuru mein
+    // sirf EK dafa capture hote thay. Lekin showLogin() har baar
+    // (logout ke baad, ya navigation-fallback pe) #loginPass field ko
+    // ek NAYE DOM element se replace karta hai (Chrome password-manager
+    // popup se bachne ke liye). Is wajah se ye closure purane (detached)
+    // node ko hi check karta rehta — jis ka value hamesha khali hota —
+    // chahe screen pe password sahi dikh rahi ho. Isi se "Please enter
+    // username and password" ghalat tareeqe se aata tha, ya button
+    // click karne pe kuch hota hi nahi tha. Ab live lookup karte hain
+    // taake hamesha CURRENT field hi check ho.
+    const uInp = document.getElementById('loginUser');
+    const pInp = document.getElementById('loginPass');
+    if (!uInp || !pInp || !errEl) return;
+
     errEl.style.display = 'none';
     document.getElementById('resetWrap').style.display = 'none';
     uInp.classList.remove('error');
@@ -161,10 +184,14 @@ function wireLogin() {
     }, 400);
   };
 
+  _doLogin = doLogin; // ✅ showLogin() naye password field ke liye yehi reference use karega
+
   document.getElementById('resetDataBtn')?.addEventListener('click', () => {
     AppState.resetState();
     errEl.style.display = 'none';
     document.getElementById('resetWrap').style.display = 'none';
+    const uInp = document.getElementById('loginUser');
+    const pInp = document.getElementById('loginPass');
     uInp.classList.remove('error');
     pInp.classList.remove('error');
     uInp.value = 'admin';
@@ -173,13 +200,13 @@ function wireLogin() {
   });
 
   btn?.addEventListener('click', doLogin);
-  pInp?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-  uInp?.addEventListener('keydown', e => { if (e.key === 'Enter') pInp?.focus(); });
+  document.getElementById('loginPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('loginUser')?.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPass')?.focus(); });
 
   document.querySelectorAll('.demo-btn').forEach(b =>
     b.addEventListener('click', () => {
-      uInp.value = b.dataset.u;
-      pInp.value = b.dataset.p;
+      document.getElementById('loginUser').value = b.dataset.u;
+      document.getElementById('loginPass').value = b.dataset.p;
       doLogin();
     })
   );
