@@ -142,7 +142,13 @@ function _getTeacherName(batch) {
 // "Final Accounts Test", "Chapter 3 Mock" etc. because those are
 // content names, not assessment identifiers.
 //
-const LP_VALID_TOPIC_RE = /^(?:test(?:\s+\d+)?|mid[\s-]?term(?:\s+\d+)?|mock(?:\s+exam)?(?:\s+\d+)?)$/i;
+// Recognised assessment-name keywords. A topic is valid if EVERY
+// word in it is one of these keywords (in any order/combination)
+// or a plain number — e.g. "Test Midterm", "Midterm Test",
+// "Mock Exam 2", "Mid Term" are all valid regardless of word order,
+// while "Internal Control Test" is rejected because "Internal" and
+// "Control" aren't recognised assessment words.
+const LP_VALID_TOPIC_WORDS = new Set(['test', 'mid', 'term', 'midterm', 'mock', 'exam']);
 
 function _isValidTestTopic(topic, rowType) {
   const t = (topic || '').trim();
@@ -150,8 +156,11 @@ function _isValidTestTopic(topic, rowType) {
   // Empty topic is always fine — we'll use the default label
   if (!t) return true;
 
-  // Must match one of the expected assessment-name patterns
-  return LP_VALID_TOPIC_RE.test(t);
+  // Split into words (treat hyphens as spaces too, e.g. "Mid-Term")
+  const words = t.toLowerCase().replace(/-/g, ' ').split(/\s+/).filter(Boolean);
+
+  // Every word must be a recognised assessment keyword or a number
+  return words.every(w => LP_VALID_TOPIC_WORDS.has(w) || /^\d+$/.test(w));
 }
 
 // ── LP Entry builder ──────────────────────────────────────────
