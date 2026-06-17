@@ -1673,15 +1673,23 @@ export const ResultProfile = {
     return rows;
   },
 
-  // ── Export CSV ───────────────────────────────────────────────
+  // ── Export CSV — table jaisi wide format ─────────────────────
+  // Screen table ki exact copy:
+  //   Row 1 (group header): #, Student ID, Student Name, Test 1,,, Test 1 (Retest #1),,,, Test 2,,,  ...
+  //   Row 2 (attempt label): blank x3, 1st Attempt,,, Retest #1,,,  ...
+  //   Row 3 (sub-columns) : blank x3, Marks, Status, Date, Marks, Status, Date ...
+  //   Data rows           : one row per student
   _exportCSV(d) {
-    const data    = this._buildExportRows(d);
-    if (!data.length) { alert('No results to export.'); return; }
-    const headers = Object.keys(data[0]);
+    if (!d.tableRows.length) { alert('No results to export.'); return; }
+
     const now     = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
 
+    // Helper: escape a value for CSV
+    const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+
+    // ── Meta lines ────────────────────────────────────────────
     const metaLines = [
       `Result Profile Report`,
       `Generated: ${dateStr} ${timeStr}`,
@@ -1693,17 +1701,115 @@ export const ResultProfile = {
       '',
     ].join('\n');
 
-    const csvRows = [
-      metaLines,
-      headers.join(','),
-      ...data.map(r => headers.map(h => `"${(r[h]||'').replace(/"/g,'""')}"`).join(',')),
+    // ── Build column map: per testGroup → attempts array ──────
+    // Mirrors exactly what the table renders
+    // groupCols = [{ groupLabel, isMock, original, retests[] }]
+    const colMap = d.testGroups.map(g => ({
+      groupLabel: g.groupLabel,
+      attempts: [
+        { label: '1st Attempt', entry: g.original, isRetest: false },
+        ...g.retests.map((r, ri) => ({ label: `Retest #${r.retestIndex || ri + 1}`, entry: r, isRetest: true })),
+      ],
+    }));
+
+    // Fixed left columns: 3
+    const LEFT = ['#', 'Student ID', 'Student Name'];
+
+    // ── ROW 1: Group header ───────────────────────────────────
+    // Each attempt = 3 sub-cols (Marks, Status, Date)
+    const row1 = [
+      ...LEFT,
+      ...colMap.flatMap(g =>
+        g.attempts.flatMap((_, ai) =>
+          ai === 0
+            ? [g.groupLabel, '', '']   // group label only on 1st attempt's first sub-col
+            : ['', '', '']             // merged cells → blank in CSV
+        )
+      ),
     ];
 
-    const blob = new Blob([csvRows.join('\n')], { type:'text/csv;charset=utf-8;' });
+    // ── ROW 2: Attempt labels ────────────────────────────────
+    const row2 = [
+      '', '', '',
+      ...colMap.flatMap(g =>
+        g.attempts.flatMap(a => [a.label, '', ''])
+      ),
+    ];
+
+    // ── ROW 3: Sub-column headers ────────────────────────────
+    const row3 = [
+      ...LEFT,
+      ...colMap.flatMap(g =>
+        g.attempts.flatMap(() => ['Marks', 'Status', 'Date'])
+      ),
+    ];
+
+    // ── Data rows ────────────────────────────────────────────
+    const dataRows = d.tableRows.map((row, ri) => {
+      const cells = [];
+      cells.push(String(ri + 1));
+      cells.push(row.studentId  || '—');
+      cells.push(row.studentName || '—');
+
+      colMap.forEach((g, gi) => {
+        const gc = row.groupCols[gi]; // { group, attempts[], effective }
+        g.attempts.forEach((attemptDef, ai) => {
+          const cell = gc ? gc.attempts[ai] : null;
+
+          // Marks: "obtained/total" or "Absent" or "—"
+          let marksVal = '—';
+          if (cell) {
+            if (cell.absent) {
+              marksVal = 'Absent';
+            } else if (cell.marks != null) {
+              marksVal = cell.totalMarks
+                ? `${cell.marks}/${cell.totalMarks}`
+                : String(cell.marks);
+            } else if (attemptDef.isRetest && !cell.hasRecord) {
+              marksVal = '';  // empty retest → blank (matches screen behaviour)
+            }
+          }
+
+          // Status
+          let statusVal = '';
+          if (cell) {
+            if (attemptDef.isRetest && cell.marks == null && !cell.absent) {
+              statusVal = '';  // empty retest → blank
+            } else {
+              statusVal = cell.status === 'pass'   ? 'Pass'
+                        : cell.status === 'fail'   ? 'Fail'
+                        : cell.status === 'absent' ? 'Absent'
+                        : 'Pending';
+            }
+          }
+
+          // Date
+          let dateVal = '';
+          if (cell && !(attemptDef.isRetest && cell.marks == null && !cell.absent)) {
+            dateVal = cell.entry?.date ? formatDate(cell.entry.date) : '—';
+          }
+
+          cells.push(marksVal, statusVal, dateVal);
+        });
+      });
+
+      return cells;
+    });
+
+    // ── Assemble CSV ─────────────────────────────────────────
+    const allRows = [
+      metaLines,
+      row1.map(esc).join(','),
+      row2.map(esc).join(','),
+      row3.map(esc).join(','),
+      ...dataRows.map(r => r.map(esc).join(',')),
+    ];
+
+    const blob = new Blob([allRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `Result-Profile-${d.batchDisplayName}-${dateStr.replace(/ /g,'-')}.csv`;
+    a.download = `Result-Profile-${d.batchDisplayName}-${dateStr.replace(/ /g, '-')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   },
