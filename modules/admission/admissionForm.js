@@ -447,6 +447,11 @@ function _step2HTML(state) {
     return true;
   });
 
+  // Subjects jin ke liye koi open batch available nahi (so we don't force
+  // a batch selection on them later — they should still flow into the
+  // fee summary / challan, just shown without an assigned batch).
+  fd._noBatchSubjectIds = selectedSubjectIds.filter(sid => getAvailableBatches(sid).length === 0);
+
   // Build batch cards HTML for selected subjects (search filter + teacher name)
   const batchCardsHTML = selectedSubjectIds.length === 0 ? '' : `
     <div class="adm-field adm-span2" style="margin-top:8px">
@@ -465,7 +470,9 @@ function _step2HTML(state) {
                        style="font-size:11.5px;padding:4px 8px;max-width:200px;background:var(--surface)">
               </div>
               ${batches.length === 0
-                ? `<div style="padding:12px;font-size:12.5px;color:var(--t3)">No open batches available for this subject.</div>`
+                ? `<div style="padding:12px;font-size:12.5px;color:var(--t3)">No open batches available for this subject.
+                     <span style="color:var(--yellow)">It will still be added to the fee challan; a batch can be assigned later.</span>
+                   </div>`
                 : `<div id="${listId}">
                   ${batches.map(b => {
                     const isSelected = fd.batchSelections?.[sid] === b.id;
@@ -1327,9 +1334,15 @@ function _wireStep(el, state, render, opts) {
         hasError = true;
       }
 
-      // Check batch selection for each subject
+      // Check batch selection for each subject — but skip subjects that
+      // genuinely have NO open batch available at all. Those should still
+      // proceed to the fee challan (batch can be assigned to them later)
+      // instead of permanently blocking the admission flow.
+      const noBatchSubjects = state.formData._noBatchSubjectIds || [];
       if (!hasError) {
-        const missingBatch = subjectIds.find(sid => !batchSelections[sid]);
+        const missingBatch = subjectIds.find(
+          sid => !batchSelections[sid] && !noBatchSubjects.includes(sid)
+        );
         if (missingBatch) {
           _showFieldErrors(el, { batchId: 'Please select a batch for each subject.' });
           hasError = true;
