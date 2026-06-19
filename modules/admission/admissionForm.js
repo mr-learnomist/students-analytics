@@ -398,14 +398,52 @@ function _step2HTML(state) {
   // Batches: filter by campus + discipline + level + today <= enrolmentCloseDate
   // Show available batches for each selected subject
   const allBatches = AppState.get('batches') || [];
+
+  // ── Fallback: derive enrolment close date from startDate + enrolmentRules ──
+  // (mirrors the same calc used in batch.js) — used only when the batch
+  // record itself has no enrolmentCloseDate saved (e.g. older batches).
+  const _normalizeDate = (s) => {
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const pd = new Date(s + 'T00:00:00');
+    if (isNaN(pd)) return s;
+    return pd.getFullYear() + '-' + String(pd.getMonth() + 1).padStart(2, '0') + '-' + String(pd.getDate()).padStart(2, '0');
+  };
+  const _addWorkingDays = (startDateStr, days) => {
+    const holidays = new Set((AppState.get('holidays') || []).map(h => _normalizeDate(h.date)));
+    let d = new Date(startDateStr + 'T00:00:00');
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      const ymd = _normalizeDate(d.toISOString().slice(0, 10));
+      if (dow !== 0 && !holidays.has(ymd)) added++;
+    }
+    return _normalizeDate(d.toISOString().slice(0, 10));
+  };
+  const _deriveCloseDate = (b) => {
+    if (!b.startDate) return '';
+    const rules = AppState.get('enrolmentRules') || [];
+    const rule = rules.find(r =>
+      r.disciplineId === b.disciplineId &&
+      (!r.campusId || r.campusId === b.campusId) &&
+      (r.levelId === b.levelId || (r.levelIds || []).includes(b.levelId))
+    );
+    if (!rule) return '';
+    if (rule.closeMode === 'same') return b.startDate;
+    return _addWorkingDays(b.startDate, rule.closeDays || 3);
+  };
+
   const getAvailableBatches = (subjectId) => allBatches.filter(b => {
     if (fd.campusId     && String(b.campusId)     !== fd.campusId)       return false;
     if (fd.disciplineId && String(b.disciplineId) !== fd.disciplineId)   return false;
     if (fd.levelId      && String(b.levelId)      !== fd.levelId)        return false;
     if (subjectId       && String(b.subjectId)    !== String(subjectId)) return false;
-    // Enrollment close date: only hide if a close date IS set AND it has already passed.
-    // No close date set → no restriction → batch stays open for admission.
-    if (b.enrolmentCloseDate && b.enrolmentCloseDate < today) return false;  // date guzar gayi → hide
+    // Enrollment close date: use the saved value if present, otherwise derive
+    // it from startDate + enrolmentRules (same logic batch.js uses). Only if
+    // neither is available do we treat the batch as open (no restriction).
+    const closeDate = b.enrolmentCloseDate || _deriveCloseDate(b);
+    if (closeDate && closeDate < today) return false;  // date guzar gayi → hide
     return true;
   });
 
@@ -463,7 +501,7 @@ function _step2HTML(state) {
                           </div>
                           <div style="font-size:11px;color:var(--t3);margin-top:3px">
                             ${b.startDate ? 'Start: ' + b.startDate : ''}
-                            ${b.enrolmentCloseDate ? ' &nbsp;·&nbsp; Enrol by: <span style="color:var(--green);font-weight:600">' + b.enrolmentCloseDate + '</span>' : ''}
+                            ${(b.enrolmentCloseDate || _deriveCloseDate(b)) ? ' &nbsp;·&nbsp; Enrol by: <span style="color:var(--green);font-weight:600">' + (b.enrolmentCloseDate || _deriveCloseDate(b)) + '</span>' : ''}
                             ${b.maxStudents ? ' &nbsp;·&nbsp; Capacity: ' + b.maxStudents : ''}
                           </div>
                         </div>
