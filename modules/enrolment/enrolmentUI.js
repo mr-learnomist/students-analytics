@@ -44,6 +44,17 @@ function injectStyles() {
 .enr-btn-ghost{background:var(--surface3);color:var(--t2);border:1px solid var(--border2)}
 .enr-btn-danger{background:var(--red-dim);color:var(--red)}
 
+/* status tabs */
+.enr-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);padding-bottom:0}
+.enr-tab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--t3);cursor:pointer;
+  border:none;background:transparent;border-bottom:2px solid transparent;margin-bottom:-1px;
+  transition:color .15s,border-color .15s;display:flex;align-items:center;gap:6px}
+.enr-tab:hover{color:var(--t1)}
+.enr-tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.enr-tab .enr-tab-count{background:var(--surface3);color:var(--t3);font-size:11px;font-weight:700;
+  padding:1px 7px;border-radius:10px}
+.enr-tab.active .enr-tab-count{background:var(--blue-dim);color:var(--blue)}
+
 /* summary pills */
 .enr-summary{display:flex;gap:8px;flex-wrap:wrap}
 .enr-pill{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;
@@ -215,6 +226,7 @@ let _search         = '';
 let _sortCol        = '';    // 'student'|'subject'|'batchNo'|'session'|'teacher'|'startDate'|'endDate'|'status'
 let _sortDir        = 'asc'; // 'asc'|'desc'
 let _selected       = new Set(); // bulk-delete: selected enrolment IDs
+let _activeTab       = 'enrolled'; // 'enrolled' | 'freeze' | 'dormant'
 
 // ── Main mount ────────────────────────────────────────────────
 export const EnrolmentModule = {
@@ -255,6 +267,19 @@ function render() {
         <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
       Export CSV
+    </button>
+  </div>
+
+  <!-- Status tabs -->
+  <div class="enr-tabs" id="enrTabs">
+    <button class="enr-tab ${_activeTab === 'enrolled' ? 'active' : ''}" data-tab="enrolled">
+      Enrolled <span class="enr-tab-count" id="enrTabCountEnrolled">0</span>
+    </button>
+    <button class="enr-tab ${_activeTab === 'freeze' ? 'active' : ''}" data-tab="freeze">
+      Freeze <span class="enr-tab-count" id="enrTabCountFreeze">0</span>
+    </button>
+    <button class="enr-tab ${_activeTab === 'dormant' ? 'active' : ''}" data-tab="dormant">
+      Dormant <span class="enr-tab-count" id="enrTabCountDormant">0</span>
     </button>
   </div>
 
@@ -560,6 +585,15 @@ function _enrRenderChips() {
 
 // ── Wire toolbar events ───────────────────────────────────────
 function wireEvents() {
+  // ── Status tabs ────────────────────────────────────────────
+  _container.querySelectorAll('.enr-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _activeTab = btn.dataset.tab;
+      _container.querySelectorAll('.enr-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderTable();
+    });
+  });
+
   _container.querySelector('#enrSearch')?.addEventListener('input', e => {
     _search = e.target.value;
     renderTable();
@@ -716,6 +750,30 @@ function renderTable() {
 
   let rows = EnrolmentService.getEnriched();
 
+  // ── Tab counts (computed off full dataset, before search/other filters) ──
+  const _allForCounts = rows;
+  const _freezeCount  = _allForCounts.filter(e => e.status === 'suspended').length;
+  const _dormantCount = _allForCounts.filter(e =>
+    (Array.isArray(e.subjects) && e.subjects.length)
+      ? e.subjects.some(sub => sub.status === 'dormant')
+      : e.status === 'dormant'
+  ).length;
+  const _enrolledCount = _allForCounts.length - _freezeCount;
+  const _cntEnrolled = _container.querySelector('#enrTabCountEnrolled');
+  const _cntFreeze   = _container.querySelector('#enrTabCountFreeze');
+  const _cntDormant  = _container.querySelector('#enrTabCountDormant');
+  if (_cntEnrolled) _cntEnrolled.textContent = _enrolledCount;
+  if (_cntFreeze)   _cntFreeze.textContent   = _freezeCount;
+  if (_cntDormant)  _cntDormant.textContent  = _dormantCount;
+
+  // ── Filter by active tab (enrolment-level status) ──────────
+  if (_activeTab === 'freeze') {
+    rows = rows.filter(e => e.status === 'suspended');
+  } else if (_activeTab === 'enrolled') {
+    rows = rows.filter(e => e.status !== 'suspended');
+  }
+  // 'dormant' tab is filtered later at subject-row level (subjectStatus)
+
   // Search
   if (_search.trim()) {
     const q = _search.trim().toLowerCase();
@@ -869,9 +927,14 @@ function renderTable() {
   });
 
   // Filter expanded rows by subject-level status (multi-select)
-  const filteredRows = _filterStatus.length
+  let filteredRows = _filterStatus.length
     ? expandedRows.filter(r => _filterStatus.includes(r.subjectStatus))
     : expandedRows;
+
+  // ── Dormant tab: only show subject-rows whose subject-status is dormant ──
+  if (_activeTab === 'dormant') {
+    filteredRows = filteredRows.filter(r => r.subjectStatus === 'dormant');
+  }
 
   // ── Apply campus / subject / session / teacher / batchNo filters ──
   let displayRows = filteredRows;
