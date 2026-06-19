@@ -1874,6 +1874,9 @@ export const BatchModule = {
     requestAnimationFrame(() => {
       updateStartDate();
       switchEndMode();
+      // Re-run enrolment close date calc now that startDateHidden holds the
+      // correct value — fixes stale calc on modal open (race with rAF above).
+      updateEnrolDate();
     });
     refreshTeacherDropdown();
 
