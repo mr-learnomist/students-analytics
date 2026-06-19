@@ -403,9 +403,9 @@ function _step2HTML(state) {
     if (fd.disciplineId && String(b.disciplineId) !== fd.disciplineId)   return false;
     if (fd.levelId      && String(b.levelId)      !== fd.levelId)        return false;
     if (subjectId       && String(b.subjectId)    !== String(subjectId)) return false;
-    // Enrollment close date: must exist AND be >= today
-    if (!b.enrolmentCloseDate)        return false;  // no date → hide
-    if (b.enrolmentCloseDate < today) return false;  // date guzar gayi → hide
+    // Enrollment close date: only hide if a close date IS set AND it has already passed.
+    // No close date set → no restriction → batch stays open for admission.
+    if (b.enrolmentCloseDate && b.enrolmentCloseDate < today) return false;  // date guzar gayi → hide
     return true;
   });
 
