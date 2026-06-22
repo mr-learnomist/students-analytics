@@ -175,6 +175,14 @@ function _injectStyles() {
 .adm-btn-success:hover { opacity: .88; }
 .adm-btn-danger  { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
 .adm-btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
+
+/* Guardian contacts rows */
+.adm-guardian-row input,
+.adm-guardian-row select { font-size: 12.5px; }
+@media (max-width: 640px) {
+  .adm-guardian-row { grid-template-columns: 1fr 1fr !important; }
+  .adm-guardian-row select { grid-column: span 2; }
+}
   `;
   document.head.appendChild(s);
 }
@@ -343,6 +351,89 @@ function _step1HTML(state) {
         <div class="adm-field adm-span2">
           <label class="adm-label">Address</label>
           <input class="adm-input" id="admAddress" placeholder="Home Address" value="${fd.address || ''}">
+        </div>
+
+        <div class="adm-field">
+          <label class="adm-label">City</label>
+          <input class="adm-input" id="admCity" placeholder="e.g. Rawalpindi" value="${fd.city || ''}">
+        </div>
+
+        <div class="adm-field">
+          <label class="adm-label">Province</label>
+          <select class="adm-select" id="admProvince">
+            <option value="">-- Select Province --</option>
+            ${['Punjab','Sindh','Khyber Pakhtunkhwa','Balochistan','Azad Kashmir','Gilgit-Baltistan','Islamabad (ICT)'].map(p =>
+              `<option value="${p}" ${fd.province === p ? 'selected' : ''}>${p}</option>`
+            ).join('')}
+          </select>
+        </div>
+
+        <div class="adm-field">
+          <label class="adm-label">Date of Admission</label>
+          <input class="adm-input" type="date" id="admAdmissionDate"
+            value="${fd.admissionDate || new Date().toISOString().split('T')[0]}">
+          <span class="adm-hint">Auto-filled with today's date</span>
+        </div>
+
+        <div class="adm-field">
+          <label class="adm-label">Route</label>
+          <select class="adm-select" id="admRoute">
+            <option value="">-- Select Route --</option>
+            ${((() => {
+              // Determine routes based on discipline or show all common routes
+              const discId = fd.disciplineId || '';
+              const allDisc = window?.AppState?.get?.('disciplines') || [];
+              const disc = allDisc.find(d => String(d.id) === String(discId));
+              const abbr = (disc?.abbreviation || '').toUpperCase();
+              if (abbr === 'ACCA' || abbr.includes('ACCA')) {
+                return ['Foundation','ACCA','Exemption'];
+              } else if (abbr === 'CA' || abbr.includes('CA')) {
+                return ['PRC','CAF','Exemption'];
+              } else {
+                return ['Foundation','ACCA','Exemption','PRC','CAF','Regular','Transfer'];
+              }
+            })()).map(r => `<option value="${r}" ${fd.route === r ? 'selected' : ''}>${r}</option>`).join('')}
+          </select>
+        </div>
+
+        <!-- Guardian Contacts (multiple) -->
+        <div class="adm-field adm-span2">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="adm-label" style="margin-bottom:0">
+              Guardian Contact(s)
+              <span style="font-size:10.5px;font-weight:400;color:var(--t3);text-transform:none">(Multiple contacts allowed)</span>
+            </label>
+            <button type="button" id="admAddGuardian"
+              style="font-size:11.5px;font-weight:700;color:var(--blue);background:var(--blue-dim);
+                     border:none;border-radius:5px;padding:4px 10px;cursor:pointer">
+              + Add Contact
+            </button>
+          </div>
+          <div id="admGuardianList" style="display:flex;flex-direction:column;gap:8px">
+            ${((fd.guardianContacts && fd.guardianContacts.length > 0)
+              ? fd.guardianContacts
+              : [{ name: '', phone: '', relation: '' }]
+            ).map((g, i) => `
+              <div class="adm-guardian-row" data-idx="${i}"
+                   style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:start">
+                <input class="adm-input adm-gc-name" placeholder="Guardian Name"
+                       value="${g.name || ''}" data-idx="${i}">
+                <input class="adm-input adm-gc-phone" placeholder="03XX-XXXXXXX"
+                       value="${g.phone || ''}" data-idx="${i}">
+                <select class="adm-select adm-gc-relation" data-idx="${i}">
+                  ${['Father','Mother','Brother','Sister','Spouse','Uncle','Other'].map(r =>
+                    `<option value="${r}" ${g.relation === r ? 'selected' : ''}>${r}</option>`
+                  ).join('')}
+                </select>
+                ${i === 0
+                  ? `<span style="width:32px"></span>`
+                  : `<button type="button" class="adm-gc-remove"
+                       style="width:32px;height:36px;border:none;border-radius:var(--r-sm);
+                              background:var(--red-dim);color:var(--red);cursor:pointer;font-size:16px;
+                              display:flex;align-items:center;justify-content:center"
+                       data-idx="${i}">×</button>`}
+              </div>`).join('')}
+          </div>
         </div>
 
       </div>
@@ -1015,6 +1106,7 @@ function _step4HTML(state) {
         <!-- ── STUDENT INFO ──────────────────────────────────── -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-bottom:14px">
           <div class="adm-challan-row"><span class="adm-challan-key">Student Name</span><span class="adm-challan-val">${student?.studentName || '—'}</span></div>
+          <div class="adm-challan-row"><span class="adm-challan-key">Student ID</span><span class="adm-challan-val" style="font-family:var(--font-mono);color:var(--blue)">${student?.studentNumber || '—'}</span></div>
           <div class="adm-challan-row"><span class="adm-challan-key">Father Name</span><span class="adm-challan-val">${student?.fatherName || '—'}</span></div>
           <div class="adm-challan-row"><span class="adm-challan-key">CNIC</span><span class="adm-challan-val" style="font-family:var(--font-mono)">${student?.cnic || student?.uniqueId || '—'}</span></div>
           <div class="adm-challan-row"><span class="adm-challan-key">Campus</span><span class="adm-challan-val">${campus?.campusName || '—'}</span></div>
@@ -1136,6 +1228,42 @@ function _wireStep(el, state, render, opts) {
       if (r.valid) e.target.value = r.formatted;
     });
 
+    // ── Guardian contacts: Add row ────────────────────────────
+    $('admAddGuardian')?.addEventListener('click', () => {
+      const gc = (state.formData.guardianContacts && state.formData.guardianContacts.length)
+        ? state.formData.guardianContacts : [{ name: '', phone: '', relation: '' }];
+      // Snapshot current DOM values before re-render
+      el.querySelectorAll('.adm-guardian-row').forEach(row => {
+        const idx = parseInt(row.dataset.idx);
+        if (!gc[idx]) gc[idx] = {};
+        gc[idx].name     = row.querySelector('.adm-gc-name')?.value.trim()  || '';
+        gc[idx].phone    = row.querySelector('.adm-gc-phone')?.value.trim() || '';
+        gc[idx].relation = row.querySelector('.adm-gc-relation')?.value     || '';
+      });
+      gc.push({ name: '', phone: '', relation: 'Father' });
+      state.formData.guardianContacts = gc;
+      render();
+    });
+
+    // ── Guardian contacts: Remove row ─────────────────────────
+    el.querySelectorAll('.adm-gc-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        const gc = (state.formData.guardianContacts || [{ name: '', phone: '', relation: '' }]).slice();
+        // Snapshot current DOM values
+        el.querySelectorAll('.adm-guardian-row').forEach(row => {
+          const i = parseInt(row.dataset.idx);
+          if (!gc[i]) gc[i] = {};
+          gc[i].name     = row.querySelector('.adm-gc-name')?.value.trim()  || '';
+          gc[i].phone    = row.querySelector('.adm-gc-phone')?.value.trim() || '';
+          gc[i].relation = row.querySelector('.adm-gc-relation')?.value     || '';
+        });
+        gc.splice(idx, 1);
+        state.formData.guardianContacts = gc.length ? gc : [{ name: '', phone: '', relation: '' }];
+        render();
+      });
+    });
+
     // Existing student CNIC lookup
     $('admCnicSearchBtn')?.addEventListener('click', () => {
       const raw = $('admCnicLookup')?.value;
@@ -1173,18 +1301,33 @@ function _wireStep(el, state, render, opts) {
         return;
       }
 
+      // Collect guardian contacts from DOM
+      const guardianRows = el.querySelectorAll('.adm-guardian-row');
+      const guardianContacts = [];
+      guardianRows.forEach(row => {
+        const gName     = row.querySelector('.adm-gc-name')?.value.trim()   || '';
+        const gPhone    = row.querySelector('.adm-gc-phone')?.value.trim()  || '';
+        const gRelation = row.querySelector('.adm-gc-relation')?.value      || '';
+        if (gName || gPhone) guardianContacts.push({ name: gName, phone: gPhone, relation: gRelation });
+      });
+
       // Collect new student data (no campusId here — that's step 2)
       const data = {
-        firstName:     $('admFirstName')?.value.trim()     || '',
-        lastName:      $('admLastName')?.value.trim()      || '',
-        fatherName:    $('admFatherName')?.value.trim()    || '',
-        cnic:          $('admCnic')?.value.trim()          || '',
-        gender:        $('admGender')?.value               || '',
-        dob:           $('admDob')?.value                  || '',
-        phone:         $('admPhone')?.value.trim()         || '',
-        email:         $('admEmail')?.value.trim()         || '',
-        qualification: $('admQualification')?.value.trim() || '',
-        address:       $('admAddress')?.value.trim()       || '',
+        firstName:        $('admFirstName')?.value.trim()        || '',
+        lastName:         $('admLastName')?.value.trim()         || '',
+        fatherName:       $('admFatherName')?.value.trim()       || '',
+        cnic:             $('admCnic')?.value.trim()             || '',
+        gender:           $('admGender')?.value                  || '',
+        dob:              $('admDob')?.value                     || '',
+        phone:            $('admPhone')?.value.trim()            || '',
+        email:            $('admEmail')?.value.trim()            || '',
+        qualification:    $('admQualification')?.value.trim()    || '',
+        address:          $('admAddress')?.value.trim()          || '',
+        city:             $('admCity')?.value.trim()             || '',
+        province:         $('admProvince')?.value                || '',
+        admissionDate:    $('admAdmissionDate')?.value           || new Date().toISOString().split('T')[0],
+        route:            $('admRoute')?.value                   || '',
+        guardianContacts: guardianContacts.length ? guardianContacts : (state.formData.guardianContacts || []),
       };
 
       // Validate only personal info fields — handle missing service gracefully
