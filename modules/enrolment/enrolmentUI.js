@@ -853,6 +853,17 @@ function renderTable() {
           ? (AppState.get('campuses') || []).find(c => c.id === subBatchRec.campusId)
           : null;
 
+        // ── For suspended/freeze rows: resolve campus from student record ──
+        const _studentRec = !_sCampus ? (AppState.get('students') || []).find(s => s.id === e.studentId) : null;
+        const _fallbackCampus = _studentRec?.campusId
+          ? (AppState.get('campuses') || []).find(c => c.id === _studentRec.campusId)
+          : null;
+
+        // ── For freeze rows: derive subject display from subjectCode/subjectName ──
+        const subjectDisplay = sub.subjectCode || sub.subjectName || parsed.subject;
+        const sessionDisplay = sub.session || parsed.session || '—';
+        const batchNoDisplay = sub.batchNo || parsed.batchNo || (sub.batchId ? '—' : 'Pending');
+
         // ── Live sync: resolve startDate/endDate from batch record (not stored snapshot) ──
         const liveStartDate = subBatchRec?.startDate || sub.startDate || '';
         let liveEndDate = subBatchRec?.endDate || sub.endDate || '';
@@ -867,22 +878,34 @@ function renderTable() {
           } catch(_) { /* fallback to batch stored endDate */ }
         }
 
+        // Resolve campus: batch campus → fallback to student campus
+        const resolvedCampus = _sCampus || _fallbackCampus;
+
         expandedRows.push({
           _enrolmentId: e.id,
           _subjectId:   sub.subjectId || '',
           _subjectIdx:  subjects.indexOf(sub),
           studentName:  e.studentName,
           studentCnic:  e.studentCnic,
-          campus:       _sCampus ? (_sCampus.campusName || '').replace(/\s*campus$/i,'').trim() || _sCampus.campusName : '—',
-          subject:      parsed.subject,
-          batchNo:      sub.batchNo   || parsed.batchNo,
-          session:      sub.session   || parsed.session,
+          campus:       resolvedCampus ? (resolvedCampus.campusName || '').replace(/\s*campus$/i,'').trim() || resolvedCampus.campusName : '—',
+          subject:      subjectDisplay,
+          batchNo:      batchNoDisplay,
+          session:      sessionDisplay,
           teacher:      subBatchRec?.teacher || subBatchRec?.teacherName || '—',
           startDate:    liveStartDate,
           endDate:      liveEndDate,
           duration:     calcDuration(liveStartDate, liveEndDate),
           subjectStatus: sub.status   || 'active',
           note:         sub.note || e.notes || '',
+          // Extra metadata for Enroll/Unfreeze actions
+          _enrolmentStatus: e.status,
+          _subjectName: sub.subjectName || '',
+          _subjectCode: sub.subjectCode || '',
+          _admissionId: e._admissionId || '',
+          _studentId:   e.studentId || '',
+          _campusId:    resolvedCampus?.id || _studentRec?.campusId || '',
+          _disciplineId: _studentRec?.disciplineId || '',
+          _levelId:     _studentRec?.levelId || '',
         });
       });
     } else {
@@ -1108,6 +1131,25 @@ function renderTable() {
       ${canWrite ? `
       <td>
         <div class="enr-actions">
+          ${r._enrolmentStatus === 'suspended' ? `
+          <button class="enr-icon-btn unfreeze" data-id="${r._enrolmentId}" data-subject-idx="${r._subjectIdx}" title="Unfreeze — mark active without batch"
+            style="background:transparent;color:var(--green)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v6m0 8v6M4.93 4.93l4.24 4.24m5.66 5.66 4.24 4.24M2 12h6m8 0h6M4.93 19.07l4.24-4.24m5.66-5.66 4.24-4.24"/>
+            </svg>
+          </button>
+          <button class="enr-icon-btn enroll" data-id="${r._enrolmentId}" data-subject-idx="${r._subjectIdx}"
+            data-subject-id="${r._subjectId}" data-subject-name="${r._subjectName}" data-subject-code="${r._subjectCode}"
+            data-campus-id="${r._campusId}" data-discipline-id="${r._disciplineId}" data-level-id="${r._levelId}"
+            data-student-id="${r._studentId}"
+            title="Assign Batch &amp; Enroll"
+            style="background:transparent;color:var(--blue)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+            </svg>
+          </button>` : ''}
           <button class="enr-icon-btn edit" data-id="${r._enrolmentId}" title="Edit">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -1208,6 +1250,237 @@ function renderTable() {
   tbody.querySelectorAll('.enr-icon-btn.del').forEach(btn =>
     btn.addEventListener('click', () => confirmDelete(btn.dataset.id))
   );
+
+  // ── Wire unfreeze button ──────────────────────────────────
+  tbody.querySelectorAll('.enr-icon-btn.unfreeze').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const enrolmentId = btn.dataset.id;
+      const subjectIdx  = parseInt(btn.dataset.subjectIdx);
+      const enrolment   = EnrolmentService.getById(enrolmentId);
+      if (!enrolment) return;
+      const user = AppState.get('currentUser')?.username || null;
+
+      if (subjectIdx >= 0 && Array.isArray(enrolment.subjects) && enrolment.subjects[subjectIdx]) {
+        const updatedSubjects = enrolment.subjects.map((sub, idx) =>
+          idx === subjectIdx ? { ...sub, status: 'active' } : sub
+        );
+        const allActive = updatedSubjects.every(s => s.status === 'active');
+        const r = EnrolmentService.update(enrolmentId, {
+          subjects: updatedSubjects,
+          status: allActive ? 'active' : enrolment.status,
+        }, user);
+        if (r.success) { Toast.success('Subject unfrozen — marked Active.'); renderTable(); renderSummary(); }
+        else Toast.error(r.message || 'Unfreeze failed.');
+      } else {
+        const r = EnrolmentService.update(enrolmentId, { status: 'active' }, user);
+        if (r.success) { Toast.success('Enrolment unfrozen.'); renderTable(); renderSummary(); }
+        else Toast.error(r.message || 'Unfreeze failed.');
+      }
+    });
+  });
+
+  // ── Wire enroll (assign batch) button ────────────────────
+  tbody.querySelectorAll('.enr-icon-btn.enroll').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openAssignBatchModal({
+        enrolmentId:  btn.dataset.id,
+        subjectIdx:   parseInt(btn.dataset.subjectIdx),
+        subjectId:    btn.dataset.subjectId,
+        subjectName:  btn.dataset.subjectName,
+        subjectCode:  btn.dataset.subjectCode,
+        campusId:     btn.dataset.campusId,
+        disciplineId: btn.dataset.disciplineId,
+        levelId:      btn.dataset.levelId,
+        studentId:    btn.dataset.studentId,
+      });
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// ASSIGN BATCH MODAL — For freeze tab: assign batch to a subject
+// Same logic as admission form — shows active batches for that subject
+// ══════════════════════════════════════════════════════════════
+function openAssignBatchModal({ enrolmentId, subjectIdx, subjectId, subjectName, subjectCode, campusId, disciplineId, levelId, studentId }) {
+  const enrolment = EnrolmentService.getById(enrolmentId);
+  if (!enrolment) return;
+
+  const enriched    = EnrolmentService.getEnriched().find(x => x.id === enrolmentId);
+  const studentName = enriched?.studentName || '—';
+  const displayName = subjectCode ? `${subjectCode} — ${subjectName}` : (subjectName || 'Subject');
+
+  // ── Get active batches for this subject ────────────────────
+  // Filter: campusId match + disciplineId match + isActive + has this subjectId
+  const allBatches = AppState.get('batches') || [];
+  const today = new Date().toISOString().split('T')[0];
+
+  let activeBatches = allBatches.filter(b => {
+    if (b.isActive === false) return false;
+    // Campus filter
+    if (campusId && b.campusId && String(b.campusId) !== String(campusId)) return false;
+    // Discipline filter
+    if (disciplineId && b.disciplineId && String(b.disciplineId) !== String(disciplineId)) return false;
+    // Level filter
+    if (levelId && b.levelId && String(b.levelId) !== String(levelId)) return false;
+    // Subject filter: batch must include this subject
+    if (subjectId) {
+      const bSubjectIds = Array.isArray(b.subjectIds) ? b.subjectIds.map(String) : (b.subjectId ? [String(b.subjectId)] : []);
+      if (bSubjectIds.length && !bSubjectIds.includes(String(subjectId))) return false;
+    }
+    // Enrolment close date check
+    if (b.enrolmentCloseDate && b.enrolmentCloseDate < today) return false;
+    return true;
+  });
+
+  // Enrich batch display info
+  const campuses = AppState.get('campuses') || [];
+  const batchRows = activeBatches.map(b => {
+    const campus  = campuses.find(c => String(c.id) === String(b.campusId));
+    const campusLabel = campus ? campus.campusName : '';
+    const batchName = b.batchName || b.name || b.id;
+    const parts = batchName.split('-');
+    const batchNo = parts[parts.length - 1] || '';
+    const sessionParts = parts.slice(1, parts.length - 1);
+    const session = sessionParts.join('-') || b.session || '';
+    return { ...b, campusLabel, batchNo, session, displayBatchName: batchName };
+  });
+
+  const overlay = document.createElement('div');
+  overlay.className = 'enr-overlay';
+  overlay.innerHTML = `
+<div class="enr-modal" style="max-width:560px">
+  <div class="enr-modal-hdr">
+    <span class="enr-modal-title">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" style="margin-right:6px;vertical-align:middle">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+      </svg>
+      Assign Batch &amp; Enroll
+    </span>
+    <button class="enr-modal-close" id="enrEnrollClose">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+  <div class="enr-modal-body">
+    <div style="background:var(--blue-dim);border:1px solid var(--blue);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:16px;font-size:13px">
+      <b style="color:var(--t1)">${studentName}</b>
+      <span style="color:var(--t3);margin:0 6px">•</span>
+      <span style="color:var(--blue);font-family:var(--font-mono);font-weight:700">${displayName}</span>
+    </div>
+
+    ${batchRows.length === 0 ? `
+    <div style="text-align:center;padding:32px 16px;color:var(--t3)">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" style="opacity:.35;margin-bottom:12px;display:block;margin-inline:auto">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <p style="font-size:13.5px;font-weight:600;margin:0 0 4px">No open batches found</p>
+      <p style="font-size:12px;margin:0">There are no active batches for <b>${displayName}</b> at this campus.<br>Create a batch first, then come back to enroll.</p>
+    </div>` : `
+    <div style="font-size:11.5px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+      Select Batch
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto" id="enrBatchList">
+      ${batchRows.map(b => `
+        <label style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--border2);
+          border-radius:var(--r-sm);cursor:pointer;transition:all .12s;background:var(--surface2)"
+          class="enr-batch-option-row" data-batch-id="${b.id}">
+          <input type="radio" name="enrBatchRadio" value="${b.id}" class="enr-batch-radio"
+            style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer;flex-shrink:0"/>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--violet)">${b.displayBatchName}</div>
+            <div style="font-size:11.5px;color:var(--t3);margin-top:2px;display:flex;gap:10px;flex-wrap:wrap">
+              ${b.session ? `<span>Session: <b style="color:var(--t2)">${b.session}</b></span>` : ''}
+              ${b.batchNo ? `<span>Batch #: <b style="color:var(--t2)">${b.batchNo}</b></span>` : ''}
+              ${b.campusLabel ? `<span>Campus: <b style="color:var(--t2)">${b.campusLabel}</b></span>` : ''}
+              ${b.startDate ? `<span>Starts: <b style="color:var(--t2)">${b.startDate}</b></span>` : ''}
+              ${b.teacher || b.teacherName ? `<span>Teacher: <b style="color:var(--t2)">${b.teacher || b.teacherName}</b></span>` : ''}
+            </div>
+          </div>
+        </label>`).join('')}
+    </div>`}
+  </div>
+  <div class="enr-modal-footer">
+    <button class="enr-btn enr-btn-ghost" id="enrEnrollCancel">Cancel</button>
+    ${batchRows.length > 0 ? `<button class="enr-btn enr-btn-primary" id="enrEnrollSave">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Confirm Enrolment
+    </button>` : ''}
+  </div>
+</div>`;
+
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+
+  overlay.querySelector('#enrEnrollClose').addEventListener('click', close);
+  overlay.querySelector('#enrEnrollCancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  // Highlight selected batch row
+  overlay.querySelectorAll('.enr-batch-option-row').forEach(row => {
+    row.addEventListener('click', () => {
+      overlay.querySelectorAll('.enr-batch-option-row').forEach(r =>
+        r.style.borderColor = 'var(--border2)'
+      );
+      row.style.borderColor = 'var(--blue)';
+      row.style.background  = 'var(--blue-dim)';
+      const radio = row.querySelector('input[type=radio]');
+      if (radio) radio.checked = true;
+    });
+  });
+
+  const saveBtn = overlay.querySelector('#enrEnrollSave');
+  if (!saveBtn) return;
+
+  saveBtn.addEventListener('click', () => {
+    const selectedRadio = overlay.querySelector('.enr-batch-radio:checked');
+    if (!selectedRadio) { Toast.error('Please select a batch.'); return; }
+
+    const selectedBatchId = selectedRadio.value;
+    const selectedBatch   = allBatches.find(b => b.id === selectedBatchId);
+    if (!selectedBatch) { Toast.error('Batch not found.'); return; }
+
+    const user = AppState.get('currentUser')?.username || null;
+
+    // Update the subject entry with the new batch info
+    const updatedSubjects = enrolment.subjects.map((sub, idx) => {
+      if (idx !== subjectIdx) return sub;
+      return {
+        ...sub,
+        batchId:   selectedBatchId,
+        batchName: selectedBatch.batchName || selectedBatch.name || '',
+        batchNo:   (selectedBatch.batchName || '').split('-').pop() || '',
+        session:   selectedBatch.session || sub.session || '',
+        startDate: selectedBatch.startDate || sub.startDate || '',
+        endDate:   selectedBatch.endDate   || sub.endDate   || '',
+        teacher:   selectedBatch.teacher   || selectedBatch.teacherName || sub.teacher || '',
+        status:    'active',
+        note:      '',
+      };
+    });
+
+    // Check if ALL subjects now have batches → set enrolment status to active
+    const allHaveBatch = updatedSubjects.every(s => s.batchId);
+    const newEnrolmentStatus = allHaveBatch ? 'active' : enrolment.status;
+
+    const result = EnrolmentService.update(enrolmentId, {
+      subjects: updatedSubjects,
+      batchId:  allHaveBatch ? (updatedSubjects[0]?.batchId || enrolment.batchId) : enrolment.batchId,
+      status:   newEnrolmentStatus,
+      notes:    enrolment.notes || '',
+    }, user);
+
+    if (result.success) {
+      Toast.success(`Batch assigned — ${studentName} enrolled in ${selectedBatch.batchName || selectedBatchId}.`);
+      close();
+      renderTable();
+      renderSummary();
+    } else {
+      Toast.error(result.message || 'Enrolment failed.');
+    }
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
