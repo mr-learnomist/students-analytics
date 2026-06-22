@@ -1132,12 +1132,6 @@ function renderTable() {
       <td>
         <div class="enr-actions">
           ${r._enrolmentStatus === 'suspended' ? `
-          <button class="enr-icon-btn unfreeze" data-id="${r._enrolmentId}" data-subject-idx="${r._subjectIdx}" title="Unfreeze — mark active without batch"
-            style="background:transparent;color:var(--green)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2v6m0 8v6M4.93 4.93l4.24 4.24m5.66 5.66 4.24 4.24M2 12h6m8 0h6M4.93 19.07l4.24-4.24m5.66-5.66 4.24-4.24"/>
-            </svg>
-          </button>
           <button class="enr-icon-btn enroll" data-id="${r._enrolmentId}" data-subject-idx="${r._subjectIdx}"
             data-subject-id="${r._subjectId}" data-subject-name="${r._subjectName}" data-subject-code="${r._subjectCode}"
             data-campus-id="${r._campusId}" data-discipline-id="${r._disciplineId}" data-level-id="${r._levelId}"
@@ -1314,6 +1308,39 @@ function openAssignBatchModal({ enrolmentId, subjectIdx, subjectId, subjectName,
   const allBatches = AppState.get('batches') || [];
   const today = new Date().toISOString().split('T')[0];
 
+  // ── Same close-date logic as admissionForm (Step 2) ───────────
+  const _normalizeDate = (s) => {
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const pd = new Date(s + 'T00:00:00');
+    if (isNaN(pd)) return s;
+    return pd.getFullYear() + '-' + String(pd.getMonth() + 1).padStart(2, '0') + '-' + String(pd.getDate()).padStart(2, '0');
+  };
+  const _addWorkingDays = (startDateStr, days) => {
+    const holidays = new Set((AppState.get('holidays') || []).map(h => _normalizeDate(h.date)));
+    let d = new Date(startDateStr + 'T00:00:00');
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      const ymd = _normalizeDate(d.toISOString().slice(0, 10));
+      if (dow !== 0 && !holidays.has(ymd)) added++;
+    }
+    return _normalizeDate(d.toISOString().slice(0, 10));
+  };
+  const _deriveCloseDate = (b) => {
+    if (!b.startDate) return '';
+    const rules = AppState.get('enrolmentRules') || [];
+    const rule = rules.find(r =>
+      r.disciplineId === b.disciplineId &&
+      (!r.campusId || r.campusId === b.campusId) &&
+      (r.levelId === b.levelId || (r.levelIds || []).includes(b.levelId))
+    );
+    if (!rule) return '';
+    if (rule.closeMode === 'same') return b.startDate;
+    return _addWorkingDays(b.startDate, rule.closeDays || 3);
+  };
+
   let activeBatches = allBatches.filter(b => {
     if (b.isActive === false) return false;
     // Campus filter
@@ -1327,8 +1354,9 @@ function openAssignBatchModal({ enrolmentId, subjectIdx, subjectId, subjectName,
       const bSubjectIds = Array.isArray(b.subjectIds) ? b.subjectIds.map(String) : (b.subjectId ? [String(b.subjectId)] : []);
       if (bSubjectIds.length && !bSubjectIds.includes(String(subjectId))) return false;
     }
-    // Enrolment close date check
-    if (b.enrolmentCloseDate && b.enrolmentCloseDate < today) return false;
+    // Enrolment close date: use saved value or derive from rules (same as admissionForm Step 2)
+    const closeDate = b.enrolmentCloseDate || _deriveCloseDate(b);
+    if (closeDate && closeDate < today) return false;
     return true;
   });
 
