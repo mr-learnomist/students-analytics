@@ -266,31 +266,40 @@ export const AdmissionService = {
 
     // ── Create student record ─────────────────────────────────
     // Mirrors exact shape used by studentService.js
-    const studentId = generateID('stu');
+    const studentId     = generateID('stu');
+    const studentNumber = _generateStudentNumber();   // e.g. STU-00042
     const student = {
-      id:           studentId,
-      cnic:         formattedCNIC,
-      uniqueId:     formattedCNIC,
-      studentName:  `${formData.firstName.trim()} ${formData.lastName.trim()}`,
-      firstName:    formData.firstName.trim(),
-      lastName:     formData.lastName.trim(),
-      fatherName:   formData.fatherName?.trim() || '',
-      gender:       formData.gender || 'Male',
-      dob:          formData.dob    || '',
-      phone:        formData.phone?.trim()         || '',
-      email:        formData.email?.trim()         || '',
-      address:      formData.address?.trim()       || '',
-      qualification:formData.qualification?.trim() || '',
-      campusId:     formData.campusId,
-      disciplineId: formData.disciplineId,
-      subjectId:    formData.subjectId   || null,
-      levelId:      level?.id            || null,
-      batchId:      formData.batchId,
-      teacherId:    batch.teacherId      || null,
-      session:      formData.session,
-      isActive:     false,  // becomes true after challan payment
-      createdAt:    new Date().toISOString(),
-      admittedVia:  'admission_module',
+      id:               studentId,
+      studentNumber,
+      cnic:             formattedCNIC,
+      uniqueId:         formattedCNIC,
+      studentName:      `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+      firstName:        formData.firstName.trim(),
+      lastName:         formData.lastName.trim(),
+      fatherName:       formData.fatherName?.trim()       || '',
+      gender:           formData.gender                   || 'Male',
+      dob:              formData.dob                      || '',
+      phone:            formData.phone?.trim()            || '',
+      email:            formData.email?.trim()            || '',
+      address:          formData.address?.trim()          || '',
+      city:             formData.city?.trim()             || '',
+      province:         formData.province?.trim()         || '',
+      qualification:    formData.qualification?.trim()    || '',
+      route:            formData.route?.trim()            || '',
+      admissionDate:    formData.admissionDate            || new Date().toISOString().split('T')[0],
+      guardianContacts: Array.isArray(formData.guardianContacts)
+                          ? formData.guardianContacts.filter(g => g.name || g.phone)
+                          : [],
+      campusId:         formData.campusId,
+      disciplineId:     formData.disciplineId,
+      subjectId:        formData.subjectId   || null,
+      levelId:          level?.id            || null,
+      batchId:          formData.batchId,
+      teacherId:        batch.teacherId      || null,
+      session:          formData.session,
+      isActive:         false,  // becomes true after challan payment
+      createdAt:        new Date().toISOString(),
+      admittedVia:      'admission_module',
     };
 
     AppState.add(KEY_STUDENTS, student);
@@ -602,6 +611,27 @@ function _generateChallanNumber() {
     challanNo++;
   }
   return String(challanNo);
+}
+
+/**
+ * Auto-generate sequential Student Number: STU-XXXXX
+ * Finds the highest existing studentNumber and increments.
+ * Students without a studentNumber are not counted.
+ */
+function _generateStudentNumber() {
+  const students = AppState.get('students') || [];
+  let maxNo = 0;
+  students.forEach(s => {
+    if (s.studentNumber) {
+      const m = String(s.studentNumber).match(/\d+$/);
+      if (m) {
+        const n = parseInt(m[0], 10);
+        if (n > maxNo) maxNo = n;
+      }
+    }
+  });
+  const nextNo = maxNo + 1;
+  return 'STU-' + String(nextNo).padStart(5, '0');
 }
 
 /** Default due date = 15 days from today */
