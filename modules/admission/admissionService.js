@@ -266,40 +266,31 @@ export const AdmissionService = {
 
     // ── Create student record ─────────────────────────────────
     // Mirrors exact shape used by studentService.js
-    const studentId     = generateID('stu');
-    const studentNumber = _generateStudentNumber();   // e.g. STU-00042
+    const studentId = generateID('stu');
     const student = {
-      id:               studentId,
-      studentNumber,
-      cnic:             formattedCNIC,
-      uniqueId:         formattedCNIC,
-      studentName:      `${formData.firstName.trim()} ${formData.lastName.trim()}`,
-      firstName:        formData.firstName.trim(),
-      lastName:         formData.lastName.trim(),
-      fatherName:       formData.fatherName?.trim()       || '',
-      gender:           formData.gender                   || 'Male',
-      dob:              formData.dob                      || '',
-      phone:            formData.phone?.trim()            || '',
-      email:            formData.email?.trim()            || '',
-      address:          formData.address?.trim()          || '',
-      city:             formData.city?.trim()             || '',
-      province:         formData.province?.trim()         || '',
-      qualification:    formData.qualification?.trim()    || '',
-      route:            formData.route?.trim()            || '',
-      admissionDate:    formData.admissionDate            || new Date().toISOString().split('T')[0],
-      guardianContacts: Array.isArray(formData.guardianContacts)
-                          ? formData.guardianContacts.filter(g => g.name || g.phone)
-                          : [],
-      campusId:         formData.campusId,
-      disciplineId:     formData.disciplineId,
-      subjectId:        formData.subjectId   || null,
-      levelId:          level?.id            || null,
-      batchId:          formData.batchId,
-      teacherId:        batch.teacherId      || null,
-      session:          formData.session,
-      isActive:         false,  // becomes true after challan payment
-      createdAt:        new Date().toISOString(),
-      admittedVia:      'admission_module',
+      id:           studentId,
+      cnic:         formattedCNIC,
+      uniqueId:     formattedCNIC,
+      studentName:  `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+      firstName:    formData.firstName.trim(),
+      lastName:     formData.lastName.trim(),
+      fatherName:   formData.fatherName?.trim() || '',
+      gender:       formData.gender || 'Male',
+      dob:          formData.dob    || '',
+      phone:        formData.phone?.trim()         || '',
+      email:        formData.email?.trim()         || '',
+      address:      formData.address?.trim()       || '',
+      qualification:formData.qualification?.trim() || '',
+      campusId:     formData.campusId,
+      disciplineId: formData.disciplineId,
+      subjectId:    formData.subjectId   || null,
+      levelId:      level?.id            || null,
+      batchId:      formData.batchId,
+      teacherId:    batch.teacherId      || null,
+      session:      formData.session,
+      isActive:     false,  // becomes true after challan payment
+      createdAt:    new Date().toISOString(),
+      admittedVia:  'admission_module',
     };
 
     AppState.add(KEY_STUDENTS, student);
@@ -307,18 +298,23 @@ export const AdmissionService = {
     // ── Create admission record ───────────────────────────────
     const admissionId = generateID('adm');
     const admission = {
-      id:           admissionId,
-      studentId:    studentId,
-      campusId:     formData.campusId,
-      disciplineId: formData.disciplineId,
-      levelId:      formData.levelId      || null,
-      subjectId:    formData.subjectId    || null,
-      batchId:      formData.batchId,
-      session:      formData.session,
-      status:       ADMISSION_STATUS.PENDING,
-      admittedBy:   Auth.getCurrentUser()?.userId || null,
-      createdAt:    new Date().toISOString(),
-      updatedAt:    new Date().toISOString(),
+      id:              admissionId,
+      studentId:       studentId,
+      campusId:        formData.campusId,
+      disciplineId:    formData.disciplineId,
+      levelId:         formData.levelId      || null,
+      subjectId:       formData.subjectId    || null,
+      batchId:         formData.batchId,
+      session:         formData.session,
+      // ── Multi-subject selections (from Step 2) ────────────
+      subjectIds:      Array.isArray(formData.subjectIds)      ? formData.subjectIds      : (formData.subjectId ? [formData.subjectId] : []),
+      batchSelections: (typeof formData.batchSelections === 'object' && formData.batchSelections !== null)
+                         ? formData.batchSelections : (formData.batchId ? { [formData.subjectId]: formData.batchId } : {}),
+      noBatchSubjectIds: Array.isArray(formData._noBatchSubjectIds) ? formData._noBatchSubjectIds : [],
+      status:          ADMISSION_STATUS.PENDING,
+      admittedBy:      Auth.getCurrentUser()?.userId || null,
+      createdAt:       new Date().toISOString(),
+      updatedAt:       new Date().toISOString(),
     };
 
     AppState.add(KEY_ADMISSIONS, admission);
@@ -370,19 +366,23 @@ export const AdmissionService = {
 
     const admissionId = generateID('adm');
     const admission = {
-      id:           admissionId,
+      id:              admissionId,
       studentId,
-      campusId:     formData.campusId     || student.campusId,
-      disciplineId: formData.disciplineId || student.disciplineId,
-      levelId:      formData.levelId      || student.levelId,
-      subjectId:    formData.subjectId    || student.subjectId,
-      batchId:      formData.batchId,
-      session:      formData.session,
-      status:       ADMISSION_STATUS.PENDING,
-      isReAdmission:true,
-      admittedBy:   Auth.getCurrentUser()?.userId || null,
-      createdAt:    new Date().toISOString(),
-      updatedAt:    new Date().toISOString(),
+      campusId:        formData.campusId     || student.campusId,
+      disciplineId:    formData.disciplineId || student.disciplineId,
+      levelId:         formData.levelId      || student.levelId,
+      subjectId:       formData.subjectId    || student.subjectId,
+      batchId:         formData.batchId,
+      session:         formData.session,
+      subjectIds:      Array.isArray(formData.subjectIds)      ? formData.subjectIds      : (formData.subjectId ? [formData.subjectId] : []),
+      batchSelections: (typeof formData.batchSelections === 'object' && formData.batchSelections !== null)
+                         ? formData.batchSelections : (formData.batchId ? { [formData.subjectId]: formData.batchId } : {}),
+      noBatchSubjectIds: Array.isArray(formData._noBatchSubjectIds) ? formData._noBatchSubjectIds : [],
+      status:          ADMISSION_STATUS.PENDING,
+      isReAdmission:   true,
+      admittedBy:      Auth.getCurrentUser()?.userId || null,
+      createdAt:       new Date().toISOString(),
+      updatedAt:       new Date().toISOString(),
     };
 
     AppState.add(KEY_ADMISSIONS, admission);
@@ -434,6 +434,9 @@ export const AdmissionService = {
     // ── Add student to attendance roster if not already there ──
     this._syncAttendanceRoster(challan.studentId, challan.batchId);
 
+    // ── Auto-create enrolment entries from admission subject selections ──
+    this._syncEnrolmentsOnActivation(challan.studentId, challan.admissionId);
+
     return { success: true };
   },
 
@@ -462,6 +465,9 @@ export const AdmissionService = {
     });
 
     this._syncAttendanceRoster(challan.studentId, challan.batchId);
+
+    // ── Auto-create enrolment entries from admission subject selections ──
+    this._syncEnrolmentsOnActivation(challan.studentId, challan.admissionId);
 
     return { success: true };
   },
@@ -569,6 +575,175 @@ export const AdmissionService = {
     return challan;
   },
 
+  // ── Auto-create Enrolment entries when student is activated ────────────────
+  // Called after challan is paid or waived.
+  // Logic:
+  //   • For each subject where a batch was selected → create enrolment with status 'active'
+  //   • For each subject where NO batch was selected → create enrolment with status 'suspended'
+  //     (shows in Freeze tab of Enrolment module — batch can be assigned later)
+  //   • Duplicate check: skip if same studentId+batchId enrolment already exists
+  // ─────────────────────────────────────────────────────────────────────────────
+  _syncEnrolmentsOnActivation(studentId, admissionId) {
+    try {
+      const admission = AppState.findById(KEY_ADMISSIONS, admissionId);
+      if (!admission) return;
+
+      const student        = AppState.findById(KEY_STUDENTS, studentId);
+      const enrolments     = AppState.get('enrolments') || [];
+      const today          = new Date().toISOString().split('T')[0];
+
+      // ── Resolve subject list from admission record ──────────
+      const subjectIds       = Array.isArray(admission.subjectIds)      ? admission.subjectIds      : (admission.subjectId ? [admission.subjectId] : []);
+      const batchSelections  = (typeof admission.batchSelections === 'object' && admission.batchSelections !== null)
+                                 ? admission.batchSelections : {};
+      const noBatchSubjects  = Array.isArray(admission.noBatchSubjectIds) ? admission.noBatchSubjectIds : [];
+
+      // ── Helper: is this enrolment already present? ──────────
+      const alreadyEnrolled = (sid, bid) => enrolments.some(e =>
+        e.studentId === studentId &&
+        (bid ? e.batchId === bid : !e.batchId) &&
+        Array.isArray(e.subjects) && e.subjects.some(s => s.subjectId === sid)
+      );
+
+      if (!subjectIds.length) {
+        // Fallback for admissions without multi-subject selections (legacy/simple mode)
+        // Create a single enrolment for the batch stored on the admission record
+        const batchId = admission.batchId;
+        if (batchId && !enrolments.some(e => e.studentId === studentId && e.batchId === batchId)) {
+          const batch   = AppState.findById('batches', batchId);
+          const subject = AppState.findById('subjects', admission.subjectId);
+          const subjectEntry = subject ? [{
+            subjectId:  subject.id,
+            subjectCode: subject.subjectCode || '',
+            subjectName: subject.subjectName || '',
+            batchId:    batchId,
+            batchName:  batch?.batchName || '',
+            batchNo:    (batch?.batchName || '').split('-').pop() || '',
+            session:    admission.session || batch?.session || '',
+            startDate:  batch?.startDate  || '',
+            endDate:    batch?.endDate    || '',
+            status:     'active',
+            note:       '',
+          }] : [];
+
+          const enrolment = {
+            id:            generateID('enr'),
+            studentId,
+            batchId,
+            enrolmentDate: today,
+            status:        'active',
+            feeStatus:     'paid',
+            notes:         `Auto-created on admission confirmation (${admissionId})`,
+            subjects:      subjectEntry,
+            createdBy:     'admission_auto',
+            createdAt:     new Date().toISOString(),
+            _admissionId:  admissionId,
+          };
+          AppState.add('enrolments', enrolment);
+        }
+        return;
+      }
+
+      // ── Multi-subject mode ───────────────────────────────────
+      // Group subjects by their batchId (batch-selected ones together,
+      // no-batch ones get their own "suspended" enrolment each).
+
+      // 1. Subjects WITH a batch selected → one enrolment per unique batchId
+      const batchMap = {};   // batchId → [subjectId, ...]
+      subjectIds.forEach(sid => {
+        const bid = batchSelections[sid];
+        if (bid) {
+          if (!batchMap[bid]) batchMap[bid] = [];
+          batchMap[bid].push(sid);
+        }
+      });
+
+      Object.entries(batchMap).forEach(([batchId, sids]) => {
+        // Skip if already enrolled in this batch
+        if (enrolments.some(e => e.studentId === studentId && e.batchId === batchId)) return;
+
+        const batch = AppState.findById('batches', batchId);
+
+        const subjectEntries = sids.map(sid => {
+          const subj = AppState.findById('subjects', sid);
+          return {
+            subjectId:   sid,
+            subjectCode: subj?.subjectCode || '',
+            subjectName: subj?.subjectName || '',
+            batchId,
+            batchName:   batch?.batchName  || '',
+            batchNo:     (batch?.batchName || '').split('-').pop() || '',
+            session:     admission.session || batch?.session || '',
+            startDate:   batch?.startDate  || '',
+            endDate:     batch?.endDate    || '',
+            status:      'active',
+            note:        '',
+          };
+        });
+
+        const enrolment = {
+          id:            generateID('enr'),
+          studentId,
+          batchId,
+          enrolmentDate: today,
+          status:        'active',
+          feeStatus:     'paid',
+          notes:         `Auto-created on admission confirmation (${admissionId})`,
+          subjects:      subjectEntries,
+          createdBy:     'admission_auto',
+          createdAt:     new Date().toISOString(),
+          _admissionId:  admissionId,
+        };
+        AppState.add('enrolments', enrolment);
+      });
+
+      // 2. Subjects WITHOUT a batch selected → one suspended enrolment each
+      //    (appears in Freeze tab — batch to be assigned later)
+      const noBatch = subjectIds.filter(sid => !batchSelections[sid]);
+      noBatch.forEach(sid => {
+        const subj = AppState.findById('subjects', sid);
+
+        // Skip if student already has a suspended enrolment for this subject
+        const dup = enrolments.some(e =>
+          e.studentId === studentId &&
+          e.status === 'suspended' &&
+          Array.isArray(e.subjects) && e.subjects.some(s => s.subjectId === sid)
+        );
+        if (dup) return;
+
+        const enrolment = {
+          id:            generateID('enr'),
+          studentId,
+          batchId:       null,       // no batch yet
+          enrolmentDate: today,
+          status:        'suspended', // → Freeze tab in Enrolment UI
+          feeStatus:     'paid',
+          notes:         `Batch not yet assigned — auto-created from admission (${admissionId})`,
+          subjects:      [{
+            subjectId:   sid,
+            subjectCode: subj?.subjectCode || '',
+            subjectName: subj?.subjectName || '',
+            batchId:     null,
+            batchName:   '',
+            batchNo:     '',
+            session:     admission.session || '',
+            startDate:   '',
+            endDate:     '',
+            status:      'active',
+            note:        'Batch pending assignment',
+          }],
+          createdBy:     'admission_auto',
+          createdAt:     new Date().toISOString(),
+          _admissionId:  admissionId,
+        };
+        AppState.add('enrolments', enrolment);
+      });
+
+    } catch(err) {
+      console.warn('[AdmissionService] _syncEnrolmentsOnActivation error:', err);
+    }
+  },
+
   // If the batch has a batchSchedule, add student to attendance roster
   _syncAttendanceRoster(studentId, batchId) {
     try {
@@ -611,27 +786,6 @@ function _generateChallanNumber() {
     challanNo++;
   }
   return String(challanNo);
-}
-
-/**
- * Auto-generate sequential Student Number: STU-XXXXX
- * Finds the highest existing studentNumber and increments.
- * Students without a studentNumber are not counted.
- */
-function _generateStudentNumber() {
-  const students = AppState.get('students') || [];
-  let maxNo = 0;
-  students.forEach(s => {
-    if (s.studentNumber) {
-      const m = String(s.studentNumber).match(/\d+$/);
-      if (m) {
-        const n = parseInt(m[0], 10);
-        if (n > maxNo) maxNo = n;
-      }
-    }
-  });
-  const nextNo = maxNo + 1;
-  return 'STU-' + String(nextNo).padStart(5, '0');
 }
 
 /** Default due date = 15 days from today */
