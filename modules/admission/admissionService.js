@@ -269,6 +269,7 @@ export const AdmissionService = {
     const studentId = generateID('stu');
     const student = {
       id:               studentId,
+      studentNumber:    _generateStudentNumber(),
       cnic:             formattedCNIC,
       uniqueId:         formattedCNIC,
       studentName:      `${formData.firstName.trim()} ${formData.lastName.trim()}`,
@@ -776,6 +777,27 @@ export const AdmissionService = {
 // ─────────────────────────────────────────────────────────────
 // SECTION 3 — Pure utility functions
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Student number: unique sequential ID (e.g. STU-0001)
+ * Auto-increments based on existing students.
+ */
+function _generateStudentNumber() {
+  const students = AppState.get(KEY_STUDENTS) || [];
+  let maxNo = 1000;
+  students.forEach(s => {
+    const raw = s.studentNumber || '';
+    const n   = parseInt(raw.replace(/\D/g, ''), 10);
+    if (!isNaN(n) && n >= maxNo) maxNo = n + 1;
+  });
+  // Guarantee uniqueness
+  let candidate = 'STU-' + String(maxNo).padStart(4, '0');
+  while (students.some(s => s.studentNumber === candidate)) {
+    maxNo++;
+    candidate = 'STU-' + String(maxNo).padStart(4, '0');
+  }
+  return candidate;
+}
 
 /**
  * Challan number: unique 7-digit numeric (e.g. 1025428)
