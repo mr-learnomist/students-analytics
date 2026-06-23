@@ -29,6 +29,11 @@ import {
   ensureAdmissionState,
 }                             from './admissionService.js';
 import { AdmissionForm }      from './admissionForm.js';
+import {
+  generateSampleCSV,
+  processBulkImport,
+  REQUIRED_COLUMNS,
+}                             from './bulkImportService.js';
 
 // ── Tabs available ────────────────────────────────────────────
 const TABS = [
@@ -37,6 +42,7 @@ const TABS = [
   { key: 'challans',  label: 'Challans',        icon: _ico('file-text'),   perm: 'admissions' },
   { key: 'payment',   label: 'Mark Payment',    icon: _ico('check-square'),perm: 'admissions:create' },
   { key: 'batchview', label: 'Batch View',      icon: _ico('layers'),      perm: 'admissions' },
+  { key: 'import',    label: 'Import',          icon: _ico('upload'),      perm: 'admissions:create' },
 ];
 
 // ── Module state ──────────────────────────────────────────────
@@ -102,6 +108,7 @@ function _renderTab() {
     challans:  _renderChallans,
     payment:   _renderMarkPayment,
     batchview: _renderBatchView,
+    import:    _renderImport,
   };
 
   (fns[_activeTab] || _renderAllStudents)(body);
@@ -662,6 +669,223 @@ function _ico(name) {
     'file-text':   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
     'check-square':`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
     'layers':      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+    'upload':      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+    'download':    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+    'eye':         `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   };
   return icons[name] || '';
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB 6 — Bulk Import
+// ─────────────────────────────────────────────────────────────
+
+function _renderImport(body) {
+  body.innerHTML = `
+    <div style="max-width:820px">
+
+      <!-- Header + Sample Download -->
+      <div style="display:flex;align-items:center;justify-content:space-between;
+                  flex-wrap:wrap;gap:12px;margin-bottom:20px">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--t1)">Bulk Student Import</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:3px">
+            CSV upload se multiple students aur enrolments ek saath add karein
+          </div>
+        </div>
+        <button id="impSampleBtn" class="btn btn-secondary" style="font-size:13px">
+          ${_ico('download')} Sample CSV Download
+        </button>
+      </div>
+
+      <!-- Instructions panel -->
+      <div style="background:var(--bg2);border:1px solid var(--border1);border-radius:var(--r-md);
+                  padding:14px 16px;margin-bottom:20px;font-size:12.5px;color:var(--t2);line-height:1.7">
+        <div style="font-weight:700;margin-bottom:6px;color:var(--t1)">Import Rules:</div>
+        <div>• <b>Naya student:</b> students[] + admissions[] + enrolments[] mein add hoga</div>
+        <div>• <b>Existing student (CNIC match):</b> students[] mein skip, sirf enrolments[] update hoga</div>
+        <div>• <b>Duplicate enrolment</b> (same student + same batch): error show hoga — skip kiya jayega</div>
+        <div>• <b>challanPaid = yes:</b> admission confirm + student active ho jayega</div>
+        <div>• <b>Missing optional field:</b> warning show hoga lekin import continue hoga</div>
+        <div>• <b>Missing required field / CNIC invalid / Batch nahi mila:</b> woh row error mein jayegi — skip hogi</div>
+        <div style="margin-top:6px;color:var(--t3)">Required columns: <code>${REQUIRED_COLUMNS.join(', ')}</code></div>
+      </div>
+
+      <!-- File upload zone -->
+      <div id="impDropZone" style="border:2px dashed var(--border2);border-radius:var(--r-lg);
+                                    padding:36px;text-align:center;cursor:pointer;
+                                    transition:border-color 0.2s,background 0.2s;
+                                    background:var(--bg1);margin-bottom:20px">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="1.5" style="margin-bottom:10px">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <div style="font-size:14px;font-weight:600;color:var(--t2)">CSV file yahan drag karein ya click karein</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:4px">Sirf .csv files</div>
+        <input id="impFileInput" type="file" accept=".csv,text/csv" style="display:none">
+      </div>
+
+      <!-- Preview + Import buttons (hidden initially) -->
+      <div id="impActionBar" style="display:none;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
+        <button id="impPreviewBtn" class="btn btn-secondary" style="font-size:13px">
+          ${_ico('eye')} Preview (Dry Run)
+        </button>
+        <button id="impRunBtn" class="btn btn-primary" style="font-size:13px">
+          ${_ico('upload')} Import Karo
+        </button>
+        <span id="impFileName" style="font-size:12px;color:var(--t3)"></span>
+      </div>
+
+      <!-- Results area -->
+      <div id="impResults"></div>
+    </div>`;
+
+  let _csvText = '';
+
+  // ── Sample download ────────────────────────────────────────
+  body.querySelector('#impSampleBtn').addEventListener('click', () => {
+    const csv  = generateSampleCSV();
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href: url, download: 'BulkImport-Sample.csv',
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ── Drop zone interactions ─────────────────────────────────
+  const dropZone  = body.querySelector('#impDropZone');
+  const fileInput = body.querySelector('#impFileInput');
+
+  dropZone.addEventListener('click',    () => fileInput.click());
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--primary)';
+    dropZone.style.background  = 'var(--primary-bg,rgba(99,102,241,0.06))';
+  });
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.style.borderColor = '';
+    dropZone.style.background  = '';
+  });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = '';
+    dropZone.style.background  = '';
+    const file = e.dataTransfer.files[0];
+    if (file) _loadFile(file);
+  });
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) _loadFile(file);
+  });
+
+  function _loadFile(file) {
+    if (!file.name.endsWith('.csv') && file.type !== 'text/csv') {
+      Toast.error('Sirf .csv files allowed hain.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      _csvText = ev.target.result;
+      body.querySelector('#impFileName').textContent    = '📎 ' + file.name;
+      body.querySelector('#impActionBar').style.display = 'flex';
+      body.querySelector('#impResults').innerHTML       = '';
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  // ── Preview (dry run) ──────────────────────────────────────
+  body.querySelector('#impPreviewBtn').addEventListener('click', () => {
+    if (!_csvText) return;
+    const summary = processBulkImport(_csvText, { dryRun: true });
+    _renderImportResults(body, summary, true);
+  });
+
+  // ── Actual import ──────────────────────────────────────────
+  body.querySelector('#impRunBtn').addEventListener('click', () => {
+    if (!_csvText) return;
+    if (!confirm(
+      'Import start kiya jayega.\n\nYeh action data mein changes karega.\nPreview (Dry Run) check kiya? Proceed karna chahte hain?'
+    )) return;
+
+    const importedBy = Auth.getCurrentUser()?.userId || null;
+    const summary    = processBulkImport(_csvText, { dryRun: false, importedBy });
+    _renderImportResults(body, summary, false);
+
+    // Reset file input
+    _csvText = '';
+    body.querySelector('#impActionBar').style.display = 'none';
+    body.querySelector('#impFileName').textContent    = '';
+    body.querySelector('#impFileInput').value         = '';
+  });
+}
+
+function _renderImportResults(body, summary, isDryRun) {
+  const res = body.querySelector('#impResults');
+  if (!res) return;
+
+  const tag = isDryRun
+    ? `<span style="font-size:11px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,0.12);padding:2px 8px;border-radius:20px">DRY RUN — koi data save nahi hua</span>`
+    : `<span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:2px 8px;border-radius:20px">Import Complete</span>`;
+
+  const statsHtml = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      ${_impPill('Total Rows',      summary.totalRows,     '#8892b4')}
+      ${_impPill('Imported',        summary.imported,      '#10b981')}
+      ${_impPill('Enrolment Added', summary.enrolmentOnly, '#6366f1')}
+      ${_impPill('Skipped/Errors',  summary.skipped,       summary.skipped > 0 ? '#ef4444' : '#8892b4')}
+    </div>`;
+
+  const statusStyleMap = {
+    imported_paid:    { color: '#10b981', label: '✓ Imported (Paid)'    },
+    imported_pending: { color: '#6366f1', label: '✓ Imported (Pending)' },
+    enrolment_added:  { color: '#06b6d4', label: '↪ Enrolment Added'    },
+    duplicate:        { color: '#f59e0b', label: '⚠ Duplicate Skip'     },
+    error:            { color: '#ef4444', label: '✗ Error'              },
+  };
+
+  const rowsHtml = summary.results.map(r => {
+    const s = statusStyleMap[r.status] || { color: '#8892b4', label: r.status };
+    return `
+      <tr>
+        <td style="font-size:12px;color:var(--t3)">${r.lineNo}</td>
+        <td style="font-weight:600;color:var(--t1)">${r.studentName || '—'}</td>
+        <td style="font-family:var(--font-mono);font-size:12px">${r.cnic || '—'}</td>
+        <td><span style="font-size:11px;font-weight:700;color:${s.color}">${s.label}</span></td>
+        <td style="font-size:11.5px;color:var(--t3);max-width:260px;word-break:break-word">${r.message || ''}</td>
+      </tr>`;
+  }).join('');
+
+  res.innerHTML = `
+    <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
+      <div style="font-size:14px;font-weight:700;color:var(--t1)">Import Summary</div>
+      ${tag}
+    </div>
+    ${statsHtml}
+    ${summary.results.length ? `
+    <div class="table-wrap">
+      <table class="data-table" style="font-size:12.5px">
+        <thead>
+          <tr>
+            <th style="width:48px">Row</th>
+            <th>Student</th>
+            <th>CNIC</th>
+            <th>Status</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>` : '<div style="color:var(--t3);font-size:13px">Koi row process nahi hui.</div>'}`;
+}
+
+function _impPill(label, count, color) {
+  return `
+    <div style="background:${color}18;border:1px solid ${color}30;border-radius:var(--r-md);
+                padding:8px 14px;text-align:center;min-width:90px">
+      <div style="font-size:20px;font-weight:800;color:${color}">${count}</div>
+      <div style="font-size:11px;color:var(--t3);margin-top:2px">${label}</div>
+    </div>`;
 }
