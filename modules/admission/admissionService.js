@@ -12,7 +12,7 @@
 
 import { AppState, generateID } from '../../utils/state.js';
 import { Auth }                 from '../../utils/auth.js';
-import { validateCNIC, formatCNIC, cnicDigitsOnly, generateStudentId } from '../student/studentService.js';
+import { validateCNIC, formatCNIC, cnicDigitsOnly, generateStudentId, sessionFromDate } from '../student/studentService.js';
 
 // ── State keys ────────────────────────────────────────────────
 const KEY_ADMISSIONS = 'admissions';
@@ -271,31 +271,48 @@ export const AdmissionService = {
     // ── Resolve discipline abbreviation for structured studentId ──
     const discRecord  = AppState.findById('disciplines', formData.disciplineId);
     const discCode    = discRecord?.abbreviation || '';
-    const genderNorm  = (formData.gender || 'Male').toLowerCase(); // 'male' | 'female'
+
+    // ── Normalize gender to lowercase (studentService.js uses lowercase) ──
+    const genderRaw   = (formData.gender || 'Male');
+    const genderNorm  = genderRaw.toLowerCase(); // 'male' | 'female'
+
+    // ── Admission date ──────────────────────────────────────────
     const admDate     = formData.admissionDate || new Date().toISOString().split('T')[0];
 
-    // Generate 10-digit structured studentId (same logic as studentService.js)
+    // ── Generate 10-digit structured studentId ──────────────────
     const structuredStudentId = generateStudentId(discCode, admDate, genderNorm);
 
-    // ── Map guardian contacts → guardianPhone (first contact's phone) ──
+    // ── Campus snapshot (so Campus column shows correctly) ──────
+    const campusSnapshot = campus
+      ? { id: campus.id, name: campus.campusName }
+      : null;
+
+    // ── Session auto-derived from admission date ────────────────
+    const derivedSession = formData.session || sessionFromDate(admDate);
+
+    // ── Map guardian contacts → guardianPhone ───────────────────
     const guardianContacts = Array.isArray(formData.guardianContacts) ? formData.guardianContacts : [];
     const guardianPhone    = (guardianContacts.find(g => g.phone?.trim()) || {}).phone?.trim() || '';
+
+    // ── Application Number: campusCode + auto-seq (e.g. F8001) ──
+    const applicationNo = _generateApplicationNo(campus);
 
     const student = {
       id:               studentId,
       studentNumber:    _generateStudentNumber(),
       studentId:        structuredStudentId,       // ✅ 10-digit structured ID
+      applicationNo:    applicationNo,             // ✅ e.g. F8001
       cnic:             formattedCNIC,
       uniqueId:         formattedCNIC,
       studentName:      `${formData.firstName.trim()} ${formData.lastName.trim()}`,
       firstName:        formData.firstName.trim(),
       lastName:         formData.lastName.trim(),
       fatherName:       formData.fatherName?.trim()      || '',
-      gender:           formData.gender                  || 'Male',
+      gender:           genderNorm,                // ✅ lowercase: 'male' | 'female'
       dob:              formData.dob                     || '',
-      studentPhone:     formData.phone?.trim()            || '',  // ✅ studentPhone (was: phone)
-      guardianPhone:    guardianPhone,                            // ✅ guardianPhone mapped
-      phone:            formData.phone?.trim()            || '',  // keep for backward compat
+      studentPhone:     formData.phone?.trim()            || '',  // ✅ correct field
+      guardianPhone:    guardianPhone,                            // ✅ mapped from guardianContacts
+      phone:            formData.phone?.trim()            || '',  // backward compat
       email:            formData.email?.trim()            || '',
       address:          formData.address?.trim()          || '',
       city:             formData.city?.trim()             || '',
@@ -303,15 +320,16 @@ export const AdmissionService = {
       route:            formData.route                    || '',
       qualification:    formData.qualification?.trim()    || '',
       guardianContacts: guardianContacts,
-      dateOfAdmission:  admDate,                                  // ✅ dateOfAdmission (was: admissionDate only)
-      admissionDate:    admDate,                                  // keep for backward compat
+      campusSnapshot:   campusSnapshot,            // ✅ campus column fix
+      dateOfAdmission:  admDate,                   // ✅ correct field name
+      admissionDate:    admDate,                   // backward compat
       campusId:         formData.campusId,
       disciplineId:     formData.disciplineId,
       subjectId:        formData.subjectId               || null,
       levelId:          level?.id                        || null,
       batchId:          formData.batchId,
       teacherId:        batch.teacherId                  || null,
-      session:          formData.session,
+      session:          derivedSession,            // ✅ auto-derived if not provided
       admissionBatch:   formData.admissionBatch           || '',
       isActive:         false,  // becomes true after challan payment
       createdAt:        new Date().toISOString(),
@@ -795,6 +813,54 @@ export const AdmissionService = {
 // ─────────────────────────────────────────────────────────────
 // SECTION 3 — Pure utility functions
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Application Number: campusCode + zero-padded sequence (e.g. F8001, BWP002)
+ * Campus code is derived from campusName:
+ *   • If name contains alphanumeric token like "F8", "G9", "G11" → use it (max 3 chars)
+ *   • Otherwise take first 3 uppercase letters (e.g. "Rawalpindi" → "RWP")
+ * Sequence auto-increments per campus, padded to 3 digits min.
+ */
+function _generateApplicationNo(campus) {
+  if (!campus) return '';
+
+  // ── Derive campus code from campusName ──────────────────────
+  const name = (campus.campusName || campus.name || '').trim();
+
+  // Try to find a token like F8, G9, G11, DHA etc.
+  const tokenMatch = name.match(/\b([A-Z]{1,3}\d{1,2}|\d{1,2}[A-Z]{0,2}|[A-Z]{2,4})\b/i);
+  let campusCode;
+  if (tokenMatch) {
+    campusCode = tokenMatch[1].toUpperCase().slice(0, 4);
+  } else {
+    // Fallback: first 3 consonants/letters of name
+    campusCode = name.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3);
+  }
+  if (!campusCode) campusCode = 'STU';
+
+  // ── Find highest existing sequence for this campus code ──────
+  const students = AppState.get(KEY_STUDENTS) || [];
+  let maxSeq = 0;
+  const prefix = campusCode;
+  students.forEach(function(s) {
+    const appNo = s.applicationNo || '';
+    if (appNo.startsWith(prefix)) {
+      const seq = parseInt(appNo.slice(prefix.length), 10);
+      if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+    }
+  });
+
+  const nextSeq = maxSeq + 1;
+  // Pad to at least 3 digits
+  const padded = String(nextSeq).padStart(3, '0');
+
+  let candidate = prefix + padded;
+  // Guarantee uniqueness
+  while (students.some(function(s) { return s.applicationNo === candidate; })) {
+    candidate = prefix + String(++maxSeq + 1).padStart(3, '0');
+  }
+  return candidate;
+}
 
 /**
  * Student number: unique sequential ID (e.g. STU-0001)
