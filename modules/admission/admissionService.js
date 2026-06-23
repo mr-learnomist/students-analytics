@@ -12,7 +12,7 @@
 
 import { AppState, generateID } from '../../utils/state.js';
 import { Auth }                 from '../../utils/auth.js';
-import { validateCNIC, formatCNIC, cnicDigitsOnly } from '../student/studentService.js';
+import { validateCNIC, formatCNIC, cnicDigitsOnly, generateStudentId } from '../student/studentService.js';
 
 // ── State keys ────────────────────────────────────────────────
 const KEY_ADMISSIONS = 'admissions';
@@ -267,9 +267,24 @@ export const AdmissionService = {
     // ── Create student record ─────────────────────────────────
     // Mirrors exact shape used by studentService.js
     const studentId = generateID('stu');
+
+    // ── Resolve discipline abbreviation for structured studentId ──
+    const discRecord  = AppState.findById('disciplines', formData.disciplineId);
+    const discCode    = discRecord?.abbreviation || '';
+    const genderNorm  = (formData.gender || 'Male').toLowerCase(); // 'male' | 'female'
+    const admDate     = formData.admissionDate || new Date().toISOString().split('T')[0];
+
+    // Generate 10-digit structured studentId (same logic as studentService.js)
+    const structuredStudentId = generateStudentId(discCode, admDate, genderNorm);
+
+    // ── Map guardian contacts → guardianPhone (first contact's phone) ──
+    const guardianContacts = Array.isArray(formData.guardianContacts) ? formData.guardianContacts : [];
+    const guardianPhone    = (guardianContacts.find(g => g.phone?.trim()) || {}).phone?.trim() || '';
+
     const student = {
       id:               studentId,
       studentNumber:    _generateStudentNumber(),
+      studentId:        structuredStudentId,       // ✅ 10-digit structured ID
       cnic:             formattedCNIC,
       uniqueId:         formattedCNIC,
       studentName:      `${formData.firstName.trim()} ${formData.lastName.trim()}`,
@@ -278,15 +293,18 @@ export const AdmissionService = {
       fatherName:       formData.fatherName?.trim()      || '',
       gender:           formData.gender                  || 'Male',
       dob:              formData.dob                     || '',
-      phone:            formData.phone?.trim()            || '',
+      studentPhone:     formData.phone?.trim()            || '',  // ✅ studentPhone (was: phone)
+      guardianPhone:    guardianPhone,                            // ✅ guardianPhone mapped
+      phone:            formData.phone?.trim()            || '',  // keep for backward compat
       email:            formData.email?.trim()            || '',
       address:          formData.address?.trim()          || '',
       city:             formData.city?.trim()             || '',
       province:         formData.province                 || '',
       route:            formData.route                    || '',
       qualification:    formData.qualification?.trim()    || '',
-      guardianContacts: Array.isArray(formData.guardianContacts) ? formData.guardianContacts : [],
-      admissionDate:    formData.admissionDate            || new Date().toISOString().split('T')[0],
+      guardianContacts: guardianContacts,
+      dateOfAdmission:  admDate,                                  // ✅ dateOfAdmission (was: admissionDate only)
+      admissionDate:    admDate,                                  // keep for backward compat
       campusId:         formData.campusId,
       disciplineId:     formData.disciplineId,
       subjectId:        formData.subjectId               || null,
