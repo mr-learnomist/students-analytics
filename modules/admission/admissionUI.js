@@ -690,7 +690,7 @@ function _renderImport(body) {
         <div>
           <div style="font-size:16px;font-weight:700;color:var(--t1)">Bulk Student Import</div>
           <div style="font-size:12px;color:var(--t3);margin-top:3px">
-            CSV upload se multiple students aur enrolments ek saath add karein
+            Upload a CSV file to add multiple students and enrolments at once
           </div>
         </div>
         <button id="impSampleBtn" class="btn btn-secondary" style="font-size:13px">
@@ -701,14 +701,26 @@ function _renderImport(body) {
       <!-- Instructions panel -->
       <div style="background:var(--bg2);border:1px solid var(--border1);border-radius:var(--r-md);
                   padding:14px 16px;margin-bottom:20px;font-size:12.5px;color:var(--t2);line-height:1.7">
-        <div style="font-weight:700;margin-bottom:6px;color:var(--t1)">Import Rules:</div>
-        <div>• <b>Naya student:</b> students[] + admissions[] + enrolments[] mein add hoga</div>
-        <div>• <b>Existing student (CNIC match):</b> students[] mein skip, sirf enrolments[] update hoga</div>
-        <div>• <b>Duplicate enrolment</b> (same student + same batch): error show hoga — skip kiya jayega</div>
-        <div>• <b>challanPaid = yes:</b> admission confirm + student active ho jayega</div>
-        <div>• <b>Missing optional field:</b> warning show hoga lekin import continue hoga</div>
-        <div>• <b>Missing required field / CNIC invalid / Batch nahi mila:</b> woh row error mein jayegi — skip hogi</div>
-        <div style="margin-top:6px;color:var(--t3)">Required columns: <code>${REQUIRED_COLUMNS.join(', ')}</code></div>
+        <div style="font-weight:700;margin-bottom:8px;color:var(--t1)">Two Import Modes</div>
+
+        <div style="font-weight:600;color:var(--t1);margin-bottom:2px">Mode A — Batch Enrolment <span style="font-weight:400;color:var(--t3)">(fill batchName, leave subjectCode empty)</span></div>
+        <div>• <b>New student:</b> Added to students, admissions, and enrolments</div>
+        <div>• <b>Existing student, new batch:</b> Skipped in students — enrolment added for that batch</div>
+        <div>• <b>Same student, different batches:</b> One row per batch — each creates a separate enrolment</div>
+        <div>• <b>Already enrolled in same batch:</b> Skipped with error</div>
+
+        <div style="margin-top:10px;font-weight:600;color:var(--t1);margin-bottom:2px">Mode B — Subject / Freeze Import <span style="font-weight:400;color:var(--t3)">(fill subjectCode; batchName optional)</span></div>
+        <div>• Student must already exist (matched by CNIC)</div>
+        <div>• Appends a subject entry to the student's existing enrolment</div>
+        <div>• If batchName is given, attaches to that batch's enrolment; otherwise uses most recent active enrolment</div>
+        <div>• Subject already present on that enrolment → skipped with error</div>
+        <div>• subjectStatus values: <code>active | dormant | left_campus | change_campus | left_study | exempt</code></div>
+
+        <div style="margin-top:10px;font-weight:600;color:var(--t1);margin-bottom:2px">General</div>
+        <div>• <b>challanPaid = yes:</b> Admission confirmed + student set to active</div>
+        <div>• <b>Missing optional field:</b> Warning shown, import continues</div>
+        <div>• <b>Missing required field / Invalid CNIC / Batch not found:</b> Row skipped with error</div>
+        <div style="margin-top:6px;color:var(--t3)">Always run <b>Preview (Dry Run)</b> first to catch errors before committing.</div>
       </div>
 
       <!-- File upload zone -->
@@ -721,7 +733,7 @@ function _renderImport(body) {
           <polyline points="17 8 12 3 7 8"/>
           <line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
-        <div style="font-size:14px;font-weight:600;color:var(--t2)">CSV file yahan drag karein ya click karein</div>
+        <div style="font-size:14px;font-weight:600;color:var(--t2)">Drag a CSV file here or click to browse</div>
         <div style="font-size:12px;color:var(--t3);margin-top:4px">Sirf .csv files</div>
         <input id="impFileInput" type="file" accept=".csv,text/csv" style="display:none">
       </div>
@@ -783,7 +795,7 @@ function _renderImport(body) {
 
   function _loadFile(file) {
     if (!file.name.endsWith('.csv') && file.type !== 'text/csv') {
-      Toast.error('Sirf .csv files allowed hain.');
+      Toast.error('Only .csv files are allowed.');
       return;
     }
     const reader = new FileReader();
@@ -807,7 +819,7 @@ function _renderImport(body) {
   body.querySelector('#impRunBtn').addEventListener('click', () => {
     if (!_csvText) return;
     if (!confirm(
-      'Import start kiya jayega.\n\nYeh action data mein changes karega.\nPreview (Dry Run) check kiya? Proceed karna chahte hain?'
+      'This will import data and make permanent changes.\n\nHave you run a Preview (Dry Run) first? Do you want to proceed?'
     )) return;
 
     const importedBy = Auth.getCurrentUser()?.userId || null;
@@ -827,7 +839,7 @@ function _renderImportResults(body, summary, isDryRun) {
   if (!res) return;
 
   const tag = isDryRun
-    ? `<span style="font-size:11px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,0.12);padding:2px 8px;border-radius:20px">DRY RUN — koi data save nahi hua</span>`
+    ? `<span style="font-size:11px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,0.12);padding:2px 8px;border-radius:20px">DRY RUN — no data has been saved</span>`
     : `<span style="font-size:11px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.12);padding:2px 8px;border-radius:20px">Import Complete</span>`;
 
   const statsHtml = `
@@ -835,13 +847,15 @@ function _renderImportResults(body, summary, isDryRun) {
       ${_impPill('Total Rows',      summary.totalRows,     '#8892b4')}
       ${_impPill('Imported',        summary.imported,      '#10b981')}
       ${_impPill('Enrolment Added', summary.enrolmentOnly, '#6366f1')}
+      ${_impPill('Subject Added',   summary.subjectAdded,  '#06b6d4')}
       ${_impPill('Skipped/Errors',  summary.skipped,       summary.skipped > 0 ? '#ef4444' : '#8892b4')}
     </div>`;
 
   const statusStyleMap = {
     imported_paid:    { color: '#10b981', label: '✓ Imported (Paid)'    },
     imported_pending: { color: '#6366f1', label: '✓ Imported (Pending)' },
-    enrolment_added:  { color: '#06b6d4', label: '↪ Enrolment Added'    },
+    enrolment_added:  { color: '#8b5cf6', label: '↪ Enrolment Added'    },
+    subject_added:    { color: '#06b6d4', label: '＋ Subject Added'      },
     duplicate:        { color: '#f59e0b', label: '⚠ Duplicate Skip'     },
     error:            { color: '#ef4444', label: '✗ Error'              },
   };
@@ -878,7 +892,7 @@ function _renderImportResults(body, summary, isDryRun) {
         </thead>
         <tbody>${rowsHtml}</tbody>
       </table>
-    </div>` : '<div style="color:var(--t3);font-size:13px">Koi row process nahi hui.</div>'}`;
+    </div>` : '<div style="color:var(--t3);font-size:13px">No rows were processed.</div>'}`;
 }
 
 function _impPill(label, count, color) {
