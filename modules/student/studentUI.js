@@ -213,7 +213,6 @@ function injectStudentStyles() {
 
 // ── Column definitions (master list) ─────────────────────────
 const ALL_COLUMNS = [
-  { key: 'applicationNo',  label: 'Application No' },
   { key: 'studentId',      label: 'Student ID' },
   { key: 'cnic',           label: 'CNIC' },
   { key: 'studentName',    label: 'Student Name' },
@@ -341,7 +340,6 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
       const disc = AppState.findById('disciplines', s.disciplineId);
       const cnicPlain = (s.cnic || '').replace(/-/g, '');
       return (
-        (s.applicationNo  || '').toLowerCase().includes(search) ||
         (s.studentName    || '').toLowerCase().includes(search) ||
         (s.cnic           || '').toLowerCase().includes(search) ||
         cnicPlain.includes(search.replace(/-/g, ''))            ||
@@ -408,22 +406,11 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
         if (!v) return '<span style="color:var(--t4)">—</span>';
         return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
       }},
-    applicationNo: { label: 'Application No', width: '130px',
-      render: function(v) {
-        if (!v) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
-        return '<span style="font-family:Inter,\'Segoe UI\',system-ui,sans-serif;font-size:12px;font-weight:700;' +
-          'color:var(--violet);letter-spacing:.04em;background:var(--surface3);padding:2px 8px;' +
-          'border-radius:6px;border:1px solid var(--border)">' + v + '</span>';
-      }},
     gender: { label: 'Gender', width: '100px',
       render: function(v) {
         if (!v) return '<span style="color:var(--t4)">—</span>';
-        const lower = (v || '').toLowerCase();
-        const label = lower === 'female' ? 'Female' : 'Male';
-        const color = lower === 'female' ? '#be185d' : '#1d4ed8';
-        const bg    = lower === 'female' ? '#fdf2f8' : '#eff6ff';
-        return '<span style="font-size:12px;font-weight:600;color:' + color + ';' +
-          'background:' + bg + ';padding:2px 8px;border-radius:5px">' + label + '</span>';
+        return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
+          (v === 'male' ? 'Male' : 'Female') + '</span>';
       }},
     studentPhone: { label: 'Student Phone', width: '140px',
       render: function(v) {
@@ -1176,7 +1163,39 @@ function _delete(student, container) {
     danger:       true,
   }).then(function(confirmed) {
     if (!confirmed) return;
-    StudentService.deleteStudent(student.id);
+
+    const sid = student.id;
+
+    // 1. Remove student record
+    StudentService.deleteStudent(sid);
+
+    // 2. Remove all pending challans for this student
+    //    (paid/waived kept for audit — same rule as AdmissionService.deleteStudent)
+    const challans   = AppState.get('challans') || [];
+    const PENDING    = 'pending';
+    const remaining  = challans.filter(function(c) {
+      return !(c.studentId === sid && (c.status === PENDING || c.status === 'Pending'));
+    });
+    if (remaining.length !== challans.length) {
+      AppState.set('challans', remaining);
+    }
+
+    // 3. Cancel all pending admissions for this student
+    const admissions = AppState.get('admissions') || [];
+    const updatedAdm = admissions.map(function(a) {
+      if (a.studentId === sid && (a.status === PENDING || a.status === 'Pending' || a.status === 'pending')) {
+        return Object.assign({}, a, {
+          status:       'cancelled',
+          cancelReason: 'Student deleted',
+          cancelledAt:  new Date().toISOString(),
+          updatedAt:    new Date().toISOString(),
+        });
+      }
+      return a;
+    });
+    AppState.set('admissions', updatedAdm);
+
+    // 4. Re-render + notify
     _rerender(container);
     Toast.success('Student deleted.');
   });
@@ -1507,9 +1526,7 @@ function _exportPDF(rows, filterLabels) {
     const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const admLabel  = (y && m && d) ? parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y : '—';
 
-    const genderLabel = (s.gender || '').toLowerCase() === 'female' ? 'Female' : ((s.gender) ? 'Male' : '—');
     return '<tr class="' + (i % 2 === 0 ? 'even' : 'odd') + '">' +
-      '<td class="mono">' + (s.applicationNo || '—') + '</td>' +
       '<td class="mono">' + (s.studentId || '—') + '</td>' +
       '<td class="mono">' + (s.cnic      || '—') + '</td>' +
       '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
@@ -1599,7 +1616,6 @@ function _exportPDF(rows, filterLabels) {
   <table>
     <thead>
       <tr>
-        <th>App No</th>
         <th>Student ID</th>
         <th>CNIC</th>
         <th>Student Name</th>
