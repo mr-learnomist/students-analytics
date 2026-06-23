@@ -356,7 +356,11 @@ export const StudentService = {
   },
 
   deleteStudent(id) {
-    AppState.remove(KEY, id);
+    // AppState.remove may not persist to storage correctly —
+    // use set() with a filtered array which is guaranteed to persist.
+    const current = AppState.get(KEY) || [];
+    const updated = current.filter(function(s) { return s.id !== id; });
+    AppState.set(KEY, updated);
     return { success: true };
   },
 
