@@ -214,10 +214,13 @@ function injectStudentStyles() {
 // ── Column definitions (master list) ─────────────────────────
 const ALL_COLUMNS = [
   { key: 'studentId',      label: 'Student ID' },
+  { key: 'regNo',          label: 'Reg #' },
   { key: 'cnic',           label: 'CNIC' },
   { key: 'studentName',    label: 'Student Name' },
   { key: 'fatherName',     label: 'Father Name' },
+  { key: 'dob',            label: 'Date of Birth' },
   { key: 'gender',         label: 'Gender' },
+  { key: 'email',          label: 'Email' },
   { key: 'studentPhone',   label: 'Student Phone' },
   { key: 'guardianPhone',  label: 'Guardian Phone' },
   { key: 'qualification',  label: 'Qualification' },
@@ -391,6 +394,13 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
           ? '<span style="font-family:Inter,\'Segoe UI\',system-ui,sans-serif;font-size:11px;font-weight:700;color:var(--t1);letter-spacing:.03em">' + v + '</span>'
           : '<span style="color:var(--t4);font-size:11px">—</span>';
       }},
+    regNo: { label: 'Reg #', width: '130px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4);font-size:11px;font-style:italic">—</span>';
+        return '<span style="font-family:Inter,\'Segoe UI\',monospace;font-size:11.5px;font-weight:700;' +
+          'color:#0369a1;background:#f0f9ff;padding:2px 8px;border-radius:5px;' +
+          'border:1px solid #bae6fd;letter-spacing:.03em">' + v + '</span>';
+      }},
     cnic: { label: 'CNIC', width: '160px',
       render: function(v) {
         if (!v) return '<span style="font-size:10.5px;color:var(--t4);font-style:italic;' +
@@ -406,11 +416,28 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
         if (!v) return '<span style="color:var(--t4)">—</span>';
         return '<span style="font-size:12.5px;color:var(--t1)">' + v + '</span>';
       }},
+    dob: { label: 'Date of Birth', width: '130px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        const parts = v.split('-');
+        if (parts.length === 3) {
+          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const label  = parseInt(parts[2]) + ' ' + MONTHS[parseInt(parts[1]) - 1] + ' ' + parts[0];
+          return '<span style="font-size:12px;color:var(--t1)">' + label + '</span>';
+        }
+        return '<span style="font-size:12px;color:var(--t1)">' + v + '</span>';
+      }},
     gender: { label: 'Gender', width: '100px',
       render: function(v) {
         if (!v) return '<span style="color:var(--t4)">—</span>';
         return '<span style="font-size:12px;color:#1e293b;font-weight:500">' +
           (v === 'male' ? 'Male' : 'Female') + '</span>';
+      }},
+    email: { label: 'Email', width: '190px',
+      render: function(v) {
+        if (!v) return '<span style="color:var(--t4)">—</span>';
+        return '<a href="mailto:' + v + '" style="font-size:12px;color:#2563eb;text-decoration:none;' +
+          'font-style:italic">' + v + '</a>';
       }},
     studentPhone: { label: 'Student Phone', width: '140px',
       render: function(v) {
@@ -1526,13 +1553,22 @@ function _exportPDF(rows, filterLabels) {
     const MONTHS    = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const admLabel  = (y && m && d) ? parseInt(d) + ' ' + MONTHS[parseInt(m) - 1] + ' ' + y : '—';
 
+    // Format DOB same way
+    const dobParts = (s.dob || '').split('-');
+    const dobLabel = (dobParts.length === 3 && dobParts[0])
+      ? parseInt(dobParts[2]) + ' ' + MONTHS[parseInt(dobParts[1]) - 1] + ' ' + dobParts[0]
+      : '—';
+
     return '<tr class="' + (i % 2 === 0 ? 'even' : 'odd') + '">' +
       '<td class="mono">' + (s.studentId || '—') + '</td>' +
+      '<td class="mono">' + (s.regNo     || '—') + '</td>' +
       '<td class="mono">' + (s.cnic      || '—') + '</td>' +
       '<td><strong>' + (s.studentName || '—') + '</strong></td>' +
       '<td>' + (s.fatherName   || '—') + '</td>' +
+      '<td>' + dobLabel + '</td>' +
       '<td>' + (s.studentPhone  || '—') + '</td>' +
       '<td>' + (s.guardianPhone || '—') + '</td>' +
+      '<td>' + (s.email         || '—') + '</td>' +
       '<td>' + (s.qualification || '—') + '</td>' +
       '<td>' + (s.district      || '—') + '</td>' +
       '<td>' + (s.province      || '—') + '</td>' +
@@ -1617,11 +1653,14 @@ function _exportPDF(rows, filterLabels) {
     <thead>
       <tr>
         <th>Student ID</th>
+        <th>Reg #</th>
         <th>CNIC</th>
         <th>Student Name</th>
         <th>Father Name</th>
+        <th>Date of Birth</th>
         <th>Student Phone</th>
         <th>Guardian Phone</th>
+        <th>Email</th>
         <th>Qualification</th>
         <th>District</th>
         <th>Province</th>
