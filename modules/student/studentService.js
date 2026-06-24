@@ -369,7 +369,7 @@ export const StudentService = {
     const students = rows || AppState.get(KEY) || [];
     if (!students.length) return;
 
-    const headers  = ['studentId', 'cnic', 'studentName', 'fatherName', 'gender', 'studentPhone', 'guardianPhone', 'qualification', 'district', 'province', 'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
+    const headers  = ['studentId', 'regNo', 'cnic', 'studentName', 'fatherName', 'dob', 'gender', 'email', 'studentPhone', 'guardianPhone', 'qualification', 'district', 'province', 'campus', 'discipline', 'dateOfAdmission', 'session', 'admissionBatch', 'route', 'exemptedPaperCount', 'exemptedPaperCodes'];
     const now      = new Date();
     const dateStr  = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
     const timeStr  = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
@@ -383,31 +383,35 @@ export const StudentService = {
 
     const csvRows = students.map(function(s) {
       const disc = AppState.findById('disciplines', s.disciplineId);
-      // Use ="value" formula syntax for CNIC and date so Excel treats them as
+      // Use ="value" formula syntax for CNIC and dates so Excel treats them as
       // text — prevents CNIC scientific notation and date auto-reformatting
-      const safeCNIC = s.cnic ? '="' + s.cnic + '"' : '';
-      const safeDate = s.dateOfAdmission ? '="' + s.dateOfAdmission + '"' : '';
+      const safeCNIC    = s.cnic            ? '="' + s.cnic            + '"' : '';
+      const safeDate    = s.dateOfAdmission ? '="' + s.dateOfAdmission + '"' : '';
+      const safeDOB     = s.dob             ? '="' + s.dob             + '"' : '';
       return [
-        s.studentId        || '',
-        safeCNIC,
-        s.studentName      || '',
-        s.fatherName       || '',
-        s.gender           ? (s.gender.charAt(0).toUpperCase() + s.gender.slice(1)) : '',
-        s.studentPhone     || '',
-        s.guardianPhone    || '',
-        s.qualification    || '',
-        s.district         || '',
-        s.province         || '',
-        s.campus           || s.campusSnapshot?.name || '',
-        disc?.abbreviation || '',
-        safeDate,
-        s.session          || '',
-        s.admissionBatch   || '',
-        s.route            || '',
-        s.exemptedPapers?.count != null ? String(s.exemptedPapers.count) : '',
-        s.exemptedPapers?.codes?.length ? s.exemptedPapers.codes.join(' | ') : '',
+        s.studentId        || '',          // 0
+        s.regNo            || '',          // 1
+        safeCNIC,                          // 2  ← safe (no wrap)
+        s.studentName      || '',          // 3
+        s.fatherName       || '',          // 4
+        safeDOB,                           // 5  ← safe (no wrap)
+        s.gender           ? (s.gender.charAt(0).toUpperCase() + s.gender.slice(1)) : '',  // 6
+        s.email            || '',          // 7
+        s.studentPhone     || '',          // 8
+        s.guardianPhone    || '',          // 9
+        s.qualification    || '',          // 10
+        s.district         || '',          // 11
+        s.province         || '',          // 12
+        s.campus           || s.campusSnapshot?.name || '',  // 13
+        disc?.abbreviation || '',          // 14
+        safeDate,                          // 15 ← safe (no wrap)
+        s.session          || '',          // 16
+        s.admissionBatch   || '',          // 17
+        s.route            || '',          // 18
+        s.exemptedPapers?.count != null ? String(s.exemptedPapers.count) : '',  // 19
+        s.exemptedPapers?.codes?.length ? s.exemptedPapers.codes.join(' | ') : '',  // 20
       ].map(function(v, i) {
-        if (i === 1 || i === 12) return v;  // safeCNIC at idx 1, safeDate at idx 12
+        if (i === 2 || i === 5 || i === 15) return v;  // safe-encoded fields: skip quoting
         return '"' + String(v).replace(/"/g, '""') + '"';
       }).join(',');
     });
