@@ -234,21 +234,28 @@ const ALL_COLUMNS = [
   { key: 'admissionBatch', label: 'Admission Batch' },
 ];
 
-const COL_PREF_KEY = 'stu_col_prefs';
+const COL_PREF_KEY     = 'stu_col_prefs';
+const COL_PREF_VERSION = 2; // bump when default visibility changes
 
 function _getColPrefs() {
   try {
     const raw = AppState.get(COL_PREF_KEY);
-    if (raw && Array.isArray(raw.order) && raw.order.length) return raw;
+    if (raw && Array.isArray(raw.order) && raw.order.length) {
+      // Version guard: if saved prefs are from an older version, reset to defaults
+      // so newly-added/re-enabled columns (regNo, dob, email) become visible again.
+      if ((raw.version || 1) >= COL_PREF_VERSION) return raw;
+    }
   } catch(e) {}
   // Default: all visible, default order
   return {
+    version: COL_PREF_VERSION,
     order:   ALL_COLUMNS.map(function(c) { return c.key; }),
     hidden:  [],
   };
 }
 
 function _saveColPrefs(prefs) {
+  prefs.version = COL_PREF_VERSION;
   AppState.set(COL_PREF_KEY, prefs);
 }
 
