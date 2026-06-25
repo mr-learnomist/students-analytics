@@ -116,7 +116,7 @@ function injectStudentStyles() {
       min-width:0;
       max-width:100%;
       overflow-x:auto;
-      overflow-y:auto;
+      overflow-y:visible;
       -webkit-overflow-scrolling:touch;
       border:1px solid var(--border);
       border-radius:var(--r-sm);
@@ -1782,6 +1782,9 @@ function _renderColList(listEl, container) {
   const prefs = _getColPrefs();
   listEl.innerHTML = '';
 
+  // ── dragSrc shared across all items in this list render ──
+  let dragSrc = null;
+
   prefs.order.forEach(function(key) {
     const colDef = ALL_COLUMNS.find(function(c) { return c.key === key; });
     if (!colDef) return;
@@ -1812,8 +1815,6 @@ function _renderColList(listEl, container) {
     });
 
     // ── Drag & Drop ──
-    let dragSrc = null;
-
     item.addEventListener('dragstart', function(e) {
       dragSrc = item;
       item.classList.add('dragging');
@@ -1823,6 +1824,7 @@ function _renderColList(listEl, container) {
 
     item.addEventListener('dragend', function() {
       item.classList.remove('dragging');
+      dragSrc = null;
       listEl.querySelectorAll('.col-mgr-item').forEach(function(el) {
         el.classList.remove('drag-over');
       });
