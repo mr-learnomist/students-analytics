@@ -110,26 +110,66 @@ function injectStudentStyles() {
       padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
 
     /* ── Table scroll wrapper ── */
+    /* .stu-page must be a flex column of a known height so #stuTableWrap
+       can fill the remaining space and scroll independently.
+       We rely on the host page giving .stu-page a bounded height
+       (e.g. height:100% on the sidebar content area). */
+    .stu-page{
+      /* Ensure the page itself is a scroll root with a real height.
+         overflow:hidden on .stu-page stops the PAGE from scrolling;
+         #stuTableWrap does the scrolling instead. */
+      overflow:hidden;
+    }
     #stuTableWrap{
+      /* Fill whatever vertical space .stu-page has left after the toolbar */
       flex:1;
+      min-height:0;          /* critical: lets flex child shrink below content height */
+
       width:100%;
       min-width:0;
       max-width:100%;
-      overflow-x:auto;
-      overflow-y:visible;
+
+      /* Always show BOTH scrollbars so layout never jumps */
+      overflow-x:scroll;
+      overflow-y:scroll;
+      scrollbar-gutter:stable; /* reserves scrollbar space even when not needed */
+
       -webkit-overflow-scrolling:touch;
       border:1px solid var(--border);
       border-radius:var(--r-sm);
+
+      /* Give the wrapper a concrete max-height fallback for browsers that
+         don't propagate flex height correctly */
+      max-height:calc(100vh - 180px);
     }
-    #stuTableWrap::-webkit-scrollbar{height:6px;width:6px}
-    #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2)}
-    #stuTableWrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-    #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t4)}
+
+    /* Always-visible scrollbars (WebKit / Blink) */
+    #stuTableWrap::-webkit-scrollbar{height:10px;width:10px}
+    #stuTableWrap::-webkit-scrollbar-track{background:var(--surface2);border-radius:0}
+    #stuTableWrap::-webkit-scrollbar-thumb{
+      background:var(--border2);
+      border-radius:5px;
+      border:2px solid var(--surface2); /* gives the "inset" look */
+    }
+    #stuTableWrap::-webkit-scrollbar-thumb:hover{background:var(--t3)}
+    /* Show corner piece where both scrollbars meet */
+    #stuTableWrap::-webkit-scrollbar-corner{background:var(--surface2)}
+
+    /* Firefox scrollbar (always visible) */
+    #stuTableWrap{
+      scrollbar-width:auto;
+      scrollbar-color:var(--border2) var(--surface2);
+    }
+
     #stuTableWrap table{
       border-collapse:collapse;
       table-layout:auto;
       white-space:nowrap;
+      /* Ensure table is at least as wide as the wrapper so horizontal
+         scrollbar appears only when columns overflow */
+      min-width:100%;
     }
+
     /* Table.render() wraps the <table> in its own .table-wrap (overflow-x:auto,
        border, border-radius). That creates a SECOND scroll/measure context
        nested inside #stuTableWrap, which breaks the table's min-width:max-content
@@ -139,14 +179,19 @@ function injectStudentStyles() {
     #stuTableWrap .table-wrap{
       display:contents;
     }
-    /* Sticky table header */
+
+    /* ── Frozen / sticky column header ── */
     #stuTableWrap thead th{
       position:sticky;
       top:0;
-      z-index:2;
+      z-index:3;                      /* above td, below modals */
       background:var(--surface3);
-      white-space:nowrap
+      white-space:nowrap;
+      /* Crisp bottom border that stays visible while scrolling */
+      box-shadow:0 1px 0 0 var(--border);
     }
+    /* Keep the Actions column header on top if it's the last sticky */
+    #stuTableWrap thead th:last-child{z-index:3}
 
     /* ── Empty state ── */
     .stu-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
