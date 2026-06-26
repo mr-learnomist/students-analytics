@@ -330,7 +330,301 @@ function _validateRow(row, batches) {
   return { mode, valid: errors.length === 0, errors, warnings, batch };
 }
 
-// ── Main processor ─────────────────────────────────────────────
+// ── Shared state loader ────────────────────────────────────────
+function _loadState() {
+  return {
+    batches:     AppState.get('batches')     || [],
+    students:    AppState.get('students')    || [],
+    admissions:  AppState.get('admissions')  || [],
+    enrolments:  AppState.get('enrolments')  || [],
+    disciplines: AppState.get('disciplines') || [],
+    campuses:    AppState.get('campuses')    || [],
+    subjects:    AppState.get('subjects')    || [],
+  };
+}
+
+function _makeSummary(totalRows) {
+  return {
+    totalRows,
+    imported:      0,
+    enrolmentOnly: 0,
+    subjectAdded:  0,
+    infoOnly:      0,
+    skipped:       0,
+    errors:        [],
+    results:       [],
+  };
+}
+
+// ── Process a single row (pure logic, no I/O) ──────────────────
+function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
+  const { batches, students, admissions, enrolments, disciplines, campuses, subjects } = state;
+  const name = (row.studentName || '—').trim();
+  const cnic = row.cnic || '';
+
+  const { mode, valid, errors, warnings, batch } = _validateRow(row, batches);
+
+  if (!valid) {
+    summary.errors.push({ lineNo, studentName: name, cnic, issues: errors });
+    summary.results.push({ lineNo, status: 'error', studentName: name, cnic, message: errors.join(' | ') });
+    summary.skipped++;
+    return;
+  }
+
+  const formattedCNIC   = formatCNIC(row.cnic);
+  const existingStudent = students.find(
+    s => s.cnic === formattedCNIC || s.uniqueId === formattedCNIC
+  );
+
+  // ── MODE C ──────────────────────────────────────────────────
+  if (mode === 'subject') {
+    if (!existingStudent) {
+      const issue = 'Student not found (CNIC: ' + formattedCNIC + '). Subject import requires an existing student.';
+      summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+      summary.results.push({ lineNo, status: 'error', studentName: name, cnic: formattedCNIC, message: issue });
+      summary.skipped++;
+      return;
+    }
+
+    let targetEnrolment = null;
+    const studentEnrolments = enrolments.filter(e => e.studentId === existingStudent.id);
+
+    if (batch) {
+      targetEnrolment = studentEnrolments.find(e => e.batchId === batch.id);
+    } else {
+      targetEnrolment = studentEnrolments
+        .filter(e => e.status === 'active' || e.status === 'suspended')
+        .sort((a, b) => new Date(b.enrolmentDate) - new Date(a.enrolmentDate))[0] || null;
+    }
+
+    if (!targetEnrolment) {
+      const batchHint = batch ? ' in batch "' + batch.batchName + '"' : '';
+      const issue = 'No enrolment found for this student' + batchHint + '. Cannot attach subject.';
+      summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+      summary.results.push({ lineNo, status: 'error', studentName: name, cnic: formattedCNIC, message: issue });
+      summary.skipped++;
+      return;
+    }
+
+    const subCode          = row.subjectCode.trim();
+    const existingSubjects = Array.isArray(targetEnrolment.subjects) ? targetEnrolment.subjects : [];
+    const alreadyHasSub    = existingSubjects.some(s => s.subjectCode?.toLowerCase() === subCode.toLowerCase());
+
+    if (alreadyHasSub) {
+      const issue = 'Subject "' + subCode + '" already on this enrolment (duplicate).';
+      summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+      summary.results.push({ lineNo, status: 'duplicate', studentName: existingStudent.studentName, cnic: formattedCNIC, message: issue });
+      summary.skipped++;
+      return;
+    }
+
+    const masterSubject = subjects.find(
+      s => s.code?.toLowerCase() === subCode.toLowerCase() ||
+           s.abbreviation?.toLowerCase() === subCode.toLowerCase()
+    );
+
+    const subStatus = VALID_SUBJECT_STATUSES.includes(row.subjectStatus?.trim())
+      ? row.subjectStatus.trim()
+      : 'suspended';
+
+    const newSubjectEntry = {
+      subjectId:   masterSubject?.id || '',
+      subjectCode: subCode,
+      subjectName: row.subjectName?.trim() || masterSubject?.name || subCode,
+      status:      subStatus,
+      addedAt:     new Date().toISOString(),
+      addedBy:     importedBy,
+    };
+
+    if (!dryRun) {
+      const updatedSubjects = [...existingSubjects, newSubjectEntry];
+      EnrolmentService.update(targetEnrolment.id, { subjects: updatedSubjects }, importedBy);
+      const idx = enrolments.findIndex(e => e.id === targetEnrolment.id);
+      if (idx !== -1) enrolments[idx] = { ...enrolments[idx], subjects: updatedSubjects };
+    }
+
+    summary.subjectAdded++;
+    summary.results.push({
+      lineNo, status: 'subject_added',
+      studentName: existingStudent.studentName,
+      cnic: formattedCNIC,
+      message:
+        'Subject "' + subCode + '" added' +
+        (batch ? ' (' + batch.batchName + ')' : ' (most recent enrolment)') +
+        ' · status: ' + subStatus +
+        (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
+    });
+    return;
+  }
+
+  // ── MODE A ──────────────────────────────────────────────────
+  if (mode === 'info') {
+    if (existingStudent) {
+      const issue = 'CNIC ' + formattedCNIC + ' already registered as "' + existingStudent.studentName + '" — skipped.';
+      summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+      summary.results.push({ lineNo, status: 'duplicate', studentName: name, cnic: formattedCNIC, message: issue });
+      summary.skipped++;
+      return;
+    }
+
+    if (!dryRun) {
+      const { newStudent } = _buildNewStudent(row, formattedCNIC, null, disciplines, campuses, importedBy);
+      AppState.add('students', newStudent);
+      students.push(newStudent);
+    }
+
+    summary.imported++;
+    summary.infoOnly++;
+    summary.results.push({
+      lineNo, status: 'info_only',
+      studentName: row.studentName.trim(),
+      cnic: formattedCNIC,
+      message: 'Student info saved (no batch/enrolment)' +
+        (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
+    });
+    return;
+  }
+
+  // ── MODE B ──────────────────────────────────────────────────
+  if (existingStudent) {
+    const alreadyEnrolled = enrolments.some(
+      e => e.studentId === existingStudent.id && e.batchId === batch.id
+    );
+
+    if (alreadyEnrolled) {
+      const issue = 'Already enrolled in batch "' + batch.batchName + '" (duplicate).';
+      summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+      summary.results.push({ lineNo, status: 'duplicate', studentName: existingStudent.studentName, cnic: formattedCNIC, message: issue });
+      summary.skipped++;
+      return;
+    }
+
+    const paid = (row.challanPaid || '').toLowerCase() === 'yes';
+    if (!dryRun) {
+      const result = EnrolmentService.add({
+        studentId:     existingStudent.id,
+        batchId:       batch.id,
+        enrolmentDate: row.dateOfAdmission,
+        status:        'active',
+        feeStatus:     paid ? 'paid' : 'unpaid',
+        notes:         (row.notes || '').trim(),
+        subjects:      [],
+      }, importedBy);
+      if (result.success) enrolments.push(result.enrolment);
+    }
+
+    summary.enrolmentOnly++;
+    summary.results.push({
+      lineNo, status: 'enrolment_added',
+      studentName: existingStudent.studentName,
+      cnic: formattedCNIC,
+      message: 'Existing student — enrolment added for "' + batch.batchName + '"' +
+        (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
+    });
+    return;
+  }
+
+  // New student + batch enrolment
+  const paid = (row.challanPaid || '').toLowerCase() === 'yes';
+
+  if (!dryRun) {
+    const { newStudent, discRecord, campusRecord, derivedSession } =
+      _buildNewStudent(row, formattedCNIC, batch, disciplines, campuses, importedBy);
+
+    AppState.add('students', newStudent);
+    students.push(newStudent);
+
+    const admissionId = generateID('adm');
+    AppState.add('admissions', {
+      id:           admissionId,
+      studentId:    newStudent.id,
+      campusId:     campusRecord?.id || '',
+      disciplineId: discRecord?.id   || '',
+      batchId:      batch.id,
+      session:      derivedSession,
+      status:       paid ? ADMISSION_STATUS.CONFIRMED : ADMISSION_STATUS.PENDING,
+      admittedBy:   importedBy,
+      createdAt:    new Date().toISOString(),
+      updatedAt:    new Date().toISOString(),
+    });
+
+    const enrResult = EnrolmentService.add({
+      studentId:     newStudent.id,
+      batchId:       batch.id,
+      enrolmentDate: row.dateOfAdmission,
+      status:        'active',
+      feeStatus:     paid ? 'paid' : 'unpaid',
+      notes:         (row.notes || '').trim(),
+      subjects:      [],
+    }, importedBy);
+    if (enrResult.success) enrolments.push(enrResult.enrolment);
+
+    const feeAmount = parseFloat(row.feeAmount) || 0;
+    if (feeAmount > 0) {
+      const challan = {
+        id:          generateID('chl'),
+        admissionId,
+        studentId:   newStudent.id,
+        studentName: newStudent.studentName,
+        campusId:    campusRecord?.id || '',
+        batchId:     batch.id,
+        session:     derivedSession,
+        feeAmount,
+        dueDate:     row.dueDate || _defaultDueDate(),
+        status:      paid ? CHALLAN_STATUS.PAID : CHALLAN_STATUS.PENDING,
+        paidAt:      paid ? new Date().toISOString() : null,
+        createdAt:   new Date().toISOString(),
+      };
+      AppState.add('challans', challan);
+
+      if (paid) {
+        AppState.update('admissions', admissionId, { status: ADMISSION_STATUS.CONFIRMED });
+        AppState.update('students', newStudent.id, { isActive: true });
+      }
+    }
+  }
+
+  summary.imported++;
+  summary.results.push({
+    lineNo, status: paid ? 'imported_paid' : 'imported_pending',
+    studentName: row.studentName.trim(),
+    cnic: formattedCNIC,
+    message:
+      (paid ? 'Imported & Confirmed (challan paid)' : 'Imported — challan pending') +
+      ' · batch: ' + batch.batchName +
+      (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
+  });
+}
+
+// ── Async chunked import (primary — use this for large files) ──
+// onProgress(done, total) called after each chunk
+export async function processBulkImportAsync(csvText, opts, onProgress) {
+  opts = opts || {};
+  const dryRun     = !!opts.dryRun;
+  const importedBy = opts.importedBy || (Auth.getCurrentUser()?.userId) || null;
+  const chunkSize  = opts.chunkSize  || 50;
+
+  ensureAdmissionState();
+  ensureEnrolmentKeys();
+
+  const { rows } = parseCSV(csvText);
+  const state    = _loadState();
+  const summary  = _makeSummary(rows.length);
+
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    for (const item of chunk) {
+      _processRow(item, state, summary, dryRun, importedBy);
+    }
+    // Yield to browser between chunks so UI stays responsive
+    await new Promise(r => setTimeout(r, 0));
+    onProgress?.(Math.min(i + chunkSize, rows.length), rows.length);
+  }
+
+  return summary;
+}
+
+// ── Sync import (kept for backward-compat; avoid on large files) ─
 export function processBulkImport(csvText, opts) {
   opts = opts || {};
   const dryRun     = !!opts.dryRun;
@@ -340,276 +634,11 @@ export function processBulkImport(csvText, opts) {
   ensureEnrolmentKeys();
 
   const { rows }    = parseCSV(csvText);
-  const batches     = AppState.get('batches')     || [];
-  const students    = AppState.get('students')    || [];
-  const admissions  = AppState.get('admissions')  || [];
-  const enrolments  = AppState.get('enrolments')  || [];
-  const disciplines = AppState.get('disciplines') || [];
-  const campuses    = AppState.get('campuses')    || [];
-  const subjects    = AppState.get('subjects')    || [];
+  const state       = _loadState();
+  const summary     = _makeSummary(rows.length);
 
-  const summary = {
-    totalRows:      rows.length,
-    imported:       0,   // new students added (Mode A or B new student)
-    enrolmentOnly:  0,   // existing student — batch enrolment added (Mode B)
-    subjectAdded:   0,   // subject appended to enrolment (Mode C)
-    infoOnly:       0,   // student info saved only (Mode A)
-    skipped:        0,
-    errors:         [],
-    results:        [],
-  };
-
-  for (const { row, lineNo } of rows) {
-    const name = (row.studentName || '—').trim();
-    const cnic = row.cnic || '';
-
-    // ── Validate ─────────────────────────────────────────────
-    const { mode, valid, errors, warnings, batch } = _validateRow(row, batches);
-
-    if (!valid) {
-      summary.errors.push({ lineNo, studentName: name, cnic, issues: errors });
-      summary.results.push({ lineNo, status: 'error', studentName: name, cnic, message: errors.join(' | ') });
-      summary.skipped++;
-      continue;
-    }
-
-    const formattedCNIC   = formatCNIC(row.cnic);
-    const existingStudent = students.find(
-      s => s.cnic === formattedCNIC || s.uniqueId === formattedCNIC
-    );
-
-    // ════════════════════════════════════════════════════════
-    //  MODE C — Subject / Freeze Import
-    // ════════════════════════════════════════════════════════
-    if (mode === 'subject') {
-      if (!existingStudent) {
-        const issue = 'Student not found (CNIC: ' + formattedCNIC + '). Subject import requires an existing student.';
-        summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
-        summary.results.push({ lineNo, status: 'error', studentName: name, cnic: formattedCNIC, message: issue });
-        summary.skipped++;
-        continue;
-      }
-
-      // Find correct enrolment
-      let targetEnrolment = null;
-      const studentEnrolments = enrolments.filter(e => e.studentId === existingStudent.id);
-
-      if (batch) {
-        targetEnrolment = studentEnrolments.find(e => e.batchId === batch.id);
-      } else {
-        targetEnrolment = studentEnrolments
-          .filter(e => e.status === 'active' || e.status === 'suspended')
-          .sort((a, b) => new Date(b.enrolmentDate) - new Date(a.enrolmentDate))[0] || null;
-      }
-
-      if (!targetEnrolment) {
-        const batchHint = batch ? ' in batch "' + batch.batchName + '"' : '';
-        const issue = 'No enrolment found for this student' + batchHint + '. Cannot attach subject.';
-        summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
-        summary.results.push({ lineNo, status: 'error', studentName: name, cnic: formattedCNIC, message: issue });
-        summary.skipped++;
-        continue;
-      }
-
-      // Duplicate subject check
-      const subCode         = row.subjectCode.trim();
-      const existingSubjects = Array.isArray(targetEnrolment.subjects) ? targetEnrolment.subjects : [];
-      const alreadyHasSub   = existingSubjects.some(
-        s => s.subjectCode?.toLowerCase() === subCode.toLowerCase()
-      );
-
-      if (alreadyHasSub) {
-        const issue = 'Subject "' + subCode + '" already on this enrolment (duplicate).';
-        summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
-        summary.results.push({ lineNo, status: 'duplicate', studentName: existingStudent.studentName, cnic: formattedCNIC, message: issue });
-        summary.skipped++;
-        continue;
-      }
-
-      const masterSubject = subjects.find(
-        s => s.code?.toLowerCase() === subCode.toLowerCase() ||
-             s.abbreviation?.toLowerCase() === subCode.toLowerCase()
-      );
-
-      const subStatus = VALID_SUBJECT_STATUSES.includes(row.subjectStatus?.trim())
-        ? row.subjectStatus.trim()
-        : 'suspended';
-
-      const newSubjectEntry = {
-        subjectId:   masterSubject?.id   || '',
-        subjectCode: subCode,
-        subjectName: row.subjectName?.trim() || masterSubject?.name || subCode,
-        status:      subStatus,
-        addedAt:     new Date().toISOString(),
-        addedBy:     importedBy,
-      };
-
-      if (!dryRun) {
-        const updatedSubjects = [...existingSubjects, newSubjectEntry];
-        EnrolmentService.update(targetEnrolment.id, { subjects: updatedSubjects }, importedBy);
-        const idx = enrolments.findIndex(e => e.id === targetEnrolment.id);
-        if (idx !== -1) enrolments[idx] = { ...enrolments[idx], subjects: updatedSubjects };
-      }
-
-      summary.subjectAdded++;
-      summary.results.push({
-        lineNo, status: 'subject_added',
-        studentName: existingStudent.studentName,
-        cnic: formattedCNIC,
-        message:
-          'Subject "' + subCode + '" added' +
-          (batch ? ' (' + batch.batchName + ')' : ' (most recent enrolment)') +
-          ' · status: ' + subStatus +
-          (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
-      });
-      continue;
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  MODE A — Student Info Only
-    // ════════════════════════════════════════════════════════
-    if (mode === 'info') {
-      // Duplicate CNIC → skip entire row
-      if (existingStudent) {
-        const issue = 'CNIC ' + formattedCNIC + ' already registered as "' + existingStudent.studentName + '" — skipped.';
-        summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
-        summary.results.push({ lineNo, status: 'duplicate', studentName: name, cnic: formattedCNIC, message: issue });
-        summary.skipped++;
-        continue;
-      }
-
-      if (!dryRun) {
-        const { newStudent } = _buildNewStudent(row, formattedCNIC, null, disciplines, campuses, importedBy);
-        AppState.add('students', newStudent);
-        students.push(newStudent);
-      }
-
-      summary.imported++;
-      summary.infoOnly++;
-      summary.results.push({
-        lineNo, status: 'info_only',
-        studentName: row.studentName.trim(),
-        cnic: formattedCNIC,
-        message: 'Student info saved (no batch/enrolment)' +
-          (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
-      });
-      continue;
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  MODE B — Batch Enrolment
-    // ════════════════════════════════════════════════════════
-
-    if (existingStudent) {
-      // Duplicate enrolment check for this batch
-      const alreadyEnrolled = enrolments.some(
-        e => e.studentId === existingStudent.id && e.batchId === batch.id
-      );
-
-      if (alreadyEnrolled) {
-        const issue = 'Already enrolled in batch "' + batch.batchName + '" (duplicate).';
-        summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
-        summary.results.push({ lineNo, status: 'duplicate', studentName: existingStudent.studentName, cnic: formattedCNIC, message: issue });
-        summary.skipped++;
-        continue;
-      }
-
-      // Existing student, new batch → enrolment only
-      const paid = (row.challanPaid || '').toLowerCase() === 'yes';
-      if (!dryRun) {
-        const result = EnrolmentService.add({
-          studentId:     existingStudent.id,
-          batchId:       batch.id,
-          enrolmentDate: row.dateOfAdmission,
-          status:        'active',
-          feeStatus:     paid ? 'paid' : 'unpaid',
-          notes:         (row.notes || '').trim(),
-          subjects:      [],
-        }, importedBy);
-        if (result.success) enrolments.push(result.enrolment);
-      }
-
-      summary.enrolmentOnly++;
-      summary.results.push({
-        lineNo, status: 'enrolment_added',
-        studentName: existingStudent.studentName,
-        cnic: formattedCNIC,
-        message: 'Existing student — enrolment added for "' + batch.batchName + '"' +
-          (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
-      });
-      continue;
-    }
-
-    // ── New student + batch enrolment ──────────────────────
-    const paid = (row.challanPaid || '').toLowerCase() === 'yes';
-
-    if (!dryRun) {
-      const { newStudent, discRecord, campusRecord, derivedSession } =
-        _buildNewStudent(row, formattedCNIC, batch, disciplines, campuses, importedBy);
-
-      AppState.add('students', newStudent);
-      students.push(newStudent);
-
-      const admissionId = generateID('adm');
-      AppState.add('admissions', {
-        id:           admissionId,
-        studentId:    newStudent.id,
-        campusId:     campusRecord?.id || '',
-        disciplineId: discRecord?.id   || '',
-        batchId:      batch.id,
-        session:      derivedSession,
-        status:       paid ? ADMISSION_STATUS.CONFIRMED : ADMISSION_STATUS.PENDING,
-        admittedBy:   importedBy,
-        createdAt:    new Date().toISOString(),
-        updatedAt:    new Date().toISOString(),
-      });
-
-      const enrResult = EnrolmentService.add({
-        studentId:     newStudent.id,
-        batchId:       batch.id,
-        enrolmentDate: row.dateOfAdmission,
-        status:        'active',
-        feeStatus:     paid ? 'paid' : 'unpaid',
-        notes:         (row.notes || '').trim(),
-        subjects:      [],
-      }, importedBy);
-      if (enrResult.success) enrolments.push(enrResult.enrolment);
-
-      const feeAmount = parseFloat(row.feeAmount) || 0;
-      if (feeAmount > 0) {
-        const challan = {
-          id:          generateID('chl'),
-          admissionId,
-          studentId:   newStudent.id,
-          studentName: newStudent.studentName,
-          campusId:    campusRecord?.id || '',
-          batchId:     batch.id,
-          session:     derivedSession,
-          feeAmount,
-          dueDate:     row.dueDate || _defaultDueDate(),
-          status:      paid ? CHALLAN_STATUS.PAID : CHALLAN_STATUS.PENDING,
-          paidAt:      paid ? new Date().toISOString() : null,
-          createdAt:   new Date().toISOString(),
-        };
-        AppState.add('challans', challan);
-
-        if (paid) {
-          AppState.update('admissions', admissionId, { status: ADMISSION_STATUS.CONFIRMED });
-          AppState.update('students', newStudent.id, { isActive: true });
-        }
-      }
-    }
-
-    summary.imported++;
-    summary.results.push({
-      lineNo, status: paid ? 'imported_paid' : 'imported_pending',
-      studentName: row.studentName.trim(),
-      cnic: formattedCNIC,
-      message:
-        (paid ? 'Imported & Confirmed (challan paid)' : 'Imported — challan pending') +
-        ' · batch: ' + batch.batchName +
-        (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
-    });
+  for (const item of rows) {
+    _processRow(item, state, summary, dryRun, importedBy);
   }
 
   return summary;
