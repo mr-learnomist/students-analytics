@@ -264,15 +264,39 @@ const VALID_SUBJECT_STATUSES = [
 ];
 
 // Returns { mode: 'info'|'batch'|'subject', valid, errors, warnings, batch }
-function _validateRow(row, batches) {
+function _validateRow(row, batches, students) {
   const errors   = [];
   const warnings = [];
 
-  // Common required fields
-  if (!row.studentName?.trim())     errors.push('studentName is required');
-  if (!row.cnic?.trim())            errors.push('CNIC is required');
-  if (!row.gender?.trim())          errors.push('gender is required');
-  if (!row.dateOfAdmission?.trim()) errors.push('dateOfAdmission is required');
+  // ── Determine mode first (needed to decide which fields are required) ──
+  const hasSubjectCode = !!row.subjectCode?.trim();
+  const hasBatchName   = !!row.batchName?.trim();
+
+  let mode = 'info';
+  if (hasSubjectCode) mode = 'subject';
+  else if (hasBatchName) mode = 'batch';
+
+  // ── Check if this CNIC already exists in system ──
+  // For MODE B (batch enrolment): if student already exists, gender +
+  // dateOfAdmission are NOT required — we enrol them without touching
+  // their student record.
+  const rawCNIC = row.cnic?.trim() || '';
+  const formattedForLookup = rawCNIC ? formatCNIC(rawCNIC) : '';
+  const existingForValidation = formattedForLookup
+    ? students.find(s => s.cnic === formattedForLookup || s.uniqueId === formattedForLookup)
+    : null;
+
+  const isExistingStudentBatchRow = mode === 'batch' && !!existingForValidation;
+
+  // ── Common required fields ──
+  if (!row.studentName?.trim()) errors.push('studentName is required');
+  if (!row.cnic?.trim())        errors.push('CNIC is required');
+
+  // gender + dateOfAdmission: only required when we need to CREATE a new student record
+  if (!isExistingStudentBatchRow) {
+    if (!row.gender?.trim())          errors.push('gender is required');
+    if (!row.dateOfAdmission?.trim()) errors.push('dateOfAdmission is required');
+  }
 
   // CNIC format
   if (row.cnic?.trim()) {
@@ -280,14 +304,14 @@ function _validateRow(row, batches) {
     if (!cv.valid) errors.push('Invalid CNIC: ' + cv.message);
   }
 
-  // Gender
+  // Gender value check (only when provided)
   const g = (row.gender || '').toLowerCase();
-  if (row.gender && g !== 'male' && g !== 'female') {
+  if (row.gender?.trim() && g !== 'male' && g !== 'female') {
     errors.push('gender must be "male" or "female"');
   }
 
-  // Date format
-  if (row.dateOfAdmission && !/^\d{4}-\d{2}-\d{2}$/.test(row.dateOfAdmission.trim())) {
+  // Date format (only when provided)
+  if (row.dateOfAdmission?.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(row.dateOfAdmission.trim())) {
     errors.push('dateOfAdmission must be YYYY-MM-DD');
   }
 
@@ -295,14 +319,6 @@ function _validateRow(row, batches) {
   if (row.dob?.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(row.dob.trim())) {
     warnings.push('dob format should be YYYY-MM-DD — ignored');
   }
-
-  // Determine mode
-  const hasSubjectCode = !!row.subjectCode?.trim();
-  const hasBatchName   = !!row.batchName?.trim();
-
-  let mode = 'info';
-  if (hasSubjectCode) mode = 'subject';
-  else if (hasBatchName) mode = 'batch';
 
   // Batch lookup — HARD error if batch specified but not found
   let batch = null;
@@ -323,9 +339,11 @@ function _validateRow(row, batches) {
     }
   }
 
-  // Optional field warnings
-  if (!row.fatherName?.trim())   warnings.push('fatherName is empty');
-  if (!row.studentPhone?.trim()) warnings.push('studentPhone is empty');
+  // Optional field warnings (skip for existing-student batch rows — we won't use these anyway)
+  if (!isExistingStudentBatchRow) {
+    if (!row.fatherName?.trim())   warnings.push('fatherName is empty');
+    if (!row.studentPhone?.trim()) warnings.push('studentPhone is empty');
+  }
 
   return { mode, valid: errors.length === 0, errors, warnings, batch };
 }
@@ -351,6 +369,7 @@ function _makeSummary(totalRows) {
     subjectAdded:  0,
     infoOnly:      0,
     skipped:       0,
+    notFound:      0,   // Mode B rows where CNIC not in system & new-student fields missing
     errors:        [],
     results:       [],
   };
@@ -362,7 +381,7 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
   const name = (row.studentName || '—').trim();
   const cnic = row.cnic || '';
 
-  const { mode, valid, errors, warnings, batch } = _validateRow(row, batches);
+  const { mode, valid, errors, warnings, batch } = _validateRow(row, batches, students);
 
   if (!valid) {
     summary.errors.push({ lineNo, studentName: name, cnic, issues: errors });
@@ -500,11 +519,13 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
     }
 
     const paid = (row.challanPaid || '').toLowerCase() === 'yes';
+    // Use provided enrolment date, or fall back to the student's original admission date
+    const enrolDate = row.dateOfAdmission?.trim() || existingStudent.dateOfAdmission || existingStudent.admissionDate || new Date().toISOString().split('T')[0];
     if (!dryRun) {
       const result = EnrolmentService.add({
         studentId:     existingStudent.id,
         batchId:       batch.id,
-        enrolmentDate: row.dateOfAdmission,
+        enrolmentDate: enrolDate,
         status:        'active',
         feeStatus:     paid ? 'paid' : 'unpaid',
         notes:         (row.notes || '').trim(),
@@ -525,6 +546,18 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
   }
 
   // New student + batch enrolment
+  // If gender or dateOfAdmission are missing (user only provided name+cnic+batch),
+  // we cannot create a new student record — skip with a clear message.
+  if (!row.gender?.trim() || !row.dateOfAdmission?.trim()) {
+    const issue = 'Student not found in system (CNIC: ' + formattedCNIC + '). ' +
+      'Cannot create new student — gender and dateOfAdmission are required for new students.';
+    summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+    summary.results.push({ lineNo, status: 'not_found', studentName: name, cnic: formattedCNIC, message: issue });
+    summary.skipped++;
+    summary.notFound++;
+    return;
+  }
+
   const paid = (row.challanPaid || '').toLowerCase() === 'yes';
 
   if (!dryRun) {
