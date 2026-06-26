@@ -294,12 +294,21 @@ function _validateRow(row, batches, students) {
 
   const isExistingStudentBatchRow = mode === 'batch' && !!existingForValidation;
 
+  // For Mode B rows where student is NOT in system and gender/dateOfAdmission
+  // are also missing — the real problem is "student not found", not missing fields.
+  // Push a single clear error instead of confusing "gender is required" messages.
+  const isMissingNewStudentFields = !row.gender?.trim() || !row.dateOfAdmission?.trim();
+  const isUnknownBatchStudent     = mode === 'batch' && !existingForValidation && isMissingNewStudentFields;
+
   // ── Common required fields ──
   if (!row.studentName?.trim()) errors.push('studentName is required');
   if (!row.cnic?.trim())        errors.push('CNIC is required');
 
-  // gender + dateOfAdmission: only required when we need to CREATE a new student record
-  if (!isExistingStudentBatchRow) {
+  if (isUnknownBatchStudent) {
+    // Student not in system + not enough info to create → single clear message
+    errors.push('Student not found in system — CNIC not registered. Check CNIC or add student manually first.');
+  } else if (!isExistingStudentBatchRow) {
+    // New student creation path — all fields required
     if (!row.gender?.trim())          errors.push('gender is required');
     if (!row.dateOfAdmission?.trim()) errors.push('dateOfAdmission is required');
   }
@@ -390,8 +399,13 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
   const { mode, valid, errors, warnings, batch } = _validateRow(row, batches, students);
 
   if (!valid) {
+    // Use 'not_found' badge (orange) when the sole issue is student not in system,
+    // 'error' (red) for all other validation failures.
+    const isNotFoundError = errors.length === 1 && errors[0].startsWith('Student not found in system');
+    const status = isNotFoundError ? 'not_found' : 'error';
+    if (isNotFoundError) summary.notFound++;
     summary.errors.push({ lineNo, studentName: name, cnic, issues: errors });
-    summary.results.push({ lineNo, status: 'error', studentName: name, cnic, message: errors.join(' | ') });
+    summary.results.push({ lineNo, status, studentName: name, cnic, message: errors.join(' | ') });
     summary.skipped++;
     return;
   }
