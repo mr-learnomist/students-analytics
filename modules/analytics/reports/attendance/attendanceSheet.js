@@ -504,13 +504,29 @@ export function mountAttendanceSheet(container, onBack) {
       return;
     }
     const batch = AppState.findById('batches', _batchId);
-    if (!batch?.startDate || !batch?.endDate) {
-      chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">Batch has no start/end date.</span>';
-      return;
-    }
-    const months = _monthsBetween(batch.startDate, batch.endDate);
+
+    // Try to get months from LP assignment dates first
+    let months = [];
+    try {
+      const assignment = getAssignmentForBatch(_batchId);
+      const lpDates = (assignment?.rows || []).filter(r => r.date).map(r => r.date);
+      if (lpDates.length) {
+        const mkSet = new Set(lpDates.map(d => d.slice(0, 7)));
+        months = [...mkSet].sort();
+      }
+    } catch(e) { /* no LP */ }
+
+    // Fallback: derive from batch startDate / endDate
     if (!months.length) {
-      chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">No months in batch range.</span>';
+      if (!batch?.startDate || !batch?.endDate) {
+        chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">Batch has no start/end date and no Lecture Plan assigned.</span>';
+        return;
+      }
+      months = _monthsBetween(batch.startDate, batch.endDate);
+    }
+
+    if (!months.length) {
+      chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">No months found for this batch.</span>';
       return;
     }
     months.forEach(mk => _selMonths.add(mk));
@@ -1020,13 +1036,135 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
 }
 
 // ── PDF / Print Export ────────────────────────────────────────
-function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel }, output) {
-  const table = output.querySelector('#asTable');
-  if (!table) { alert('No sheet to export.'); return; }
+function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel, selMonths }, output) {
+  if (!students.length || !dates.length) { alert('No data to export.'); return; }
 
   const now     = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
   const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+  // ── Which student-info columns are currently visible
+  const AS_COL_KEY = 'as_col_prefs';
+  const _DEF_HIDDEN = ['fatherName','email'];
+  let colPrefsPDF = { hidden: [..._DEF_HIDDEN] };
+  try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) colPrefsPDF = r; } catch(e){}
+  const pdfShowCnic          = !colPrefsPDF.hidden.includes('cnic');
+  const pdfShowFatherName    = !colPrefsPDF.hidden.includes('fatherName');
+  const pdfShowStudentPhone  = !colPrefsPDF.hidden.includes('studentPhone');
+  const pdfShowGuardianPhone = !colPrefsPDF.hidden.includes('guardianPhone');
+  const pdfShowEmail         = !colPrefsPDF.hidden.includes('email');
+  const pdfShowP             = !colPrefsPDF.hidden.includes('present');
+  const pdfShowA             = !colPrefsPDF.hidden.includes('absent');
+  const pdfShowL             = !colPrefsPDF.hidden.includes('leave');
+  const pdfShowPct           = !colPrefsPDF.hidden.includes('percent');
+
+  // ── Attendance record map
+  const batchRecs = (AppState.get('attendance') || []).filter(r => r.batchId === batch?.id);
+  const recMap    = {};
+  batchRecs.forEach(r => { recMap[`${r.studentId}_${r.date}`] = r.status; });
+
+  const DAY_S = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  const MON_F = ['January','February','March','April','May','June',
+                 'July','August','September','October','November','December'];
+
+  // ── Build one <table> per month
+  const monthKeys = Object.keys(byMonth).sort();
+
+  function buildMonthTable(mk) {
+    const mDates  = byMonth[mk];
+    const [y, m]  = mk.split('-');
+    const mLabel  = MON_F[parseInt(m)-1] + ' ' + y;
+
+    // Info col widths
+    const infoColsHTML = [
+      pdfShowCnic          ? '<col style="width:88px"/>'  : '',
+      pdfShowFatherName    ? '<col style="width:90px"/>'  : '',
+      pdfShowStudentPhone  ? '<col style="width:74px"/>'  : '',
+      pdfShowGuardianPhone ? '<col style="width:74px"/>'  : '',
+      pdfShowEmail         ? '<col style="width:110px"/>' : '',
+    ].join('');
+
+    const summCols = (pdfShowP?1:0)+(pdfShowA?1:0)+(pdfShowL?1:0)+(pdfShowPct?1:0);
+
+    // Header row 1 — month span + Total span
+    const dateColCount = mDates.length;
+    const infoSpan = [pdfShowCnic,pdfShowFatherName,pdfShowStudentPhone,pdfShowGuardianPhone,pdfShowEmail].filter(Boolean).length;
+
+    let hdr1 = `<th rowspan="2" class="h-no h-name" colspan="${1 + (infoSpan > 0 ? 0 : 0)}">#</th>
+                <th rowspan="2" class="h-no h-name" style="text-align:left;min-width:110px">Student Name</th>`;
+    if (pdfShowCnic)          hdr1 += `<th rowspan="2" class="h-no">CNIC</th>`;
+    if (pdfShowFatherName)    hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Father Name</th>`;
+    if (pdfShowStudentPhone)  hdr1 += `<th rowspan="2" class="h-no">Stu. Phone</th>`;
+    if (pdfShowGuardianPhone) hdr1 += `<th rowspan="2" class="h-no">Grd. Phone</th>`;
+    if (pdfShowEmail)         hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Email</th>`;
+    hdr1 += `<th colspan="${dateColCount}" class="h-month">${mLabel}</th>`;
+    if (summCols > 0) hdr1 += `<th colspan="${summCols}" class="h-no">Total</th>`;
+
+    // Header row 2 — individual dates
+    const hdr2 = mDates.map(d => {
+      const dt   = new Date(d + 'T00:00:00');
+      const dayN = dt.getDay();
+      const isFri = dayN === 5, isSat = dayN === 6;
+      return `<th class="h-date${isFri?' h-fri':isSat?' h-sat':''}">${DAY_S[dayN]}<br>${dt.getDate()}</th>`;
+    }).join('') +
+    (pdfShowP   ? `<th class="h-no h-p">P</th>`  : '') +
+    (pdfShowA   ? `<th class="h-no h-a">A</th>`  : '') +
+    (pdfShowL   ? `<th class="h-no h-l">L</th>`  : '') +
+    (pdfShowPct ? `<th class="h-no h-pct">%</th>` : '');
+
+    // Data rows
+    const rowsHTML = students.map((stu, idx) => {
+      let p = 0, a = 0, l = 0;
+      const cells = mDates.map(d => {
+        const s = recMap[`${stu.id}_${d}`] || '';
+        if (s === 'P') p++; else if (s === 'A') a++; else if (s === 'L') l++;
+        const cls = s === 'P' ? 'att-p' : s === 'A' ? 'att-a' : s === 'L' ? 'att-l' : 'att-empty';
+        return `<td class="${cls}">${s}</td>`;
+      }).join('');
+
+      const total    = p + a + l;
+      const pct      = total > 0 ? Math.round((p / total) * 100) : null;
+      const rowCls   = idx % 2 === 0 ? '' : ' class="alt"';
+
+      return `<tr${rowCls}>
+        <td class="t-num">${idx+1}</td>
+        <td class="t-name">${stu.studentName || '—'}</td>
+        ${pdfShowCnic          ? `<td class="t-info mono">${stu.cnic||'—'}</td>`         : ''}
+        ${pdfShowFatherName    ? `<td class="t-info t-left">${stu.fatherName||'—'}</td>` : ''}
+        ${pdfShowStudentPhone  ? `<td class="t-info">${stu.studentPhone||'—'}</td>`      : ''}
+        ${pdfShowGuardianPhone ? `<td class="t-info">${stu.guardianPhone||'—'}</td>`     : ''}
+        ${pdfShowEmail         ? `<td class="t-info t-left">${stu.email||'—'}</td>`      : ''}
+        ${cells}
+        ${pdfShowP   ? `<td class="t-sum t-p">${total>0?p:''}</td>`                              : ''}
+        ${pdfShowA   ? `<td class="t-sum t-a">${total>0?a:''}</td>`                              : ''}
+        ${pdfShowL   ? `<td class="t-sum t-l">${total>0?l:''}</td>`                              : ''}
+        ${pdfShowPct ? `<td class="t-sum t-pct${pct!==null&&pct<75?' t-fail':''}">${pct!==null?pct+'%':''}</td>` : ''}
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="month-block">
+        <table>
+          <colgroup>
+            <col style="width:24px"/>
+            <col style="min-width:110px"/>
+            ${infoColsHTML}
+            ${mDates.map(() => '<col class="att-col"/>').join('')}
+            ${pdfShowP   ? '<col style="width:22px"/>' : ''}
+            ${pdfShowA   ? '<col style="width:22px"/>' : ''}
+            ${pdfShowL   ? '<col style="width:22px"/>' : ''}
+            ${pdfShowPct ? '<col style="width:30px"/>' : ''}
+          </colgroup>
+          <thead>
+            <tr>${hdr1}</tr>
+            <tr>${hdr2}</tr>
+          </thead>
+          <tbody>${rowsHTML}</tbody>
+        </table>
+      </div>`;
+  }
+
+  const tablesHTML = monthKeys.map(mk => buildMonthTable(mk)).join('');
 
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html><html><head>
@@ -1034,44 +1172,112 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel 
     <title>Attendance Sheet — ${batch?.batchName||''}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:'Segoe UI',Arial,sans-serif;font-size:9px;color:#1e293b;background:#fff;padding:14px 16px}
-      .header{display:flex;justify-content:space-between;align-items:flex-start;
-              border-bottom:2.5px solid #2563eb;padding-bottom:8px;margin-bottom:10px}
-      .header .title{font-size:15px;font-weight:700;color:#1e40af}
-      .header .sub{font-size:9px;color:#64748b;margin-top:2px}
-      .header .right{text-align:right;font-size:9px;color:#64748b;line-height:1.6}
-      table{border-collapse:collapse;width:100%}
-      th,td{border:1px solid #cbd5e1;padding:3px 4px;text-align:center;white-space:nowrap}
-      th{background:#f1f5f9;font-weight:700;font-size:8.5px}
-      td:nth-child(2){text-align:left;font-weight:600}
-      td:nth-child(3),td:nth-child(4),td:nth-child(5),td:nth-child(6),td:nth-child(7){text-align:left;font-size:8px}
-      .month-hdr{background:#dbeafe;color:#1e40af;font-size:8px;font-weight:700}
-      .footer{margin-top:10px;padding-top:7px;border-top:1px solid #e2e8f0;
-              display:flex;justify-content:space-between;font-size:7.5px;color:#94a3b8}
-      @media print{body{padding:6px 8px}.no-print{display:none}@page{size:A4 landscape;margin:6mm}}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:8.5px;color:#1e293b;background:#fff}
+
+      /* ── Page header (repeated on every print page via position) */
+      .page-header{
+        display:flex;justify-content:space-between;align-items:flex-start;
+        border-bottom:2.5px solid #2563eb;padding:8px 10px 7px;
+        margin-bottom:0;
+      }
+      .ph-title{font-size:13px;font-weight:700;color:#1e40af}
+      .ph-sub{font-size:8px;color:#64748b;margin-top:2px}
+      .ph-right{text-align:right;font-size:8px;color:#64748b;line-height:1.6}
+
+      /* ── Month block — each starts on its own print page */
+      .month-block{
+        padding:8px 10px 10px;
+        page-break-after:always;
+        break-after:page;
+      }
+      .month-block:last-child{page-break-after:avoid;break-after:avoid}
+
+      /* ── Table base */
+      table{border-collapse:collapse;width:100%;table-layout:fixed}
+      th,td{border:1px solid #cbd5e1;padding:2px 2px;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+      /* ── Header types */
+      .h-no{background:#f1f5f9;font-weight:700;text-align:center;font-size:7.5px;color:#475569}
+      .h-name{text-align:left}
+      .h-month{background:#dbeafe;color:#1e40af;font-weight:700;text-align:center;font-size:8px}
+      .h-date{background:#f8fafc;font-weight:700;text-align:center;font-size:7px;color:#64748b;padding:2px 1px;width:18px}
+      .h-fri{color:#2563eb}
+      .h-sat{color:#d97706}
+      .h-p{color:#16a34a}.h-a{color:#dc2626}.h-l{color:#d97706}.h-pct{color:#7c3aed}
+
+      /* ── Attendance date col — very narrow so teacher can handwrite */
+      col.att-col{width:18px}
+
+      /* ── Data cells */
+      .t-num{text-align:center;color:#94a3b8;font-size:7.5px;font-family:monospace}
+      .t-name{font-weight:600;color:#0f172a;font-size:8px;text-align:left;padding-left:3px}
+      .t-info{text-align:center;color:#475569;font-size:7.5px}
+      .t-left{text-align:left;padding-left:3px}
+      .mono{font-family:monospace;letter-spacing:-.3px}
+      .alt td{background:#f8fafc}
+
+      /* ── Attendance value cells */
+      .att-p{text-align:center;font-weight:700;color:#16a34a}
+      .att-a{text-align:center;font-weight:700;color:#dc2626}
+      .att-l{text-align:center;font-weight:700;color:#d97706}
+      .att-empty{text-align:center;color:#e2e8f0}
+
+      /* ── Summary cells */
+      .t-sum{text-align:center;font-weight:700;font-size:8px}
+      .t-p{color:#16a34a}.t-a{color:#dc2626}.t-l{color:#d97706}
+      .t-pct{color:#7c3aed}.t-fail{color:#dc2626}
+
+      /* ── Footer */
+      .page-footer{
+        padding:5px 10px;border-top:1px solid #e2e8f0;
+        display:flex;justify-content:space-between;font-size:7px;color:#94a3b8;
+        margin-top:4px;
+      }
+
+      /* ── Print settings */
+      @media print{
+        .no-print{display:none}
+        @page{size:A4 landscape;margin:5mm 6mm}
+        /* repeat header on every page */
+        thead{display:table-header-group}
+      }
+
+      /* ── Screen preview */
+      @media screen{
+        body{background:#e5e7eb;padding:12px}
+        .month-block{background:#fff;border-radius:6px;margin-bottom:16px;
+          box-shadow:0 1px 4px rgba(0,0,0,.12)}
+        .page-header{background:#fff;border-radius:6px 6px 0 0;
+          box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:8px}
+      }
     </style>
   </head><body>
-    <div class="header">
+
+    <div class="page-header">
       <div>
-        <div class="title">Attendance Sheet — ${batch?.batchName||''}</div>
-        <div class="sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} · ${students.length} students · ${dates.length} class days · ${monthLabel}</div>
+        <div class="ph-title">Attendance Sheet — ${batch?.batchName||''}</div>
+        <div class="ph-sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} &nbsp;·&nbsp; ${students.length} student${students.length!==1?'s':''} &nbsp;·&nbsp; ${monthLabel}</div>
       </div>
-      <div class="right"><strong>${dateStr}</strong><div>${timeStr}</div></div>
+      <div class="ph-right"><strong>${dateStr}</strong><div>${timeStr}</div></div>
     </div>
-    ${table.outerHTML}
-    <div class="footer">
-      <span>Attendance Sheet · ${batch?.batchName||''}</span>
+
+    ${tablesHTML}
+
+    <div class="page-footer">
+      <span>Attendance Sheet · ${batch?.batchName||''} · ${monthLabel}</span>
       <span>Powered by <strong style="color:#2563eb">Learnomist</strong></span>
     </div>
-    <div class="no-print" style="margin-top:10px;text-align:center">
-      <button onclick="window.print()" style="padding:6px 20px;background:#2563eb;color:#fff;
-        border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
-        Print / Save as PDF
+
+    <div class="no-print" style="position:fixed;bottom:16px;right:16px">
+      <button onclick="window.print()" style="padding:8px 22px;background:#2563eb;color:#fff;
+        border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;
+        box-shadow:0 2px 8px rgba(37,99,235,.4)">
+        🖨️ Print / Save as PDF
       </button>
     </div>
   </body></html>`);
   win.document.close();
-  setTimeout(() => win.print(), 500);
+  setTimeout(() => win.print(), 600);
 }
 
 // ── Column Manager ─────────────────────────────────────────────
