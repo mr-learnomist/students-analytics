@@ -12,7 +12,7 @@
 // ============================================================
 
 import { AppState }              from '../../../../utils/state.js';
-import { getAssignmentForBatch } from '../../lecturePlan/lecturePlanService.js';
+import { getAssignmentForBatch } from '../../../../lecturePlan/lecturePlanService.js';
 
 // ── Constants ────────────────────────────────────────────────
 const DAY_SHORT = ['Su','Mo','Tu','We','Th','Fr','Sa'];
