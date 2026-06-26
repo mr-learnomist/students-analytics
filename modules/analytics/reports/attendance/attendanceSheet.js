@@ -143,8 +143,8 @@ function _injectAsStyles() {
 
 /* ── Month chips ── */
 .as-chip {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600;
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600;
   border:1px solid var(--border2); background:var(--surface);
   color:var(--t2); cursor:pointer; transition:all .15s; user-select:none;
 }
@@ -290,66 +290,66 @@ export function mountAttendanceSheet(container, onBack) {
         </button>
         <div class="as-filter-body open" id="asFilterBody">
 
-          <!-- Row 1: Campus · Discipline · Subject · Session -->
-          <div class="as-filter-row">
-            <div class="as-filter-col">
+          <!-- Single row: Campus · Discipline · Session · Subject · Batch · Month -->
+          <div class="as-filter-row" style="align-items:flex-end">
+
+            <div class="as-filter-col" style="flex:1 1 100px;min-width:90px;max-width:130px">
               <div class="as-filter-col-label">Campus</div>
               <select id="asCampus" class="as-filter-sel">
-                <option value="">All Campuses</option>
+                <option value="">All</option>
               </select>
             </div>
-            <div class="as-filter-col">
+
+            <div class="as-filter-col" style="flex:0 1 90px;min-width:80px;max-width:110px">
               <div class="as-filter-col-label">Discipline</div>
               <select id="asDisc" class="as-filter-sel">
-                <option value="">All Disciplines</option>
+                <option value="">All</option>
               </select>
             </div>
-            <div class="as-filter-col">
-              <div class="as-filter-col-label">Subject</div>
-              <select id="asSubject" class="as-filter-sel" disabled>
-                <option value="">— Select Discipline first —</option>
-              </select>
-            </div>
-            <div class="as-filter-col">
+
+            <div class="as-filter-col" style="flex:0 1 90px;min-width:80px;max-width:110px">
               <div class="as-filter-col-label">Session</div>
               <select id="asSession" class="as-filter-sel">
-                <option value="">All Sessions</option>
+                <option value="">All</option>
               </select>
             </div>
-          </div>
 
-          <!-- Row 2: Batch (with search) -->
-          <div class="as-filter-row">
-            <div class="as-filter-col" style="flex:1 1 200px">
+            <div class="as-filter-col" style="flex:0 1 80px;min-width:70px;max-width:100px">
+              <div class="as-filter-col-label">Subject</div>
+              <select id="asSubject" class="as-filter-sel" disabled>
+                <option value="">All</option>
+              </select>
+            </div>
+
+            <!-- Batch: search input above dropdown -->
+            <div class="as-filter-col" style="flex:1 1 160px;min-width:140px;max-width:240px">
               <div class="as-filter-col-label">Batch</div>
+              <div style="position:relative;margin-bottom:4px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.2" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);
+                     color:var(--t4);pointer-events:none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="asBatchSearch" type="text" placeholder="Search batch…"
+                  style="width:100%;height:28px;padding:0 8px 0 26px;
+                    background:var(--surface2);border:1px solid var(--border2);
+                    border-radius:6px;color:var(--t1);font-size:12px;
+                    outline:none;font-family:inherit;box-sizing:border-box;
+                    transition:border-color .12s"/>
+              </div>
               <select id="asBatch" class="as-filter-sel">
                 <option value="">— Select Batch —</option>
               </select>
             </div>
-            <div class="as-filter-col" style="flex:2 1 220px">
-              <div class="as-filter-col-label">Search Batch</div>
-              <div style="position:relative">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2.2" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
-                     color:var(--t4);pointer-events:none">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input id="asBatchSearch" type="text" placeholder="Type to search batches…"
-                  style="width:100%;height:34px;padding:0 10px 0 30px;
-                    background:var(--surface2);border:1px solid var(--border2);
-                    border-radius:8px;color:var(--t1);font-size:12.5px;
-                    outline:none;font-family:inherit;box-sizing:border-box;
-                    transition:border-color .12s"/>
+
+            <!-- Month chips inline -->
+            <div class="as-filter-col" style="flex:2 1 180px;min-width:140px">
+              <div class="as-filter-col-label">Month</div>
+              <div id="asMonthChips" style="display:flex;gap:5px;flex-wrap:wrap;min-height:34px;align-items:center">
+                <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
               </div>
             </div>
-          </div>
 
-          <!-- Row 2: Month chips -->
-          <div class="as-filter-col" style="flex:unset;max-width:unset">
-            <div class="as-filter-col-label">Month</div>
-            <div id="asMonthChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
-              <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
-            </div>
           </div>
 
           <!-- Actions + applied chips -->
@@ -389,11 +389,11 @@ export function mountAttendanceSheet(container, onBack) {
     _campusId = campSel.value;
     const discSel = container.querySelector('#asDisc');
     const prev    = discSel.value;
-    discSel.innerHTML = '<option value="">All Disciplines</option>';
+    discSel.innerHTML = '<option value="">All</option>';
     _get('disciplines').forEach(d => {
       const o = document.createElement('option');
       o.value = d.id;
-      o.textContent = `${d.abbreviation} — ${d.name || d.fullName || ''}`;
+      o.textContent = d.abbreviation || d.name || d.fullName || '';
       discSel.appendChild(o);
     });
     discSel.value = prev;
@@ -408,7 +408,7 @@ export function mountAttendanceSheet(container, onBack) {
 
     if (!_discId) {
       subjSel.disabled = true;
-      subjSel.innerHTML = '<option value="">— Select Discipline first —</option>';
+      subjSel.innerHTML = '<option value="">— Select Discipline —</option>';
       _subjectId = '';
     } else {
       subjSel.disabled = false;
@@ -419,11 +419,11 @@ export function mountAttendanceSheet(container, onBack) {
       const subjects = (_get('subjects') || [])
         .filter(s => levelIds.includes(s.levelId) && !s.isArchived)
         .sort((a, b) => (a.subjectCode || '').localeCompare(b.subjectCode || ''));
-      subjSel.innerHTML = '<option value="">All Subjects</option>';
+      subjSel.innerHTML = '<option value="">All</option>';
       subjects.forEach(s => {
         const o = document.createElement('option');
         o.value = s.id;
-        o.textContent = `${s.subjectCode} — ${s.subjectName || ''}`;
+        o.textContent = s.subjectCode || s.subjectName || '';
         if (s.id === prev) o.selected = true;
         subjSel.appendChild(o);
       });
@@ -441,7 +441,7 @@ export function mountAttendanceSheet(container, onBack) {
     if (_campusId) batches = batches.filter(b => b.campusId     === _campusId);
     if (_discId)   batches = batches.filter(b => b.disciplineId === _discId);
     const sessions = [...new Set(batches.map(b => b.sessionPeriod).filter(Boolean))].sort().reverse();
-    sessSel.innerHTML = '<option value="">All Sessions</option>';
+    sessSel.innerHTML = '<option value="">All</option>';
     sessions.forEach(s => {
       const o = document.createElement('option');
       o.value = s; o.textContent = s;
