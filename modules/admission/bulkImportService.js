@@ -54,7 +54,8 @@ export const REQUIRED_COLUMNS = [
   'cnic',
   'gender',
   'dateOfAdmission',
-  'challanPaid',
+  // challanPaid is optional — defaults to 'yes' (paid) on bulk import.
+  // Only add it if you need to mark specific rows as unpaid (value: 'no').
 ];
 
 export const OPTIONAL_COLUMNS = [
@@ -153,7 +154,7 @@ export function generateSampleCSV() {
     '# General Rules:',
     '#   cnic: XXXXX-XXXXXXX-X  (dashes optional)',
     '#   gender: male / female',
-    '#   challanPaid: yes = admission confirmed + student active, no = pending',
+    '#   challanPaid: leave empty = auto-marked paid (bulk import default), "no" = pending',
     '#   dateOfAdmission: YYYY-MM-DD',
     '#   dob: YYYY-MM-DD (optional)',
     '#   session: leave empty = auto-detected from dateOfAdmission',
@@ -272,9 +273,14 @@ function _validateRow(row, batches, students) {
   const hasSubjectCode = !!row.subjectCode?.trim();
   const hasBatchName   = !!row.batchName?.trim();
 
+  // MODE LOGIC:
+  //   batchName only              → 'batch'   (Mode B: enrol in batch)
+  //   batchName + subjectCode     → 'batch'   (Mode B+S: enrol + attach subject in one row)
+  //   subjectCode only (no batch) → 'subject' (Mode C: attach subject to existing enrolment)
+  //   neither                     → 'info'    (Mode A: student info only)
   let mode = 'info';
-  if (hasSubjectCode) mode = 'subject';
-  else if (hasBatchName) mode = 'batch';
+  if (hasBatchName)   mode = 'batch';    // batch always wins when present
+  else if (hasSubjectCode) mode = 'subject';
 
   // ── Check if this CNIC already exists in system ──
   // For MODE B (batch enrolment): if student already exists, gender +
@@ -504,7 +510,7 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
     return;
   }
 
-  // ── MODE B ──────────────────────────────────────────────────
+  // ── MODE B (+ optional subject) — Existing student ───────────
   if (existingStudent) {
     const alreadyEnrolled = enrolments.some(
       e => e.studentId === existingStudent.id && e.batchId === batch.id
@@ -518,9 +524,30 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
       return;
     }
 
-    const paid = (row.challanPaid || '').toLowerCase() === 'yes';
-    // Use provided enrolment date, or fall back to the student's original admission date
+    const paid = (row.challanPaid || '').toLowerCase() !== 'no'; // default: paid (bulk import = fee already collected)
     const enrolDate = row.dateOfAdmission?.trim() || existingStudent.dateOfAdmission || existingStudent.admissionDate || new Date().toISOString().split('T')[0];
+
+    // Build subject entry if subjectCode provided
+    const subCode = row.subjectCode?.trim() || '';
+    let initialSubjects = [];
+    if (subCode) {
+      const masterSubject = subjects.find(
+        s => s.code?.toLowerCase() === subCode.toLowerCase() ||
+             s.abbreviation?.toLowerCase() === subCode.toLowerCase()
+      );
+      const subStatus = VALID_SUBJECT_STATUSES.includes(row.subjectStatus?.trim())
+        ? row.subjectStatus.trim()
+        : 'active';
+      initialSubjects = [{
+        subjectId:   masterSubject?.id || '',
+        subjectCode: subCode,
+        subjectName: row.subjectName?.trim() || masterSubject?.name || subCode,
+        status:      subStatus,
+        addedAt:     new Date().toISOString(),
+        addedBy:     importedBy,
+      }];
+    }
+
     if (!dryRun) {
       const result = EnrolmentService.add({
         studentId:     existingStudent.id,
@@ -529,7 +556,7 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
         status:        'active',
         feeStatus:     paid ? 'paid' : 'unpaid',
         notes:         (row.notes || '').trim(),
-        subjects:      [],
+        subjects:      initialSubjects,
       }, importedBy);
       if (result.success) enrolments.push(result.enrolment);
     }
@@ -540,6 +567,7 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
       studentName: existingStudent.studentName,
       cnic: formattedCNIC,
       message: 'Existing student — enrolment added for "' + batch.batchName + '"' +
+        (subCode ? ' · subject: ' + subCode : '') +
         (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
     });
     return;
@@ -558,7 +586,28 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
     return;
   }
 
-  const paid = (row.challanPaid || '').toLowerCase() === 'yes';
+  const paid = (row.challanPaid || '').toLowerCase() !== 'no'; // default: paid (bulk import = fee already collected)
+
+  // Build subject entry for new student enrolment if subjectCode provided
+  const newStuSubCode = row.subjectCode?.trim() || '';
+  let newStuSubjects = [];
+  if (newStuSubCode) {
+    const masterSubject = subjects.find(
+      s => s.code?.toLowerCase() === newStuSubCode.toLowerCase() ||
+           s.abbreviation?.toLowerCase() === newStuSubCode.toLowerCase()
+    );
+    const subStatus = VALID_SUBJECT_STATUSES.includes(row.subjectStatus?.trim())
+      ? row.subjectStatus.trim()
+      : 'active';
+    newStuSubjects = [{
+      subjectId:   masterSubject?.id || '',
+      subjectCode: newStuSubCode,
+      subjectName: row.subjectName?.trim() || masterSubject?.name || newStuSubCode,
+      status:      subStatus,
+      addedAt:     new Date().toISOString(),
+      addedBy:     importedBy,
+    }];
+  }
 
   if (!dryRun) {
     const { newStudent, discRecord, campusRecord, derivedSession } =
@@ -588,7 +637,7 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
       status:        'active',
       feeStatus:     paid ? 'paid' : 'unpaid',
       notes:         (row.notes || '').trim(),
-      subjects:      [],
+      subjects:      newStuSubjects,
     }, importedBy);
     if (enrResult.success) enrolments.push(enrResult.enrolment);
 
@@ -683,7 +732,7 @@ function _buildNewStudent(row, formattedCNIC, batch, disciplines, campuses, impo
   const genderNorm     = (g === 'female') ? 'female' : 'male';
   const admDate        = row.dateOfAdmission.trim();
   const derivedSession = row.session?.trim() || sessionFromDate(admDate);
-  const paid           = (row.challanPaid || '').toLowerCase() === 'yes';
+  const paid           = (row.challanPaid || '').toLowerCase() !== 'no'; // default: paid
 
   // Resolve discipline — prefer batch's disciplineId, fallback to row.disciplineName
   let discRecord = null;
