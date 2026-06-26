@@ -164,6 +164,75 @@ function _injectAsStyles() {
   font-size:11px; font-weight:600;
   border:1px solid transparent;
 }
+
+/* ── Info bar ── */
+.as-info-bar {
+  display:flex; align-items:center; gap:8px; flex-wrap:nowrap;
+  padding:9px 16px;
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-bottom:none;
+  border-radius:12px 12px 0 0;
+}
+
+/* ── Export buttons ── */
+.as-export-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  height:30px; padding:0 12px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface2);
+  color:var(--t3); cursor:pointer; font-size:12px; font-weight:600;
+  font-family:inherit; transition:all .15s; white-space:nowrap; flex-shrink:0;
+}
+.as-export-btn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+
+/* ── Column Manager ── */
+.as-col-mgr-wrap  { position:relative; flex-shrink:0; }
+.as-col-mgr-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface2);
+  color:var(--t3); cursor:pointer; transition:all .15s;
+}
+.as-col-mgr-panel {
+  position:fixed; z-index:9999;
+  width:200px; background:var(--surface);
+  border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+  display:none; flex-direction:column; overflow:hidden;
+  max-height:min(340px, calc(100vh - 24px));
+}
+.as-col-mgr-panel.open { display:flex; }
+.as-col-mgr-head {
+  padding:9px 13px 7px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center;
+  justify-content:space-between; flex-shrink:0;
+}
+.as-col-mgr-title {
+  font-size:11.5px; font-weight:700; color:var(--t1);
+  display:flex; align-items:center; gap:6px;
+}
+.as-col-mgr-link {
+  font-size:11px; color:var(--blue); cursor:pointer;
+  background:none; border:none; padding:0;
+  text-decoration:underline; font-weight:600;
+}
+.as-col-mgr-link:hover { opacity:.8; }
+.as-col-mgr-list { padding:4px 0; overflow-y:auto; flex:1; }
+.as-col-mgr-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:default; user-select:none;
+  transition:background .1s;
+}
+.as-col-mgr-item:hover { background:var(--surface2); }
+.as-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+.as-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
+.as-col-mgr-item.col-hidden .as-col-mgr-lbl { color:var(--t4); }
+.as-col-mgr-foot {
+  padding:6px 12px; border-top:1px solid var(--border);
+  font-size:10.5px; color:var(--t3); text-align:center;
+  flex-shrink:0; background:var(--surface2);
+}
 `;
   document.head.appendChild(st);
 }
@@ -600,53 +669,53 @@ function _renderSheet(output, batchId, selMonths) {
     ? selMonths.map(mk => { const [y,m]=mk.split('-'); return MON_SHORT[parseInt(m)-1]+' '+y; }).join(', ')
     : 'All Months';
 
-  // ── Info bar (TRS-style) ───────────────────────────────────
+  // ── Info bar ───────────────────────────────────────────────
   const infoBar = `
-    <div class="trs-info-bar" style="margin-bottom:0;border-radius:12px 12px 0 0">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2">
+    <div class="as-info-bar">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2" style="flex-shrink:0">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
       </svg>
-      <span style="font-size:12.5px;font-weight:700;color:var(--t1)">${batch?.batchName || '—'}</span>
-      <span style="color:var(--border2);font-size:16px;font-weight:300;margin:0 2px">|</span>
-      <span style="font-size:11.5px;color:var(--t3)">
+      <span style="font-size:12.5px;font-weight:700;color:var(--t1);white-space:nowrap">${batch?.batchName || '—'}</span>
+      <span style="color:var(--border2);font-size:16px;font-weight:300;margin:0 2px;flex-shrink:0">|</span>
+      <span style="font-size:11.5px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
         ${disc?.abbreviation||''}${campus ? ' · ' + campus.campusName : ''}
         · ${students.length} student${students.length!==1?'s':''}
         · ${dates.length} class day${dates.length!==1?'s':''}
         · ${monthLabel}
       </span>
-      <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
-        <button class="trs-export-btn" id="asExportCSV">
+      <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
+        <button class="as-export-btn" id="asExportCSV">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
             <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
           </svg>CSV
         </button>
-        <button class="trs-export-btn" id="asExportPDF">
+        <button class="as-export-btn" id="asExportPDF">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="6 9 6 2 18 2 18 9"/>
             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
             <rect x="6" y="14" width="12" height="8"/>
           </svg>PDF
         </button>
-        <div class="trs-col-mgr-wrap">
-          <button class="trs-col-mgr-btn" id="asColMgrBtn" title="Show / hide columns">
+        <div class="as-col-mgr-wrap">
+          <button class="as-col-mgr-btn" id="asColMgrBtn" title="Show / hide columns">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="18" rx="1"/>
               <rect x="14" y="3" width="7" height="18" rx="1"/>
             </svg>
           </button>
-          <div class="trs-col-mgr-panel" id="asColMgrPanel">
-            <div class="trs-col-mgr-head">
-              <span class="trs-col-mgr-title">
+          <div class="as-col-mgr-panel" id="asColMgrPanel">
+            <div class="as-col-mgr-head">
+              <span class="as-col-mgr-title">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
                 </svg>Columns
               </span>
-              <button class="trs-col-mgr-link" id="asColMgrShowAll">Show All</button>
+              <button class="as-col-mgr-link" id="asColMgrShowAll">Show All</button>
             </div>
-            <div class="trs-col-mgr-list" id="asColMgrList"></div>
-            <div class="trs-col-mgr-foot">Applies to summary columns</div>
+            <div class="as-col-mgr-list" id="asColMgrList"></div>
+            <div class="as-col-mgr-foot">Applies to summary columns</div>
           </div>
         </div>
       </div>
@@ -850,11 +919,11 @@ function _wireAsColManager(output, batchId, selMonths) {
     AS_COLS.forEach(col => {
       const isVisible = !prefs.hidden.includes(col.key);
       const item = document.createElement('div');
-      item.className = 'trs-col-mgr-item' + (isVisible ? '' : ' col-hidden');
+      item.className = 'as-col-mgr-item' + (isVisible ? '' : ' col-hidden');
       item.innerHTML =
-        `<input type="checkbox" class="trs-col-mgr-chk" id="as_chk_${col.key}"${isVisible?' checked':''}/>`+
-        `<label class="trs-col-mgr-lbl" for="as_chk_${col.key}">${col.label}</label>`;
-      item.querySelector('.trs-col-mgr-chk').addEventListener('change', e => {
+        `<input type="checkbox" class="as-col-mgr-chk" id="as_chk_${col.key}"${isVisible?' checked':''}/>`+
+        `<label class="as-col-mgr-lbl" for="as_chk_${col.key}">${col.label}</label>`;
+      item.querySelector('.as-col-mgr-chk').addEventListener('change', e => {
         const p = _getPrefs();
         if (e.target.checked) {
           p.hidden = p.hidden.filter(h => h !== col.key);
@@ -866,7 +935,6 @@ function _wireAsColManager(output, batchId, selMonths) {
         _savePrefs(p);
         panel.classList.remove('open');
         btn.style.cssText = '';
-        // Re-render sheet with new prefs
         _renderSheet(output, batchId, selMonths);
       });
       list.appendChild(item);
