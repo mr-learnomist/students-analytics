@@ -488,7 +488,7 @@ function _render(container, search, discFilter, sessionFilter, campusFilter) {
     email: { label: 'Email', width: '190px',
       render: function(v) {
         if (!v) return '<span style="color:var(--t4)">—</span>';
-        return '<span style="font-size:12px;color:#2563eb;font-style:italic">' + v + '</span>';
+        return '<span style="font-size:12px;color:var(--t2)">' + v + '</span>';
       }},
     studentPhone: { label: 'Student Phone', width: '140px',
       render: function(v) {
