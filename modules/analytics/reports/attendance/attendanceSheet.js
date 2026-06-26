@@ -858,7 +858,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel 
       .month-hdr{background:#dbeafe;color:#1e40af;font-size:8px;font-weight:700}
       .footer{margin-top:10px;padding-top:7px;border-top:1px solid #e2e8f0;
               display:flex;justify-content:space-between;font-size:7.5px;color:#94a3b8}
-      @media print{body{padding:6px 8px}@page{size:A4 landscape;margin:6mm}}
+      @media print{body{padding:6px 8px}.no-print{display:none}@page{size:A4 landscape;margin:6mm}}
     </style>
   </head><body>
     <div class="header">
@@ -873,7 +873,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel 
       <span>Attendance Sheet · ${batch?.batchName||''}</span>
       <span>Powered by <strong style="color:#2563eb">Learnomist</strong></span>
     </div>
-    <div style="margin-top:10px;text-align:center">
+    <div class="no-print" style="margin-top:10px;text-align:center">
       <button onclick="window.print()" style="padding:6px 20px;background:#2563eb;color:#fff;
         border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
         Print / Save as PDF
