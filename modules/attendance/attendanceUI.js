@@ -348,12 +348,6 @@ export const AttendanceModule = {
     _root = typeof container === 'string' ? document.querySelector(container) : container;
     if (!_root) return;
 
-    // Ensure root has height so flex children can fill it
-    _root.style.display       = 'flex';
-    _root.style.flexDirection = 'column';
-    _root.style.minHeight     = '0';
-    _root.style.flex          = '1';
-
     _root.innerHTML = _buildShell();
     _attachTabSwitcher();
     _renderDailyAttendance();
@@ -1775,7 +1769,7 @@ function _loadDailySheet(batch) {
     </div>
 
     <!-- Attendance table -->
-    <div style="flex:1;overflow-y:auto;min-height:0;height:0">
+    <div style="flex:1;overflow-y:auto;min-height:0">
       ${!students.length
         ? `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">No active enrolled students.</div>`
         : `<table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1798,23 +1792,6 @@ function _loadDailySheet(batch) {
       }
     </div>
   `;
-
-  // ── JS height fix: measure fixed bars, set table wrapper height explicitly ──
-  requestAnimationFrame(() => {
-    const infoBar   = mainEl.firstElementChild;
-    const statsBar  = mainEl.querySelector('#dailyStatsBar');
-    const tableWrap = mainEl.querySelector('#dailyTbody')?.closest('div[style]');
-    if (!tableWrap) return;
-    const mainH    = mainEl.getBoundingClientRect().height;
-    const infoH    = infoBar  ? infoBar.getBoundingClientRect().height  : 0;
-    const statsH   = statsBar ? statsBar.getBoundingClientRect().height : 0;
-    const remaining = mainH - infoH - statsH;
-    if (remaining > 50) {
-      tableWrap.style.height    = remaining + 'px';
-      tableWrap.style.maxHeight = remaining + 'px';
-      tableWrap.style.flex      = 'none';
-    }
-  });
 
   if (!canMark || !students.length) return;
 
