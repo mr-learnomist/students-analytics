@@ -246,11 +246,13 @@ export function mountAttendanceSheet(container, onBack) {
   // ── Snapshot state ─────────────────────────────────────────
   let _campusId    = '';
   let _discId      = '';
+  let _subjectId   = '';
+  let _batchSearch = '';
   let _session     = '';
   let _batchId     = '';
   let _selMonths   = new Set();
   let _filterOpen  = true;
-  let _applied     = null; // { campusId, discId, session, batchId }
+  let _applied     = null; // { campusId, discId, subjectId, session, batchId }
 
   // ── Shell ──────────────────────────────────────────────────
   container.innerHTML = `
@@ -288,7 +290,7 @@ export function mountAttendanceSheet(container, onBack) {
         </button>
         <div class="as-filter-body open" id="asFilterBody">
 
-          <!-- Row 1: Campus · Discipline · Session · Batch -->
+          <!-- Row 1: Campus · Discipline · Subject · Session -->
           <div class="as-filter-row">
             <div class="as-filter-col">
               <div class="as-filter-col-label">Campus</div>
@@ -303,16 +305,42 @@ export function mountAttendanceSheet(container, onBack) {
               </select>
             </div>
             <div class="as-filter-col">
+              <div class="as-filter-col-label">Subject</div>
+              <select id="asSubject" class="as-filter-sel" disabled>
+                <option value="">— Select Discipline first —</option>
+              </select>
+            </div>
+            <div class="as-filter-col">
               <div class="as-filter-col-label">Session</div>
               <select id="asSession" class="as-filter-sel">
                 <option value="">All Sessions</option>
               </select>
             </div>
-            <div class="as-filter-col" style="flex:2 1 200px">
+          </div>
+
+          <!-- Row 2: Batch (with search) -->
+          <div class="as-filter-row">
+            <div class="as-filter-col" style="flex:1 1 200px">
               <div class="as-filter-col-label">Batch</div>
               <select id="asBatch" class="as-filter-sel">
                 <option value="">— Select Batch —</option>
               </select>
+            </div>
+            <div class="as-filter-col" style="flex:2 1 220px">
+              <div class="as-filter-col-label">Search Batch</div>
+              <div style="position:relative">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.2" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
+                     color:var(--t4);pointer-events:none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="asBatchSearch" type="text" placeholder="Type to search batches…"
+                  style="width:100%;height:34px;padding:0 10px 0 30px;
+                    background:var(--surface2);border:1px solid var(--border2);
+                    border-radius:8px;color:var(--t1);font-size:12.5px;
+                    outline:none;font-family:inherit;box-sizing:border-box;
+                    transition:border-color .12s"/>
+              </div>
             </div>
           </div>
 
@@ -369,11 +397,44 @@ export function mountAttendanceSheet(container, onBack) {
       discSel.appendChild(o);
     });
     discSel.value = prev;
+    _refreshSubject();
+  }
+
+  function _refreshSubject() {
+    _discId = container.querySelector('#asDisc').value;
+    const subjSel = container.querySelector('#asSubject');
+    const prev    = subjSel.value;
+    subjSel.innerHTML = '';
+
+    if (!_discId) {
+      subjSel.disabled = true;
+      subjSel.innerHTML = '<option value="">— Select Discipline first —</option>';
+      _subjectId = '';
+    } else {
+      subjSel.disabled = false;
+      // Get levels for this discipline
+      const levels   = (_get('levels') || []).filter(l => l.disciplineId === _discId);
+      const levelIds = levels.map(l => l.id);
+      // Get subjects for those levels (non-archived)
+      const subjects = (_get('subjects') || [])
+        .filter(s => levelIds.includes(s.levelId) && !s.isArchived)
+        .sort((a, b) => (a.subjectCode || '').localeCompare(b.subjectCode || ''));
+      subjSel.innerHTML = '<option value="">All Subjects</option>';
+      subjects.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s.id;
+        o.textContent = `${s.subjectCode} — ${s.subjectName || ''}`;
+        if (s.id === prev) o.selected = true;
+        subjSel.appendChild(o);
+      });
+      subjSel.value = prev;
+      _subjectId = subjSel.value;
+    }
     _refreshSession();
   }
 
   function _refreshSession() {
-    _discId = container.querySelector('#asDisc').value;
+    _session = '';
     const sessSel = container.querySelector('#asSession');
     const prev    = sessSel.value;
     let batches = _get('batches');
@@ -391,13 +452,37 @@ export function mountAttendanceSheet(container, onBack) {
   }
 
   function _refreshBatch() {
-    _session = container.querySelector('#asSession').value;
+    _session      = container.querySelector('#asSession').value;
+    _subjectId    = container.querySelector('#asSubject').value;
+    _batchSearch  = (container.querySelector('#asBatchSearch')?.value || '').trim().toLowerCase();
     const batchSel = container.querySelector('#asBatch');
     const prev     = batchSel.value;
+
     let batches = _get('batches');
     if (_campusId) batches = batches.filter(b => b.campusId      === _campusId);
     if (_discId)   batches = batches.filter(b => b.disciplineId  === _discId);
     if (_session)  batches = batches.filter(b => b.sessionPeriod === _session);
+
+    // Subject filter: narrow by subject's level → discipline (subjects are already
+    // scoped to the selected discipline's levels, so filter by subjectCode in batchName
+    // or use the subject's code as a hint in batch search)
+    if (_subjectId) {
+      const subj = (_get('subjects') || []).find(s => s.id === _subjectId);
+      if (subj?.subjectCode) {
+        const code = subj.subjectCode.toLowerCase();
+        batches = batches.filter(b =>
+          (b.batchName || '').toLowerCase().includes(code)
+        );
+      }
+    }
+
+    // Batch name text search
+    if (_batchSearch) {
+      batches = batches.filter(b =>
+        (b.batchName || '').toLowerCase().includes(_batchSearch)
+      );
+    }
+
     batchSel.innerHTML = '<option value="">— Select Batch —</option>';
     batches.forEach(b => {
       const o = document.createElement('option');
@@ -465,6 +550,10 @@ export function mountAttendanceSheet(container, onBack) {
       const d = _get('disciplines').find(d => d.id === f.discId);
       if (d) { chips.push(make(d.abbreviation || d.fullName || '', 'var(--violet,#8b5cf6)')); count++; }
     }
+    if (f.subjectId) {
+      const s = (_get('subjects') || []).find(s => s.id === f.subjectId);
+      if (s) { chips.push(make(s.subjectCode || s.subjectName || '', 'var(--blue)')); count++; }
+    }
     if (f.session) { chips.push(make(f.session, 'var(--green)')); count++; }
     if (f.batchId) {
       const b = _get('batches').find(b => b.id === f.batchId);
@@ -478,18 +567,36 @@ export function mountAttendanceSheet(container, onBack) {
 
   // ── Wire filter events ─────────────────────────────────────
   campSel.addEventListener('change', _refreshDisc);
-  container.querySelector('#asDisc').addEventListener('change', _refreshSession);
+  container.querySelector('#asDisc').addEventListener('change', _refreshSubject);
+  container.querySelector('#asSubject').addEventListener('change', _refreshBatch);
   container.querySelector('#asSession').addEventListener('change', _refreshBatch);
   container.querySelector('#asBatch').addEventListener('change', _refreshMonths);
+
+  // Batch search — live filter with small debounce
+  let _batchSearchTimer = null;
+  container.querySelector('#asBatchSearch').addEventListener('input', () => {
+    clearTimeout(_batchSearchTimer);
+    _batchSearchTimer = setTimeout(_refreshBatch, 180);
+  });
+  container.querySelector('#asBatchSearch').addEventListener('focus', e => {
+    e.target.style.borderColor = 'var(--blue)';
+  });
+  container.querySelector('#asBatchSearch').addEventListener('blur', e => {
+    e.target.style.borderColor = '';
+  });
 
   _refreshDisc();
 
   // ── Clear ──────────────────────────────────────────────────
   container.querySelector('#asClearBtn').addEventListener('click', () => {
     campSel.value = '';
-    _campusId = _discId = _session = _batchId = '';
+    _campusId = _discId = _subjectId = _batchSearch = _session = _batchId = '';
     _selMonths.clear();
     _applied = null;
+    const batchSearchEl = container.querySelector('#asBatchSearch');
+    if (batchSearchEl) batchSearchEl.value = '';
+    const subjSel = container.querySelector('#asSubject');
+    if (subjSel) { subjSel.innerHTML = '<option value="">— Select Discipline first —</option>'; subjSel.disabled = true; }
     _refreshDisc();
     _renderAppliedChips();
     container.querySelector('#asOutput').innerHTML = '';
@@ -501,7 +608,8 @@ export function mountAttendanceSheet(container, onBack) {
 
   // ── Apply ──────────────────────────────────────────────────
   container.querySelector('#asApplyBtn').addEventListener('click', () => {
-    _batchId = container.querySelector('#asBatch').value;
+    _batchId   = container.querySelector('#asBatch').value;
+    _subjectId = container.querySelector('#asSubject').value;
     if (!_batchId) {
       container.querySelector('#asOutput').innerHTML = `
         <div style="padding:32px;text-align:center;color:var(--t3);font-size:13px;
@@ -510,7 +618,7 @@ export function mountAttendanceSheet(container, onBack) {
         </div>`;
       return;
     }
-    _applied = { campusId: _campusId, discId: _discId, session: _session, batchId: _batchId };
+    _applied = { campusId: _campusId, discId: _discId, subjectId: _subjectId, session: _session, batchId: _batchId };
     _renderAppliedChips();
     // Collapse filter after apply
     _filterOpen = false;
