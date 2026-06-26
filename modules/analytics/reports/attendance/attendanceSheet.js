@@ -61,22 +61,132 @@ function _workingDates(batchId, batch) {
   return dates;
 }
 
+// ── Styles (injected once) ────────────────────────────────────
+let _asStylesInjected = false;
+function _injectAsStyles() {
+  if (_asStylesInjected) return;
+  _asStylesInjected = true;
+  const st = document.createElement('style');
+  st.textContent = `
+/* ── AS filter card (sticky, collapsible — same as TRS) ── */
+.as-filter-card {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.as-filter-toggle {
+  display:flex; align-items:center; gap:10px;
+  width:100%; padding:11px 16px;
+  background:none; border:none; font-family:inherit;
+  font-size:13px; font-weight:700; color:var(--t1);
+  cursor:pointer; text-align:left;
+  transition:background .15s;
+}
+.as-filter-toggle:hover { background:var(--surface2); }
+.as-filter-toggle-label { flex:1; }
+.as-filter-badge {
+  display:inline-flex; align-items:center;
+  background:var(--blue-dim); color:var(--blue);
+  border-radius:20px; padding:2px 9px;
+  font-size:11px; font-weight:700;
+}
+.as-filter-arrow { transition:transform .2s; color:var(--t3); }
+.as-filter-arrow.open { transform:rotate(180deg); }
+.as-filter-body {
+  display:none; flex-direction:column; gap:14px;
+  border-top:1px solid var(--border);
+  padding:16px;
+}
+.as-filter-body.open { display:flex; }
+.as-filter-row { display:flex; flex-wrap:wrap; gap:12px; width:100%; box-sizing:border-box; }
+.as-filter-col {
+  display:flex; flex-direction:column; gap:5px;
+  flex:1 1 140px; min-width:120px; max-width:100%; box-sizing:border-box;
+}
+.as-filter-col-label {
+  font-size:10.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.07em;
+  color:var(--t3);
+}
+.as-filter-sel {
+  height:34px; padding:0 10px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:8px; color:var(--t1); font-size:12.5px;
+  cursor:pointer; outline:none; font-family:inherit;
+  transition:border-color .12s;
+  width:100%; box-sizing:border-box;
+}
+.as-filter-sel:focus   { border-color:var(--blue); }
+.as-filter-sel:disabled { opacity:.45; cursor:not-allowed; }
+.as-filter-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:2px; }
+.as-filter-apply {
+  padding:7px 20px; border-radius:8px; border:none;
+  background:var(--blue); color:#fff;
+  font-size:12.5px; font-weight:700;
+  cursor:pointer; transition:opacity .15s; font-family:inherit;
+}
+.as-filter-apply:hover { opacity:.88; }
+.as-filter-clear {
+  padding:7px 14px; border-radius:8px;
+  border:1px solid var(--border); background:transparent;
+  color:var(--t2); font-size:12px; font-weight:600;
+  cursor:pointer; transition:all .15s; font-family:inherit;
+}
+.as-filter-clear:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
+
+/* ── Month chips ── */
+.as-chip {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600;
+  border:1px solid var(--border2); background:var(--surface);
+  color:var(--t2); cursor:pointer; transition:all .15s; user-select:none;
+}
+.as-chip:hover  { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+.as-chip.active { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+.as-chip .chip-dot {
+  width:7px; height:7px; border-radius:50%;
+  background:var(--border2); transition:background .15s;
+}
+.as-chip.active .chip-dot { background:var(--blue); }
+
+/* ── Applied chips row ── */
+.as-chip-row { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+.as-applied-chip {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 9px; border-radius:20px;
+  font-size:11px; font-weight:600;
+  border:1px solid transparent;
+}
+`;
+  document.head.appendChild(st);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // PUBLIC MOUNT
 // ═══════════════════════════════════════════════════════════════
 export function mountAttendanceSheet(container, onBack) {
+  _injectAsStyles();
 
   // ── Snapshot state ─────────────────────────────────────────
-  let _campusId      = '';
-  let _discId        = '';
-  let _session       = '';
-  let _batchId       = '';
-  let _selMonths     = new Set(); // selected month keys e.g. '2025-06'
+  let _campusId    = '';
+  let _discId      = '';
+  let _session     = '';
+  let _batchId     = '';
+  let _selMonths   = new Set();
+  let _filterOpen  = true;
+  let _applied     = null; // { campusId, discId, session, batchId }
 
-  // ── Render shell ───────────────────────────────────────────
+  // ── Shell ──────────────────────────────────────────────────
   container.innerHTML = `
     <!-- Back + title -->
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <button id="asBack" style="display:inline-flex;align-items:center;gap:6px;height:32px;
           padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--border2);
           background:var(--surface2);color:var(--t2);font-size:12.5px;font-weight:600;cursor:pointer">
@@ -92,95 +202,92 @@ export function mountAttendanceSheet(container, onBack) {
       </div>
     </div>
 
-    <!-- Filter card -->
-    <div style="background:var(--surface2);border:1px solid var(--border);
-                border-radius:var(--r-md);padding:16px 18px;margin-bottom:20px">
-      <div style="font-size:11px;font-weight:700;color:var(--t3);
-                  letter-spacing:.06em;margin-bottom:12px">SELECT FILTER</div>
-
-      <!-- Row 1: Campus · Discipline · Session · Batch -->
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <label style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.05em">CAMPUS</label>
-          <select id="asCampus" class="filter-select" style="min-width:120px">
-            <option value="">All Campuses</option>
-          </select>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <label style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.05em">DISCIPLINE</label>
-          <select id="asDisc" class="filter-select" style="min-width:160px">
-            <option value="">All Disciplines</option>
-          </select>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <label style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.05em">SESSION</label>
-          <select id="asSession" class="filter-select" style="min-width:110px">
-            <option value="">All Sessions</option>
-          </select>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <label style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.05em">BATCH</label>
-          <select id="asBatch" class="filter-select" style="min-width:200px">
-            <option value="">— Select Batch —</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Row 2: Month chips (dynamic) -->
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
-        <label style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.05em">MONTH</label>
-        <div id="asMonthChips" style="display:flex;gap:6px;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
-        </div>
-      </div>
-
-      <!-- Apply / Clear -->
-      <div style="display:flex;gap:8px">
-        <button id="asApplyBtn" style="height:34px;padding:0 20px;border-radius:var(--r-sm);
-            border:none;background:var(--blue);color:#fff;font-size:13px;
-            font-weight:600;cursor:pointer">
-          Apply Filter
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <!-- Filter card -->
+      <div class="as-filter-card" id="asFilterCard">
+        <button class="as-filter-toggle" id="asFilterToggle">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          <span class="as-filter-toggle-label">Select Filter</span>
+          <span class="as-filter-badge" id="asFilterBadge" style="display:none"></span>
+          <svg class="as-filter-arrow open" id="asFilterArrow" width="14" height="14"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
         </button>
-        <button id="asClearBtn" style="height:34px;padding:0 14px;border-radius:var(--r-sm);
-            border:1px solid var(--border2);background:var(--surface);
-            color:var(--t2);font-size:13px;font-weight:500;cursor:pointer">
-          Clear
-        </button>
+        <div class="as-filter-body open" id="asFilterBody">
+
+          <!-- Row 1: Campus · Discipline · Session · Batch -->
+          <div class="as-filter-row">
+            <div class="as-filter-col">
+              <div class="as-filter-col-label">Campus</div>
+              <select id="asCampus" class="as-filter-sel">
+                <option value="">All Campuses</option>
+              </select>
+            </div>
+            <div class="as-filter-col">
+              <div class="as-filter-col-label">Discipline</div>
+              <select id="asDisc" class="as-filter-sel">
+                <option value="">All Disciplines</option>
+              </select>
+            </div>
+            <div class="as-filter-col">
+              <div class="as-filter-col-label">Session</div>
+              <select id="asSession" class="as-filter-sel">
+                <option value="">All Sessions</option>
+              </select>
+            </div>
+            <div class="as-filter-col" style="flex:2 1 200px">
+              <div class="as-filter-col-label">Batch</div>
+              <select id="asBatch" class="as-filter-sel">
+                <option value="">— Select Batch —</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 2: Month chips -->
+          <div class="as-filter-col" style="flex:unset;max-width:unset">
+            <div class="as-filter-col-label">Month</div>
+            <div id="asMonthChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">
+              <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
+            </div>
+          </div>
+
+          <!-- Actions + applied chips -->
+          <div class="as-filter-actions">
+            <button class="as-filter-apply" id="asApplyBtn">Apply Filter</button>
+            <button class="as-filter-clear"  id="asClearBtn">Clear</button>
+            <div class="as-chip-row" id="asAppliedChips"></div>
+          </div>
+
+        </div>
       </div>
-    </div>
 
-    <!-- Sheet output -->
-    <div id="asOutput"></div>
+      <!-- Sheet output -->
+      <div id="asOutput"></div>
+    </div>`;
 
-    <style>
-      .as-chip {
-        display:inline-flex;align-items:center;gap:5px;
-        padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;
-        border:1px solid var(--border2);background:var(--surface);
-        color:var(--t2);cursor:pointer;transition:all .15s;user-select:none;
-      }
-      .as-chip:hover  { border-color:var(--blue);color:var(--blue);background:var(--blue-dim); }
-      .as-chip.active { border-color:var(--blue);color:var(--blue);background:var(--blue-dim); }
-      .as-chip .chip-dot {
-        width:7px;height:7px;border-radius:50%;
-        background:var(--border2);transition:background .15s;
-      }
-      .as-chip.active .chip-dot { background:var(--blue); }
-    </style>`;
-
-  // ── Back ──────────────────────────────────────────────────
+  // ── Back ───────────────────────────────────────────────────
   container.querySelector('#asBack').addEventListener('click', onBack);
 
-  // ── Populate campus dropdown ───────────────────────────────
+  // ── Toggle collapse ────────────────────────────────────────
+  container.querySelector('#asFilterToggle').addEventListener('click', () => {
+    _filterOpen = !_filterOpen;
+    container.querySelector('#asFilterBody').classList.toggle('open', _filterOpen);
+    container.querySelector('#asFilterArrow').classList.toggle('open', _filterOpen);
+  });
+
+  // ── Populate campus ────────────────────────────────────────
   const campSel = container.querySelector('#asCampus');
   _get('campuses').forEach(c => {
     const o = document.createElement('option');
-    o.value = c.id;
-    o.textContent = c.campusName;
+    o.value = c.id; o.textContent = c.campusName;
     campSel.appendChild(o);
   });
 
-  // ── Filter cascade helpers ─────────────────────────────────
+  // ── Cascade helpers ────────────────────────────────────────
   function _refreshDisc() {
     _campusId = campSel.value;
     const discSel = container.querySelector('#asDisc');
@@ -200,7 +307,6 @@ export function mountAttendanceSheet(container, onBack) {
     _discId = container.querySelector('#asDisc').value;
     const sessSel = container.querySelector('#asSession');
     const prev    = sessSel.value;
-    // Unique sessions from matching batches
     let batches = _get('batches');
     if (_campusId) batches = batches.filter(b => b.campusId     === _campusId);
     if (_discId)   batches = batches.filter(b => b.disciplineId === _discId);
@@ -243,43 +349,62 @@ export function mountAttendanceSheet(container, onBack) {
       chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>';
       return;
     }
-
     const batch = AppState.findById('batches', _batchId);
     if (!batch?.startDate || !batch?.endDate) {
       chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">Batch has no start/end date.</span>';
       return;
     }
-
     const months = _monthsBetween(batch.startDate, batch.endDate);
     if (!months.length) {
       chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">No months in batch range.</span>';
       return;
     }
-
-    // Default: select all months
     months.forEach(mk => _selMonths.add(mk));
-
     chipsEl.innerHTML = months.map(mk => {
       const [y, m] = mk.split('-');
       return `<span class="as-chip active" data-month="${mk}">
-        <span class="chip-dot"></span>
-        ${MON_SHORT[parseInt(m)-1]} ${y}
+        <span class="chip-dot"></span>${MON_SHORT[parseInt(m)-1]} ${y}
       </span>`;
     }).join('');
-
-    // Toggle chips
     chipsEl.querySelectorAll('.as-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const mk = chip.dataset.month;
-        if (_selMonths.has(mk)) {
-          _selMonths.delete(mk);
-          chip.classList.remove('active');
-        } else {
-          _selMonths.add(mk);
-          chip.classList.add('active');
-        }
+        if (_selMonths.has(mk)) { _selMonths.delete(mk); chip.classList.remove('active'); }
+        else                    { _selMonths.add(mk);    chip.classList.add('active');    }
       });
     });
+  }
+
+  // ── Applied chips (badge + colored pills) ─────────────────
+  function _renderAppliedChips() {
+    const f = _applied;
+    const badge     = container.querySelector('#asFilterBadge');
+    const chipsRow  = container.querySelector('#asAppliedChips');
+    if (!f) { badge.style.display = 'none'; chipsRow.innerHTML = ''; return; }
+
+    const make = (label, color) =>
+      `<span class="as-applied-chip" style="background:color-mix(in srgb,${color} 15%,transparent);color:${color};border-color:${color}">${label}</span>`;
+
+    const chips = [];
+    let count = 0;
+
+    if (f.campusId) {
+      const c = _get('campuses').find(c => c.id === f.campusId);
+      if (c) { chips.push(make((c.campusName||'').replace(/\s*campus$/i,'').trim(), 'var(--blue)')); count++; }
+    }
+    if (f.discId) {
+      const d = _get('disciplines').find(d => d.id === f.discId);
+      if (d) { chips.push(make(d.abbreviation || d.fullName || '', 'var(--violet,#8b5cf6)')); count++; }
+    }
+    if (f.session) { chips.push(make(f.session, 'var(--green)')); count++; }
+    if (f.batchId) {
+      const b = _get('batches').find(b => b.id === f.batchId);
+      if (b) { chips.push(make(b.batchName || '', 'var(--yellow)')); count++; }
+    }
+
+    badge.style.display = count ? '' : 'none';
+    badge.textContent   = count + ' active';
+    chipsRow.innerHTML  = chips.join('');
   }
 
   // ── Wire filter events ─────────────────────────────────────
@@ -288,7 +413,6 @@ export function mountAttendanceSheet(container, onBack) {
   container.querySelector('#asSession').addEventListener('change', _refreshBatch);
   container.querySelector('#asBatch').addEventListener('change', _refreshMonths);
 
-  // Initial cascade
   _refreshDisc();
 
   // ── Clear ──────────────────────────────────────────────────
@@ -296,8 +420,14 @@ export function mountAttendanceSheet(container, onBack) {
     campSel.value = '';
     _campusId = _discId = _session = _batchId = '';
     _selMonths.clear();
+    _applied = null;
     _refreshDisc();
+    _renderAppliedChips();
     container.querySelector('#asOutput').innerHTML = '';
+    // Re-open filter after clear
+    _filterOpen = true;
+    container.querySelector('#asFilterBody').classList.add('open');
+    container.querySelector('#asFilterArrow').classList.add('open');
   });
 
   // ── Apply ──────────────────────────────────────────────────
@@ -311,6 +441,12 @@ export function mountAttendanceSheet(container, onBack) {
         </div>`;
       return;
     }
+    _applied = { campusId: _campusId, discId: _discId, session: _session, batchId: _batchId };
+    _renderAppliedChips();
+    // Collapse filter after apply
+    _filterOpen = false;
+    container.querySelector('#asFilterBody').classList.remove('open');
+    container.querySelector('#asFilterArrow').classList.remove('open');
     _renderSheet(container.querySelector('#asOutput'), _batchId, [..._selMonths].sort());
   });
 }
