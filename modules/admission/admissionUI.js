@@ -1015,6 +1015,7 @@ function _renderImportResults(body, summary, isDryRun) {
     enrolment_added:  { color: '#3b82f6', icon: '↪', label: 'Enrolment Added'    },
     subject_added:    { color: '#06b6d4', icon: '+', label: 'Subject Added'       },
     duplicate:        { color: '#f59e0b', icon: '⚠', label: 'Duplicate Skip'     },
+    not_found:        { color: '#f97316', icon: '?', label: 'Not Found'           },
     error:            { color: '#ef4444', icon: '✗', label: 'Error'              },
   };
 
@@ -1029,12 +1030,13 @@ function _renderImportResults(body, summary, isDryRun) {
 
   // ── Stat pills ───────────────────────────────────────────
   const statItems = [
-    { label: 'Total Rows',      value: summary.totalRows,      color: '#64748b' },
-    { label: 'New Students',    value: summary.imported,       color: '#10b981' },
-    { label: 'Info Only',       value: summary.infoOnly || 0,  color: '#8b5cf6' },
-    { label: 'Enrolment Added', value: summary.enrolmentOnly,  color: '#3b82f6' },
-    { label: 'Subject Added',   value: summary.subjectAdded,   color: '#06b6d4' },
-    { label: 'Skipped/Errors',  value: summary.skipped,        color: summary.skipped > 0 ? '#ef4444' : '#64748b' },
+    { label: 'Total Rows',      value: summary.totalRows,         color: '#64748b' },
+    { label: 'New Students',    value: summary.imported,          color: '#10b981' },
+    { label: 'Info Only',       value: summary.infoOnly || 0,     color: '#8b5cf6' },
+    { label: 'Enrolment Added', value: summary.enrolmentOnly,     color: '#3b82f6' },
+    { label: 'Subject Added',   value: summary.subjectAdded,      color: '#06b6d4' },
+    { label: 'Not Found',       value: summary.notFound || 0,     color: (summary.notFound || 0) > 0 ? '#f97316' : '#64748b' },
+    { label: 'Skipped/Errors',  value: summary.skipped,           color: summary.skipped > 0 ? '#ef4444' : '#64748b' },
   ];
 
   const statsHtml = `
