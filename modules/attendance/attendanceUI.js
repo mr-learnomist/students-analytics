@@ -1769,20 +1769,20 @@ function _loadDailySheet(batch) {
     </div>
 
     <!-- Attendance table -->
-    <div style="flex:1;overflow-y:auto">
+    <div style="flex:1;overflow-y:auto;min-height:0">
       ${!students.length
         ? `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">No active enrolled students.</div>`
         : `<table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>
               <tr style="background:var(--surface2);position:sticky;top:0;z-index:2">
-                <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
-                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:40px">#</th>
-                <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
+                <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:36px">#</th>
+                <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:120px">ID</th>
+                <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;
                            text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border)">Student Name</th>
-                <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;
-                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:130px">ID</th>
-                <th style="padding:9px 12px;text-align:center;font-size:10px;font-weight:700;
-                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:170px">Status</th>
+                <th style="padding:7px 8px;text-align:center;font-size:10px;font-weight:700;
+                           text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:150px">Status</th>
               </tr>
             </thead>
             <tbody id="dailyTbody">
@@ -1949,13 +1949,13 @@ function _buildDailyRow(stu, idx, existing, canMark) {
                : status === 'L' ? 'background:color-mix(in srgb,var(--t2) 4%,transparent)'
                : '';
   return `<tr data-sid="${stu.id}" style="${rowBg};transition:background .15s">
-    <td style="padding:9px 12px;border-bottom:1px solid var(--border);
-               color:var(--t4);font-family:var(--font-mono);font-size:11px">${idx+1}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid var(--border);
+    <td style="padding:7px 8px;border-bottom:1px solid var(--border);
+               color:var(--t4);font-family:var(--font-mono);font-size:11px;width:36px">${idx+1}</td>
+    <td style="padding:7px 8px;border-bottom:1px solid var(--border);
+               font-family:var(--font-mono);font-size:11.5px;color:var(--t3);width:120px">${sid}</td>
+    <td style="padding:7px 8px;border-bottom:1px solid var(--border);
                font-weight:600;color:var(--t1)">${stu.studentName || '—'}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid var(--border);
-               font-family:var(--font-mono);font-size:11.5px;color:var(--t3)">${sid}</td>
-    <td style="padding:9px 12px;border-bottom:1px solid var(--border);text-align:center">
+    <td style="padding:7px 8px;border-bottom:1px solid var(--border);text-align:center">
       ${canMark
         ? `<div class="daily-status-grp" data-sid="${stu.id}"
                 style="display:inline-flex;gap:5px;align-items:center">
