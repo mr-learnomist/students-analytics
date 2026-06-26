@@ -32,6 +32,7 @@ import { AdmissionForm }      from './admissionForm.js';
 import {
   generateSampleCSV,
   processBulkImport,
+  processBulkImportAsync,
   REQUIRED_COLUMNS,
 }                             from './bulkImportService.js';
 
@@ -910,34 +911,94 @@ function _renderImport(body) {
     reader.readAsText(file, 'UTF-8');
   }
 
+  // ── Progress bar helper ────────────────────────────────────
+  function _showProgress(label) {
+    const res = body.querySelector('#impResults');
+    res.innerHTML = `
+      <div style="padding:24px 0;text-align:center">
+        <div style="font-size:13px;font-weight:600;color:var(--t1);margin-bottom:14px" id="impProgressLabel">
+          ${label}
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);
+                    border-radius:20px;height:10px;overflow:hidden;max-width:420px;margin:0 auto">
+          <div id="impProgressBar"
+               style="height:100%;width:0%;background:var(--blue,#3b82f6);
+                      border-radius:20px;transition:width .15s ease"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:10px" id="impProgressCount">0 / 0 rows</div>
+      </div>`;
+  }
+
+  function _updateProgress(done, total) {
+    const pct  = total > 0 ? Math.round((done / total) * 100) : 0;
+    const bar  = body.querySelector('#impProgressBar');
+    const cnt  = body.querySelector('#impProgressCount');
+    if (bar) bar.style.width = pct + '%';
+    if (cnt) cnt.textContent  = done + ' / ' + total + ' rows (' + pct + '%)';
+  }
+
+  function _setButtons(disabled) {
+    const previewBtn = body.querySelector('#impPreviewBtn');
+    const runBtn     = body.querySelector('#impRunBtn');
+    if (previewBtn) previewBtn.disabled = disabled;
+    if (runBtn)     runBtn.disabled     = disabled;
+    if (runBtn)     runBtn.style.opacity = disabled ? '0.6' : '1';
+  }
+
   // ── Preview (dry run) ──────────────────────────────────────
-  body.querySelector('#impPreviewBtn').addEventListener('click', () => {
+  body.querySelector('#impPreviewBtn').addEventListener('click', async () => {
     if (!_csvText) return;
-    const summary = processBulkImport(_csvText, { dryRun: true });
+    _setButtons(true);
+    _showProgress('Previewing rows…');
+    const summary = await processBulkImportAsync(
+      _csvText,
+      { dryRun: true },
+      (done, total) => _updateProgress(done, total),
+    );
     _renderImportResults(body, summary, true);
+    _setButtons(false);
   });
 
   // ── Actual import ──────────────────────────────────────────
-  body.querySelector('#impRunBtn').addEventListener('click', () => {
+  body.querySelector('#impRunBtn').addEventListener('click', async () => {
     if (!_csvText) return;
 
-    const hasCriticalErrors = (processBulkImport(_csvText, { dryRun: true })).errors.length > 0;
+    // Single dry-run to check for errors — no double processing on actual import
+    _setButtons(true);
+    _showProgress('Checking rows…');
+    const dryResult = await processBulkImportAsync(
+      _csvText,
+      { dryRun: true },
+      (done, total) => _updateProgress(done, total),
+    );
+
+    const hasCriticalErrors = dryResult.errors.length > 0;
     const confirmMsg = hasCriticalErrors
       ? 'Some rows have errors.\n\nOnly valid rows will be imported; error rows will be skipped.\n\nProceed?'
       : 'Data will be permanently saved.\n\nProceed with import?';
 
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(confirmMsg)) {
+      body.querySelector('#impResults').innerHTML = '';
+      _setButtons(false);
+      return;
+    }
 
     const importedBy = Auth.getCurrentUser()?.userId || null;
-    const summary    = processBulkImport(_csvText, { dryRun: false, importedBy });
+    _showProgress('Importing students…');
+    const summary = await processBulkImportAsync(
+      _csvText,
+      { dryRun: false, importedBy },
+      (done, total) => _updateProgress(done, total),
+    );
     _renderImportResults(body, summary, false);
 
-    // Reset
+    // Reset file state
     _csvText  = '';
     _fileName = '';
     body.querySelector('#impActionBar').style.display = 'none';
     body.querySelector('#impFileName').textContent    = '';
     fileInput.value = '';
+    _setButtons(false);
   });
 }
 
