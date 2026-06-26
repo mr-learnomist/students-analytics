@@ -1,24 +1,31 @@
 // ============================================================
 // modules/admission/bulkImportService.js — Bulk Student Import
 //
-// Handles two import modes per row:
+// THREE IMPORT MODES per row:
 //
-//  MODE A — Batch Enrolment  (batchName provided, subjectCode empty)
-//    • New student     → students[] + admissions[] + enrolments[] + challan
-//    • Existing student, not enrolled in batch → enrolments[] only
-//    • Existing student, already enrolled in batch → ERROR (skipped)
-//    • Same student, multiple rows with different batches → each row
-//      creates a separate enrolment (multi-batch fully supported)
+//  MODE A — Student Info Only  (batchName empty, subjectCode empty)
+//    • Adds student to students[] only (no admission, no enrolment)
+//    • If CNIC already exists → entire row skipped (duplicate)
+//    • Use for importing existing students without batch assignment
 //
-//  MODE B — Subject / Freeze Import  (subjectCode provided, batchName optional)
-//    • Student must already exist (looked up by CNIC)
-//    • Finds the student's active enrolment for that batch (or any if
-//      batchName is blank)
-//    • Appends a subject entry to enrolment.subjects[]
-//    • If subject already present on that enrolment → ERROR (skipped)
-//    • If no matching enrolment found → ERROR (skipped)
+//  MODE B — Batch Enrolment  (batchName provided, subjectCode empty)
+//    • batchName MUST exist in system → hard error if not found
+//    • New student     → students[] + admissions[] + enrolments[active]
+//    • Existing student (matched by CNIC), not enrolled in batch
+//        → enrolment added only (student record untouched)
+//    • Existing student already enrolled in same batch → ERROR (skipped)
+//    • Same student, multiple rows with different batches → multi-batch OK
+//
+//  MODE C — Subject / Freeze  (subjectCode provided; batchName optional)
+//    • Student MUST already exist (matched by CNIC)
+//    • If batchName given → enrolment status: 'suspended' (freeze)
+//    • If batchName empty → enrolment status: 'suspended' (freeze)
+//    • Finds student's enrolment for that batch (or most recent active)
+//    • Appends subject entry; if subject already present → ERROR (skipped)
+//    • If no enrolment found → ERROR (skipped)
 //
 //  challanPaid = yes  → admission confirmed + student isActive = true
+//  Batch not found in system → hard error (row skipped, never saved)
 // ============================================================
 
 import { AppState, generateID }  from '../../utils/state.js';
@@ -42,25 +49,26 @@ import {
 
 // ── Column definitions ─────────────────────────────────────────
 
-// MODE A — always required (unless Mode B row where batchName can be omitted)
 export const REQUIRED_COLUMNS = [
   'studentName',
   'cnic',
   'gender',
   'dateOfAdmission',
   'challanPaid',
-  // batchName OR subjectCode must be present — validated at runtime
 ];
 
 export const OPTIONAL_COLUMNS = [
-  'batchName',        // Mode A: required. Mode B: optional (used to narrow enrolment lookup)
-  'subjectCode',      // Mode B trigger — if present → subject/freeze import
-  'subjectName',      // Mode B: display name for the subject
-  'subjectStatus',    // Mode B: active | dormant | left_campus | … (default: active)
+  'batchName',        // MODE B: required. MODE C: optional (narrows enrolment lookup)
+  'subjectCode',      // MODE C trigger — if present → subject/freeze import
+  'subjectName',      // MODE C: display name for the subject
+  'subjectStatus',    // MODE C: active | dormant | … (default: active)
   'fatherName',
+  'dob',              // Date of birth YYYY-MM-DD
+  'email',
   'studentPhone',
   'guardianPhone',
   'qualification',
+  'city',
   'district',
   'province',
   'session',
@@ -77,72 +85,79 @@ export function generateSampleCSV() {
   const headers = [
     'studentName', 'cnic', 'gender', 'dateOfAdmission', 'challanPaid',
     'batchName', 'subjectCode', 'subjectName', 'subjectStatus',
-    'fatherName', 'studentPhone', 'guardianPhone',
-    'qualification', 'district', 'province',
+    'fatherName', 'dob', 'email', 'studentPhone', 'guardianPhone',
+    'qualification', 'city', 'district', 'province',
     'session', 'route', 'disciplineName', 'campusName',
     'feeAmount', 'dueDate', 'notes',
   ];
 
   const rows = [
-    // Row 1 — new student, batch enrolment
+    // Row 1 — MODE A: student info only (no batch, no subject)
     [
       'Ahmed Ali', '35202-1234567-1', 'male', '2025-09-01', 'no',
-      'ACCA-F8-Batch-A', '', '', '',
-      'Usman Ali', '0300-1234567', '0321-7654321',
-      'A-Levels', 'Rawalpindi', 'Punjab',
-      'Dec-25', '', 'ACCA', 'Main Campus',
-      '15000', '2025-09-30', '',
-    ],
-    // Row 2 — same student, second batch (multi-batch enrolment)
-    [
-      'Ahmed Ali', '35202-1234567-1', 'male', '2025-09-01', 'no',
-      'ACCA-P1-Batch-B', '', '', '',
-      '', '', '',
-      '', '', '',
       '', '', '', '',
-      '', '', 'Second batch enrolment',
+      'Usman Ali', '1998-05-15', 'ahmed@email.com', '0300-1234567', '0321-7654321',
+      'A-Levels', 'Rawalpindi', 'Rawalpindi', 'Punjab',
+      '', '', 'ACCA', 'Main Campus',
+      '', '', 'Student info only — no batch assigned',
     ],
-    // Row 3 — existing student, subject/freeze import (no batch needed)
-    [
-      'Ahmed Ali', '35202-1234567-1', 'male', '2025-09-01', 'no',
-      'ACCA-F8-Batch-A', 'F8', 'Audit & Assurance', 'active',
-      '', '', '',
-      '', '', '',
-      '', '', '', '',
-      '', '', 'Paper freeze import',
-    ],
-    // Row 4 — new student, challan paid
+    // Row 2 — MODE B: new student + batch enrolment
     [
       'Sara Khan', '35202-9876543-2', 'female', '2025-09-01', 'yes',
-      'ACCA-F8-Batch-A', '', '', '',
-      'Khalid Khan', '0301-1111111', '',
-      'F.Sc', 'Islamabad', 'Punjab',
-      '', '', '', '',
+      'FA1-Dec-25-01', '', '', '',
+      'Khalid Khan', '2000-11-20', 'sara@email.com', '0301-1111111', '',
+      'F.Sc', 'Islamabad', 'Islamabad', 'Punjab',
+      'Dec-25', '', 'ACCA', 'Main Campus',
       '15000', '2025-09-30', 'Merit student',
+    ],
+    // Row 3 — MODE B: existing student (Ahmed Ali), second batch
+    [
+      'Ahmed Ali', '35202-1234567-1', 'male', '2025-09-01', 'no',
+      'FA2-Dec-25-02', '', '', '',
+      '', '', '', '', '',
+      '', '', '', '',
+      '', '', '', '',
+      '', '', 'Second batch — enrolment added only',
+    ],
+    // Row 4 — MODE C: freeze/subject import (subjectCode present)
+    [
+      'Ahmed Ali', '35202-1234567-1', 'male', '2025-09-01', 'no',
+      'FA1-Dec-25-01', 'F8', 'Audit & Assurance', 'active',
+      '', '', '', '', '',
+      '', '', '', '',
+      '', '', '', '',
+      '', '', 'Paper freeze — attached to batch enrolment',
     ],
   ];
 
   const meta = [
-    '# Bulk Student Import Template',
-    '# ─────────────────────────────────────────────────',
-    '# MODE A — Batch Enrolment:',
-    '#   Fill batchName. Leave subjectCode empty.',
-    '#   One row per student per batch.',
-    '#   Same student can appear multiple times with different batchName values.',
+    '# Bulk Student Import Template — EduTrack',
+    '# ─────────────────────────────────────────────────────────',
+    '# MODE A — Student Info Only:',
+    '#   Leave batchName AND subjectCode empty.',
+    '#   Student record saved to Students module only.',
+    '#   If CNIC already exists → row skipped (no duplicate).',
     '#',
-    '# MODE B — Subject / Freeze Import:',
-    '#   Fill subjectCode (and optionally subjectName, subjectStatus).',
-    '#   batchName is optional — used to narrow down which enrolment to attach to.',
-    '#   Student must already exist in the system (matched by CNIC).',
-    '#   subjectStatus values: active | dormant | left_campus | change_campus | left_study | exempt',
+    '# MODE B — Batch Enrolment:',
+    '#   Fill batchName. Leave subjectCode empty.',
+    '#   batchName MUST match exactly as in system (case-insensitive).',
+    '#   New student → added to Students + Admissions + Enrolments.',
+    '#   Existing student → enrolment added only (student data not changed).',
+    '#',
+    '# MODE C — Subject / Freeze Import:',
+    '#   Fill subjectCode (batchName optional to narrow enrolment).',
+    '#   Student MUST already exist in system (matched by CNIC).',
+    '#   Adds subject to student existing enrolment with suspended status.',
+    '#   subjectStatus: active | dormant | left_campus | change_campus | left_study | exempt',
     '#',
     '# General Rules:',
-    '#   cnic format: XXXXX-XXXXXXX-X  (dashes optional)',
+    '#   cnic: XXXXX-XXXXXXX-X  (dashes optional)',
     '#   gender: male / female',
     '#   challanPaid: yes = admission confirmed + student active, no = pending',
     '#   dateOfAdmission: YYYY-MM-DD',
+    '#   dob: YYYY-MM-DD (optional)',
     '#   session: leave empty = auto-detected from dateOfAdmission',
-    '#   batchName must match exactly as it appears in the system (case-insensitive)',
+    '#   batchName: must match exact name in system (case-insensitive)',
     '',
   ].join('\n');
 
@@ -210,9 +225,13 @@ function _normalizeHeader(h) {
     'name':            'studentName',
     'father name':     'fatherName',
     'father':          'fatherName',
+    'date of birth':   'dob',
+    'birth date':      'dob',
     'phone':           'studentPhone',
     'mobile':          'studentPhone',
+    'student phone':   'studentPhone',
     'guardian phone':  'guardianPhone',
+    'parent phone':    'guardianPhone',
     'batch':           'batchName',
     'batch name':      'batchName',
     'admission date':  'dateOfAdmission',
@@ -230,6 +249,8 @@ function _normalizeHeader(h) {
     'fee':             'feeAmount',
     'fee amount':      'feeAmount',
     'due date':        'dueDate',
+    'city':            'city',
+    'email':           'email',
   };
   const lower = h.toLowerCase();
   if (aliases[lower]) return aliases[lower];
@@ -242,7 +263,7 @@ const VALID_SUBJECT_STATUSES = [
   'active', 'dormant', 'left_campus', 'change_campus', 'left_study', 'exempt',
 ];
 
-// Returns { mode: 'batch'|'subject', valid, errors, warnings, batch }
+// Returns { mode: 'info'|'batch'|'subject', valid, errors, warnings, batch }
 function _validateRow(row, batches) {
   const errors   = [];
   const warnings = [];
@@ -270,35 +291,39 @@ function _validateRow(row, batches) {
     errors.push('dateOfAdmission must be YYYY-MM-DD');
   }
 
+  // DOB format (optional)
+  if (row.dob?.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(row.dob.trim())) {
+    warnings.push('dob format should be YYYY-MM-DD — ignored');
+  }
+
   // Determine mode
   const hasSubjectCode = !!row.subjectCode?.trim();
   const hasBatchName   = !!row.batchName?.trim();
-  const mode = hasSubjectCode ? 'subject' : 'batch';
 
-  if (!hasSubjectCode && !hasBatchName) {
-    errors.push('Either batchName (for batch enrolment) or subjectCode (for subject/freeze import) must be provided');
-  }
+  let mode = 'info';
+  if (hasSubjectCode) mode = 'subject';
+  else if (hasBatchName) mode = 'batch';
 
-  // Batch lookup (needed in both modes when batchName is given)
+  // Batch lookup — HARD error if batch specified but not found
   let batch = null;
   if (hasBatchName) {
     batch = batches.find(b => b.batchName?.toLowerCase() === row.batchName.trim().toLowerCase());
-    if (!batch) errors.push('Batch "' + row.batchName + '" not found — check the exact name');
-  } else if (mode === 'batch') {
-    errors.push('batchName is required for batch enrolment');
+    if (!batch) {
+      errors.push('Batch "' + row.batchName.trim() + '" does not exist in system — check exact name');
+    }
   }
 
-  // Subject status validation (Mode B)
+  // Subject status validation (Mode C)
   if (mode === 'subject' && row.subjectStatus?.trim()) {
     if (!VALID_SUBJECT_STATUSES.includes(row.subjectStatus.trim())) {
       errors.push(
         'subjectStatus "' + row.subjectStatus + '" is invalid. ' +
-        'Valid values: ' + VALID_SUBJECT_STATUSES.join(', ')
+        'Valid: ' + VALID_SUBJECT_STATUSES.join(', ')
       );
     }
   }
 
-  // Optional warnings
+  // Optional field warnings
   if (!row.fatherName?.trim())   warnings.push('fatherName is empty');
   if (!row.studentPhone?.trim()) warnings.push('studentPhone is empty');
 
@@ -321,13 +346,14 @@ export function processBulkImport(csvText, opts) {
   const enrolments  = AppState.get('enrolments')  || [];
   const disciplines = AppState.get('disciplines') || [];
   const campuses    = AppState.get('campuses')    || [];
-  const subjects    = AppState.get('subjects')    || [];  // subject master list
+  const subjects    = AppState.get('subjects')    || [];
 
   const summary = {
     totalRows:      rows.length,
-    imported:       0,   // new students added
-    enrolmentOnly:  0,   // existing student, batch enrolment added
-    subjectAdded:   0,   // subject entry appended to existing enrolment
+    imported:       0,   // new students added (Mode A or B new student)
+    enrolmentOnly:  0,   // existing student — batch enrolment added (Mode B)
+    subjectAdded:   0,   // subject appended to enrolment (Mode C)
+    infoOnly:       0,   // student info saved only (Mode A)
     skipped:        0,
     errors:         [],
     results:        [],
@@ -337,7 +363,7 @@ export function processBulkImport(csvText, opts) {
     const name = (row.studentName || '—').trim();
     const cnic = row.cnic || '';
 
-    // ── Validate ───────────────────────────────────────────────
+    // ── Validate ─────────────────────────────────────────────
     const { mode, valid, errors, warnings, batch } = _validateRow(row, batches);
 
     if (!valid) {
@@ -347,14 +373,14 @@ export function processBulkImport(csvText, opts) {
       continue;
     }
 
-    const formattedCNIC = formatCNIC(row.cnic);
+    const formattedCNIC   = formatCNIC(row.cnic);
     const existingStudent = students.find(
       s => s.cnic === formattedCNIC || s.uniqueId === formattedCNIC
     );
 
-    // ══════════════════════════════════════════════════════════
-    //  MODE B — Subject / Freeze Import
-    // ══════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════
+    //  MODE C — Subject / Freeze Import
+    // ════════════════════════════════════════════════════════
     if (mode === 'subject') {
       if (!existingStudent) {
         const issue = 'Student not found (CNIC: ' + formattedCNIC + '). Subject import requires an existing student.';
@@ -364,16 +390,15 @@ export function processBulkImport(csvText, opts) {
         continue;
       }
 
-      // Find the correct enrolment — prefer batch match, fallback to any active
+      // Find correct enrolment
       let targetEnrolment = null;
       const studentEnrolments = enrolments.filter(e => e.studentId === existingStudent.id);
 
       if (batch) {
         targetEnrolment = studentEnrolments.find(e => e.batchId === batch.id);
       } else {
-        // No batch specified — use the most recent active enrolment
         targetEnrolment = studentEnrolments
-          .filter(e => e.status === 'active')
+          .filter(e => e.status === 'active' || e.status === 'suspended')
           .sort((a, b) => new Date(b.enrolmentDate) - new Date(a.enrolmentDate))[0] || null;
       }
 
@@ -386,34 +411,35 @@ export function processBulkImport(csvText, opts) {
         continue;
       }
 
-      // Check if subject already on this enrolment
-      const subCode = row.subjectCode.trim();
+      // Duplicate subject check
+      const subCode         = row.subjectCode.trim();
       const existingSubjects = Array.isArray(targetEnrolment.subjects) ? targetEnrolment.subjects : [];
-      const alreadyHasSubject = existingSubjects.some(
+      const alreadyHasSub   = existingSubjects.some(
         s => s.subjectCode?.toLowerCase() === subCode.toLowerCase()
       );
 
-      if (alreadyHasSubject) {
-        const issue = 'Subject "' + subCode + '" is already on this enrolment (duplicate).';
+      if (alreadyHasSub) {
+        const issue = 'Subject "' + subCode + '" already on this enrolment (duplicate).';
         summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
         summary.results.push({ lineNo, status: 'duplicate', studentName: existingStudent.studentName, cnic: formattedCNIC, message: issue });
         summary.skipped++;
         continue;
       }
 
-      // Resolve subjectId from master list (optional — graceful if not found)
       const masterSubject = subjects.find(
         s => s.code?.toLowerCase() === subCode.toLowerCase() ||
              s.abbreviation?.toLowerCase() === subCode.toLowerCase()
       );
 
+      const subStatus = VALID_SUBJECT_STATUSES.includes(row.subjectStatus?.trim())
+        ? row.subjectStatus.trim()
+        : 'suspended';
+
       const newSubjectEntry = {
         subjectId:   masterSubject?.id   || '',
         subjectCode: subCode,
         subjectName: row.subjectName?.trim() || masterSubject?.name || subCode,
-        status:      VALID_SUBJECT_STATUSES.includes(row.subjectStatus?.trim())
-                       ? row.subjectStatus.trim()
-                       : 'active',
+        status:      subStatus,
         addedAt:     new Date().toISOString(),
         addedBy:     importedBy,
       };
@@ -421,7 +447,6 @@ export function processBulkImport(csvText, opts) {
       if (!dryRun) {
         const updatedSubjects = [...existingSubjects, newSubjectEntry];
         EnrolmentService.update(targetEnrolment.id, { subjects: updatedSubjects }, importedBy);
-        // Refresh local reference so same-session rows see updated data
         const idx = enrolments.findIndex(e => e.id === targetEnrolment.id);
         if (idx !== -1) enrolments[idx] = { ...enrolments[idx], subjects: updatedSubjects };
       }
@@ -432,37 +457,59 @@ export function processBulkImport(csvText, opts) {
         studentName: existingStudent.studentName,
         cnic: formattedCNIC,
         message:
-          'Subject "' + subCode + '" added to enrolment' +
-          (batch ? ' (' + batch.batchName + ')' : ' (most recent active enrolment)') +
+          'Subject "' + subCode + '" added' +
+          (batch ? ' (' + batch.batchName + ')' : ' (most recent enrolment)') +
+          ' · status: ' + subStatus +
           (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
       });
       continue;
     }
 
-    // ══════════════════════════════════════════════════════════
-    //  MODE A — Batch Enrolment
-    // ══════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════
+    //  MODE A — Student Info Only
+    // ════════════════════════════════════════════════════════
+    if (mode === 'info') {
+      // Duplicate CNIC → skip entire row
+      if (existingStudent) {
+        const issue = 'CNIC ' + formattedCNIC + ' already registered as "' + existingStudent.studentName + '" — skipped.';
+        summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
+        summary.results.push({ lineNo, status: 'duplicate', studentName: name, cnic: formattedCNIC, message: issue });
+        summary.skipped++;
+        continue;
+      }
+
+      if (!dryRun) {
+        const { newStudent } = _buildNewStudent(row, formattedCNIC, null, disciplines, campuses, importedBy);
+        AppState.add('students', newStudent);
+        students.push(newStudent);
+      }
+
+      summary.imported++;
+      summary.infoOnly++;
+      summary.results.push({
+        lineNo, status: 'info_only',
+        studentName: row.studentName.trim(),
+        cnic: formattedCNIC,
+        message: 'Student info saved (no batch/enrolment)' +
+          (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
+      });
+      continue;
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  MODE B — Batch Enrolment
+    // ════════════════════════════════════════════════════════
 
     if (existingStudent) {
-      // Check duplicate enrolment for this specific batch
-      const alreadyInAdmissions = admissions.some(
-        a => a.studentId === existingStudent.id &&
-             a.batchId   === batch.id &&
-             a.status    !== ADMISSION_STATUS.CANCELLED
-      );
-      const alreadyInEnrolments = enrolments.some(
+      // Duplicate enrolment check for this batch
+      const alreadyEnrolled = enrolments.some(
         e => e.studentId === existingStudent.id && e.batchId === batch.id
       );
 
-      if (alreadyInAdmissions || alreadyInEnrolments) {
+      if (alreadyEnrolled) {
         const issue = 'Already enrolled in batch "' + batch.batchName + '" (duplicate).';
         summary.errors.push({ lineNo, studentName: name, cnic: formattedCNIC, issues: [issue] });
-        summary.results.push({
-          lineNo, status: 'duplicate',
-          studentName: existingStudent.studentName,
-          cnic: formattedCNIC,
-          message: issue,
-        });
+        summary.results.push({ lineNo, status: 'duplicate', studentName: existingStudent.studentName, cnic: formattedCNIC, message: issue });
         summary.skipped++;
         continue;
       }
@@ -470,7 +517,7 @@ export function processBulkImport(csvText, opts) {
       // Existing student, new batch → enrolment only
       const paid = (row.challanPaid || '').toLowerCase() === 'yes';
       if (!dryRun) {
-        const newEnr = {
+        const result = EnrolmentService.add({
           studentId:     existingStudent.id,
           batchId:       batch.id,
           enrolmentDate: row.dateOfAdmission,
@@ -478,9 +525,7 @@ export function processBulkImport(csvText, opts) {
           feeStatus:     paid ? 'paid' : 'unpaid',
           notes:         (row.notes || '').trim(),
           subjects:      [],
-        };
-        const result = EnrolmentService.add(newEnr, importedBy);
-        // Add to local cache so same-run duplicate check works
+        }, importedBy);
         if (result.success) enrolments.push(result.enrolment);
       }
 
@@ -489,83 +534,26 @@ export function processBulkImport(csvText, opts) {
         lineNo, status: 'enrolment_added',
         studentName: existingStudent.studentName,
         cnic: formattedCNIC,
-        message:
-          'Existing student — enrolment added for batch "' + batch.batchName + '"' +
+        message: 'Existing student — enrolment added for "' + batch.batchName + '"' +
           (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
       });
       continue;
     }
 
-    // ── New student ────────────────────────────────────────────
-    let discRecord = null;
-    if (batch.disciplineId) {
-      discRecord = disciplines.find(d => d.id === batch.disciplineId);
-    }
-    if (!discRecord && row.disciplineName) {
-      discRecord = disciplines.find(
-        d => d.abbreviation?.toLowerCase() === row.disciplineName.trim().toLowerCase() ||
-             d.name?.toLowerCase()         === row.disciplineName.trim().toLowerCase()
-      );
-    }
-
-    let campusRecord = null;
-    if (batch.campusId) {
-      campusRecord = campuses.find(c => c.id === batch.campusId);
-    }
-    if (!campusRecord && row.campusName) {
-      campusRecord = campuses.find(
-        c => c.campusName?.toLowerCase() === row.campusName.trim().toLowerCase()
-      );
-    }
-
-    const genderNorm     = g || 'male';
-    const admDate        = row.dateOfAdmission.trim();
-    const discCode       = discRecord?.abbreviation || '';
-    const derivedSession = row.session?.trim() || sessionFromDate(admDate);
-    const paid           = (row.challanPaid || '').toLowerCase() === 'yes';
-    const campusSnapshot = campusRecord
-      ? { id: campusRecord.id, name: campusRecord.campusName }
-      : null;
+    // ── New student + batch enrolment ──────────────────────
+    const paid = (row.challanPaid || '').toLowerCase() === 'yes';
 
     if (!dryRun) {
-      const studentInternalId   = generateID('stu');
-      const structuredStudentId = generateStudentId(discCode, admDate, genderNorm);
-
-      const newStudent = {
-        id:              studentInternalId,
-        studentId:       structuredStudentId,
-        cnic:            formattedCNIC,
-        uniqueId:        formattedCNIC,
-        studentName:     row.studentName.trim(),
-        fatherName:      (row.fatherName    || '').trim(),
-        gender:          genderNorm,
-        studentPhone:    (row.studentPhone  || '').trim(),
-        phone:           (row.studentPhone  || '').trim(),
-        guardianPhone:   (row.guardianPhone || '').trim(),
-        qualification:   (row.qualification || '').trim(),
-        district:        (row.district      || '').trim(),
-        province:        (row.province      || '').trim(),
-        route:           (row.route         || '').trim(),
-        campusId:        campusRecord?.id   || '',
-        campusSnapshot,
-        disciplineId:    discRecord?.id     || '',
-        batchId:         batch.id,
-        dateOfAdmission: admDate,
-        admissionDate:   admDate,
-        session:         derivedSession,
-        isActive:        paid,
-        admittedVia:     'bulk_import',
-        createdAt:       new Date().toISOString(),
-      };
+      const { newStudent, discRecord, campusRecord, derivedSession } =
+        _buildNewStudent(row, formattedCNIC, batch, disciplines, campuses, importedBy);
 
       AppState.add('students', newStudent);
-      // Add to local cache for same-run deduplication
       students.push(newStudent);
 
       const admissionId = generateID('adm');
       AppState.add('admissions', {
         id:           admissionId,
-        studentId:    studentInternalId,
+        studentId:    newStudent.id,
         campusId:     campusRecord?.id || '',
         disciplineId: discRecord?.id   || '',
         batchId:      batch.id,
@@ -577,9 +565,9 @@ export function processBulkImport(csvText, opts) {
       });
 
       const enrResult = EnrolmentService.add({
-        studentId:     studentInternalId,
+        studentId:     newStudent.id,
         batchId:       batch.id,
-        enrolmentDate: admDate,
+        enrolmentDate: row.dateOfAdmission,
         status:        'active',
         feeStatus:     paid ? 'paid' : 'unpaid',
         notes:         (row.notes || '').trim(),
@@ -592,7 +580,7 @@ export function processBulkImport(csvText, opts) {
         const challan = {
           id:          generateID('chl'),
           admissionId,
-          studentId:   studentInternalId,
+          studentId:   newStudent.id,
           studentName: newStudent.studentName,
           campusId:    campusRecord?.id || '',
           batchId:     batch.id,
@@ -607,7 +595,7 @@ export function processBulkImport(csvText, opts) {
 
         if (paid) {
           AppState.update('admissions', admissionId, { status: ADMISSION_STATUS.CONFIRMED });
-          AppState.update('students', studentInternalId, { isActive: true });
+          AppState.update('students', newStudent.id, { isActive: true });
         }
       }
     }
@@ -619,11 +607,118 @@ export function processBulkImport(csvText, opts) {
       cnic: formattedCNIC,
       message:
         (paid ? 'Imported & Confirmed (challan paid)' : 'Imported — challan pending') +
+        ' · batch: ' + batch.batchName +
         (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
     });
   }
 
   return summary;
+}
+
+// ── Build new student object (aligned with admissionService.js fields) ──
+function _buildNewStudent(row, formattedCNIC, batch, disciplines, campuses, importedBy) {
+  const g = (row.gender || '').toLowerCase();
+  const genderNorm     = (g === 'female') ? 'female' : 'male';
+  const admDate        = row.dateOfAdmission.trim();
+  const derivedSession = row.session?.trim() || sessionFromDate(admDate);
+  const paid           = (row.challanPaid || '').toLowerCase() === 'yes';
+
+  // Resolve discipline — prefer batch's disciplineId, fallback to row.disciplineName
+  let discRecord = null;
+  if (batch?.disciplineId) {
+    discRecord = disciplines.find(d => d.id === batch.disciplineId);
+  }
+  if (!discRecord && row.disciplineName?.trim()) {
+    discRecord = disciplines.find(
+      d => d.abbreviation?.toLowerCase() === row.disciplineName.trim().toLowerCase() ||
+           d.name?.toLowerCase()         === row.disciplineName.trim().toLowerCase()
+    );
+  }
+
+  // Resolve campus — prefer batch's campusId, fallback to row.campusName
+  let campusRecord = null;
+  if (batch?.campusId) {
+    campusRecord = campuses.find(c => c.id === batch.campusId);
+  }
+  if (!campusRecord && row.campusName?.trim()) {
+    campusRecord = campuses.find(
+      c => c.campusName?.toLowerCase() === row.campusName.trim().toLowerCase()
+    );
+  }
+
+  const discCode       = discRecord?.abbreviation || '';
+  const campusSnapshot = campusRecord
+    ? { id: campusRecord.id, name: campusRecord.campusName }
+    : null;
+
+  const studentInternalId   = generateID('stu');
+  const structuredStudentId = generateStudentId(discCode, admDate, genderNorm);
+
+  // Split name into first/last for compatibility with admissionService.js format
+  const nameParts = row.studentName.trim().split(/\s+/);
+  const firstName = nameParts[0] || '';
+  const lastName  = nameParts.slice(1).join(' ') || '';
+
+  // DOB validation
+  const dobRaw = row.dob?.trim() || '';
+  const dob    = /^\d{4}-\d{2}-\d{2}$/.test(dobRaw) ? dobRaw : '';
+
+  const newStudent = {
+    // Identity
+    id:               studentInternalId,
+    studentId:        structuredStudentId,
+    applicationNo:    '',                              // not generated on bulk import
+    cnic:             formattedCNIC,
+    uniqueId:         formattedCNIC,
+
+    // Names
+    studentName:      row.studentName.trim(),
+    firstName:        firstName,
+    lastName:         lastName,
+    fatherName:       (row.fatherName    || '').trim(),
+
+    // Personal
+    gender:           genderNorm,
+    dob:              dob,
+    email:            (row.email         || '').trim(),
+
+    // Contact
+    studentPhone:     (row.studentPhone  || '').trim(),
+    phone:            (row.studentPhone  || '').trim(),  // backward compat
+    guardianPhone:    (row.guardianPhone || '').trim(),
+    guardianContacts: row.guardianPhone?.trim()
+      ? [{ label: 'Guardian', phone: row.guardianPhone.trim() }]
+      : [],
+
+    // Location
+    city:             (row.city          || '').trim(),
+    district:         (row.district      || '').trim(),
+    province:         (row.province      || '').trim(),
+    address:          '',
+
+    // Academic
+    qualification:    (row.qualification || '').trim(),
+    route:            (row.route         || '').trim(),
+
+    // Campus / Discipline
+    campusId:         campusRecord?.id   || '',
+    campusSnapshot,
+    disciplineId:     discRecord?.id     || '',
+
+    // Admission
+    dateOfAdmission:  admDate,
+    admissionDate:    admDate,                         // backward compat
+    session:          derivedSession,
+    batchId:          batch?.id          || '',
+    admissionBatch:   '',
+
+    // Status
+    isActive:         paid,
+    admittedVia:      'bulk_import',
+    createdAt:        new Date().toISOString(),
+  };
+
+  return { newStudent, discRecord, campusRecord, derivedSession };
 }
 
 function _defaultDueDate() {
