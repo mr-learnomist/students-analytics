@@ -999,6 +999,12 @@ function _renderImport(body) {
     body.querySelector('#impFileName').textContent    = '';
     fileInput.value = '';
     _setButtons(false);
+
+    // Auto-clear results after 4 seconds so the import area returns to its empty state
+    setTimeout(() => {
+      const res = body.querySelector('#impResults');
+      if (res) res.innerHTML = '';
+    }, 4000);
   });
 }
 
