@@ -68,26 +68,19 @@ function _injectAsStyles() {
   _asStylesInjected = true;
   const st = document.createElement('style');
   st.textContent = `
-/* ── AS filter card (sticky, collapsible — same as TRS) ── */
+/* ── AS filter card ── */
 .as-filter-card {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  width: 100%;
-  box-sizing: border-box;
-  flex-shrink: 0;
+  position: sticky; top: 0; z-index: 20;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+  width: 100%; box-sizing: border-box; flex-shrink: 0;
 }
 .as-filter-toggle {
   display:flex; align-items:center; gap:10px;
   width:100%; padding:11px 16px;
   background:none; border:none; font-family:inherit;
   font-size:13px; font-weight:700; color:var(--t1);
-  cursor:pointer; text-align:left;
-  transition:background .15s;
+  cursor:pointer; text-align:left; transition:background .15s;
 }
 .as-filter-toggle:hover { background:var(--surface2); }
 .as-filter-toggle-label { flex:1; }
@@ -99,64 +92,123 @@ function _injectAsStyles() {
 }
 .as-filter-arrow { transition:transform .2s; color:var(--t3); }
 .as-filter-arrow.open { transform:rotate(180deg); }
+
 .as-filter-body {
-  display:none; flex-direction:column; gap:14px;
+  display:none; flex-direction:column; gap:0;
   border-top:1px solid var(--border);
-  padding:16px;
 }
 .as-filter-body.open { display:flex; }
-.as-filter-row { display:flex; flex-wrap:wrap; gap:12px; width:100%; box-sizing:border-box; }
-.as-filter-col {
-  display:flex; flex-direction:column; gap:5px;
-  flex:1 1 140px; min-width:120px; max-width:100%; box-sizing:border-box;
+
+/* ── Row 1: all dropdowns in one clean strip ── */
+.as-frow1 {
+  display:flex; align-items:stretch;
+  gap:0; width:100%; box-sizing:border-box;
+  border-bottom: 1px solid var(--border);
 }
-.as-filter-col-label {
-  font-size:10.5px; font-weight:700;
-  text-transform:uppercase; letter-spacing:.07em;
-  color:var(--t3);
+.as-fcell {
+  display:flex; flex-direction:column;
+  padding: 10px 14px 10px;
+  border-right: 1px solid var(--border);
+  box-sizing: border-box;
+  min-width: 0;
+}
+.as-fcell:last-child { border-right: none; }
+.as-fcell-label {
+  font-size:10px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.08em;
+  color:var(--t3); margin-bottom:6px; white-space:nowrap;
 }
 .as-filter-sel {
-  height:34px; padding:0 10px;
-  background:var(--surface2); border:1px solid var(--border2);
-  border-radius:8px; color:var(--t1); font-size:12.5px;
+  height:32px; padding:0 8px;
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:7px; color:var(--t1); font-size:13px;
   cursor:pointer; outline:none; font-family:inherit;
-  transition:border-color .12s;
-  width:100%; box-sizing:border-box;
+  transition:border-color .15s, box-shadow .15s;
+  width:100%; box-sizing:border-box; min-width:0;
 }
-.as-filter-sel:focus   { border-color:var(--blue); }
-.as-filter-sel:disabled { opacity:.45; cursor:not-allowed; }
-.as-filter-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:2px; }
-.as-filter-apply {
-  padding:7px 20px; border-radius:8px; border:none;
-  background:var(--blue); color:#fff;
-  font-size:12.5px; font-weight:700;
-  cursor:pointer; transition:opacity .15s; font-family:inherit;
-}
-.as-filter-apply:hover { opacity:.88; }
-.as-filter-clear {
-  padding:7px 14px; border-radius:8px;
-  border:1px solid var(--border); background:transparent;
-  color:var(--t2); font-size:12px; font-weight:600;
-  cursor:pointer; transition:all .15s; font-family:inherit;
-}
-.as-filter-clear:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
+.as-filter-sel:focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim); }
+.as-filter-sel:disabled { opacity:.4; cursor:not-allowed; }
 
-/* ── Month chips ── */
+/* ── Row 2: Batch search + select + month chips + actions ── */
+.as-frow2 {
+  display:flex; align-items:center;
+  gap:10px; padding:10px 14px;
+  flex-wrap:wrap;
+}
+.as-batch-block {
+  display:flex; flex-direction:column; gap:5px;
+  flex: 0 0 200px;
+}
+.as-batch-search-wrap {
+  position:relative;
+}
+.as-batch-search-wrap svg {
+  position:absolute; left:9px; top:50%; transform:translateY(-50%);
+  color:var(--t4); pointer-events:none; flex-shrink:0;
+}
+.as-batch-search-inp {
+  width:100%; height:30px; padding:0 9px 0 30px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:7px; color:var(--t1); font-size:12.5px;
+  outline:none; font-family:inherit; box-sizing:border-box;
+  transition:border-color .15s, box-shadow .15s;
+}
+.as-batch-search-inp:focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim); }
+.as-batch-search-inp::placeholder { color:var(--t4); }
+.as-batch-sel {
+  height:32px; padding:0 8px;
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:7px; color:var(--t1); font-size:13px;
+  cursor:pointer; outline:none; font-family:inherit;
+  transition:border-color .15s; width:100%; box-sizing:border-box;
+}
+.as-batch-sel:focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim); }
+
+/* month chips */
+.as-month-block {
+  display:flex; flex-direction:column; gap:5px;
+  flex:1 1 200px; min-width:0;
+}
+.as-month-chips-row {
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center;
+}
 .as-chip {
-  display:inline-flex; align-items:center; gap:4px;
-  padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600;
-  border:1px solid var(--border2); background:var(--surface);
+  display:inline-flex; align-items:center; gap:5px;
+  padding:4px 11px; border-radius:20px; font-size:12px; font-weight:600;
+  border:1px solid var(--border2); background:var(--surface2);
   color:var(--t2); cursor:pointer; transition:all .15s; user-select:none;
+  white-space:nowrap;
 }
 .as-chip:hover  { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
 .as-chip.active { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
 .as-chip .chip-dot {
-  width:7px; height:7px; border-radius:50%;
-  background:var(--border2); transition:background .15s;
+  width:6px; height:6px; border-radius:50%;
+  background:var(--border2); transition:background .15s; flex-shrink:0;
 }
 .as-chip.active .chip-dot { background:var(--blue); }
 
-/* ── Applied chips row ── */
+/* actions */
+.as-factions {
+  display:flex; gap:8px; align-items:center; flex-shrink:0;
+  margin-left:auto;
+}
+.as-filter-apply {
+  height:34px; padding:0 20px; border-radius:8px; border:none;
+  background:var(--blue); color:#fff;
+  font-size:13px; font-weight:700;
+  cursor:pointer; transition:opacity .15s; font-family:inherit;
+  white-space:nowrap;
+}
+.as-filter-apply:hover { opacity:.88; }
+.as-filter-clear {
+  height:34px; padding:0 14px; border-radius:8px;
+  border:1px solid var(--border); background:transparent;
+  color:var(--t2); font-size:12.5px; font-weight:600;
+  cursor:pointer; transition:all .15s; font-family:inherit;
+}
+.as-filter-clear:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
+
+/* applied chips */
 .as-chip-row { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
 .as-applied-chip {
   display:inline-flex; align-items:center; gap:4px;
@@ -290,72 +342,74 @@ export function mountAttendanceSheet(container, onBack) {
         </button>
         <div class="as-filter-body open" id="asFilterBody">
 
-          <!-- Single row: Campus · Discipline · Session · Subject · Batch · Month -->
-          <div class="as-filter-row" style="align-items:flex-end">
+          <!-- Row 1: Campus · Discipline · Session · Subject — segmented strip -->
+          <div class="as-frow1">
 
-            <div class="as-filter-col" style="flex:1 1 100px;min-width:90px;max-width:130px">
-              <div class="as-filter-col-label">Campus</div>
+            <div class="as-fcell" style="flex:1 1 130px">
+              <div class="as-fcell-label">Campus</div>
               <select id="asCampus" class="as-filter-sel">
-                <option value="">All</option>
+                <option value="">All Campuses</option>
               </select>
             </div>
 
-            <div class="as-filter-col" style="flex:0 1 90px;min-width:80px;max-width:110px">
-              <div class="as-filter-col-label">Discipline</div>
+            <div class="as-fcell" style="flex:0 0 110px">
+              <div class="as-fcell-label">Discipline</div>
               <select id="asDisc" class="as-filter-sel">
                 <option value="">All</option>
               </select>
             </div>
 
-            <div class="as-filter-col" style="flex:0 1 90px;min-width:80px;max-width:110px">
-              <div class="as-filter-col-label">Session</div>
+            <div class="as-fcell" style="flex:0 0 110px">
+              <div class="as-fcell-label">Session</div>
               <select id="asSession" class="as-filter-sel">
                 <option value="">All</option>
               </select>
             </div>
 
-            <div class="as-filter-col" style="flex:0 1 80px;min-width:70px;max-width:100px">
-              <div class="as-filter-col-label">Subject</div>
+            <div class="as-fcell" style="flex:0 0 100px">
+              <div class="as-fcell-label">Subject</div>
               <select id="asSubject" class="as-filter-sel" disabled>
                 <option value="">All</option>
               </select>
             </div>
 
-            <!-- Batch: search input above dropdown -->
-            <div class="as-filter-col" style="flex:1 1 160px;min-width:140px;max-width:240px">
-              <div class="as-filter-col-label">Batch</div>
-              <div style="position:relative;margin-bottom:4px">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2.2" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);
-                     color:var(--t4);pointer-events:none">
+          </div>
+
+          <!-- Row 2: Batch search+select · Month chips · Actions -->
+          <div class="as-frow2">
+
+            <!-- Batch column: search above dropdown -->
+            <div class="as-batch-block">
+              <div class="as-fcell-label">Batch</div>
+              <div class="as-batch-search-wrap" style="margin-bottom:5px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
-                <input id="asBatchSearch" type="text" placeholder="Search batch…"
-                  style="width:100%;height:28px;padding:0 8px 0 26px;
-                    background:var(--surface2);border:1px solid var(--border2);
-                    border-radius:6px;color:var(--t1);font-size:12px;
-                    outline:none;font-family:inherit;box-sizing:border-box;
-                    transition:border-color .12s"/>
+                <input id="asBatchSearch" class="as-batch-search-inp" type="text" placeholder="Search batches…"/>
               </div>
-              <select id="asBatch" class="as-filter-sel">
+              <select id="asBatch" class="as-batch-sel">
                 <option value="">— Select Batch —</option>
               </select>
             </div>
 
-            <!-- Month chips inline -->
-            <div class="as-filter-col" style="flex:2 1 180px;min-width:140px">
-              <div class="as-filter-col-label">Month</div>
-              <div id="asMonthChips" style="display:flex;gap:5px;flex-wrap:wrap;min-height:34px;align-items:center">
+            <!-- Month chips -->
+            <div class="as-month-block">
+              <div class="as-fcell-label">Month</div>
+              <div class="as-month-chips-row" id="asMonthChips">
                 <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
               </div>
             </div>
 
+            <!-- Actions -->
+            <div class="as-factions">
+              <button class="as-filter-clear" id="asClearBtn">Clear</button>
+              <button class="as-filter-apply" id="asApplyBtn">Apply Filter</button>
+            </div>
+
           </div>
 
-          <!-- Actions + applied chips -->
-          <div class="as-filter-actions">
-            <button class="as-filter-apply" id="asApplyBtn">Apply Filter</button>
-            <button class="as-filter-clear"  id="asClearBtn">Clear</button>
+          <!-- Applied chips row (shown after apply) -->
+          <div style="padding:0 14px 10px;display:flex;gap:6px;flex-wrap:wrap" id="asAppliedChipsWrap">
             <div class="as-chip-row" id="asAppliedChips"></div>
           </div>
 
