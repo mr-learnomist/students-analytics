@@ -1444,7 +1444,7 @@ function _renderDailyAttendance() {
       </div>
 
       <!-- Main -->
-      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0">
+      <div id="dailyMain" style="display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0;height:100%">
         <div class="att2-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.2" style="color:var(--t4)">
@@ -1769,12 +1769,12 @@ function _loadDailySheet(batch) {
     </div>
 
     <!-- Attendance table -->
-    <div style="flex:1;overflow-y:auto;min-height:0">
+    <div style="flex:1;overflow-y:auto;min-height:0;height:0">
       ${!students.length
         ? `<div style="padding:40px;text-align:center;color:var(--t3);font-size:13px">No active enrolled students.</div>`
         : `<table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>
-              <tr style="background:var(--surface2);position:sticky;top:0;z-index:2">
+              <tr style="background:var(--surface2);position:sticky;top:0;z-index:10;box-shadow:0 1px 0 var(--border)">
                 <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;
                            text-transform:uppercase;color:var(--t3);border-bottom:2px solid var(--border);width:36px">#</th>
                 <th style="padding:7px 8px;text-align:left;font-size:10px;font-weight:700;
