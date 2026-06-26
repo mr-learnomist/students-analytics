@@ -526,7 +526,21 @@ function _renderSheet(output, batchId, selMonths) {
     </th>`;
   }).join('');
 
-  // ── Student rows (blank cells for attendance entry) ────────
+  // ── Column prefs (persisted in AppState) ──────────────────
+  const AS_COL_KEY = 'as_col_prefs';
+  function _getAsColPrefs() {
+    try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) return r; } catch(e){}
+    return { hidden: [] };
+  }
+
+  const colPrefs  = _getAsColPrefs();
+  const showP     = !colPrefs.hidden.includes('present');
+  const showA     = !colPrefs.hidden.includes('absent');
+  const showL     = !colPrefs.hidden.includes('leave');
+  const showPct   = !colPrefs.hidden.includes('percent');
+  const totalCols = (showP?1:0) + (showA?1:0) + (showL?1:0);
+
+  // ── Student rows (respects col visibility) ─────────────────
   const rows = students.map((stu, idx) => {
     let p = 0, a = 0, l = 0;
     const cells = dates.map(d => {
@@ -534,17 +548,16 @@ function _renderSheet(output, batchId, selMonths) {
       if (status === 'P') p++;
       else if (status === 'A') a++;
       else if (status === 'L') l++;
-      const mk     = d.slice(0,7);
-      const isLast = byMonth[mk][byMonth[mk].length-1] === d;
+      const mk      = d.slice(0,7);
+      const isLast  = byMonth[mk][byMonth[mk].length-1] === d;
       const borderR = isLast ? '2px solid var(--border)' : '1px solid var(--border2)';
-      const color  = status === 'P' ? 'var(--green)'
-                   : status === 'A' ? 'var(--red)'
-                   : status === 'L' ? 'var(--yellow)'
-                   : 'var(--t4)';
+      const color   = status === 'P' ? 'var(--green)'
+                    : status === 'A' ? 'var(--red)'
+                    : status === 'L' ? 'var(--yellow)'
+                    : 'var(--t4)';
       return `<td style="text-align:center;padding:5px 2px;
-                          border-bottom:1px solid var(--border);border-right:${borderR};
-                          font-size:11.5px;font-weight:700;color:${color};
-                          min-width:34px">
+                         border-bottom:1px solid var(--border);border-right:${borderR};
+                         font-size:11.5px;font-weight:700;color:${color};min-width:34px">
         ${status || ''}
       </td>`;
     }).join('');
@@ -566,19 +579,19 @@ function _renderSheet(output, batchId, selMonths) {
         ${stu.studentName || '—'}
       </td>
       ${cells}
-      <td style="padding:6px 8px;border-bottom:1px solid var(--border);
+      ${showP ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-weight:700;font-size:12px;color:var(--green)">${total > 0 ? p : ''}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid var(--border);
+                 font-weight:700;font-size:12px;color:var(--green)">${total > 0 ? p : ''}</td>` : ''}
+      ${showA ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-weight:700;font-size:12px;color:var(--red)">${total > 0 ? a : ''}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid var(--border);
+                 font-weight:700;font-size:12px;color:var(--red)">${total > 0 ? a : ''}</td>` : ''}
+      ${showL ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-weight:700;font-size:12px;color:var(--yellow)">${total > 0 ? l : ''}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid var(--border);
+                 font-weight:700;font-size:12px;color:var(--yellow)">${total > 0 ? l : ''}</td>` : ''}
+      ${showPct ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  text-align:center;font-weight:800;font-size:12px;color:${pctColor}">
         ${pct !== null ? pct + '%' : ''}
-      </td>
+      </td>` : ''}
     </tr>`;
   }).join('');
 
@@ -587,36 +600,67 @@ function _renderSheet(output, batchId, selMonths) {
     ? selMonths.map(mk => { const [y,m]=mk.split('-'); return MON_SHORT[parseInt(m)-1]+' '+y; }).join(', ')
     : 'All Months';
 
-  output.innerHTML = `
-    <!-- Info bar -->
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
-      <div>
-        <div style="font-size:15px;font-weight:800;color:var(--t1)">${batch?.batchName || '—'}</div>
-        <div style="font-size:12px;color:var(--t3);margin-top:2px">
-          ${disc?.abbreviation||''}${campus?' · '+campus.campusName:''}
-          · ${students.length} students · ${dates.length} class days · ${monthLabel}
+  // ── Info bar (TRS-style) ───────────────────────────────────
+  const infoBar = `
+    <div class="trs-info-bar" style="margin-bottom:0;border-radius:12px 12px 0 0">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+      </svg>
+      <span style="font-size:12.5px;font-weight:700;color:var(--t1)">${batch?.batchName || '—'}</span>
+      <span style="color:var(--border2);font-size:16px;font-weight:300;margin:0 2px">|</span>
+      <span style="font-size:11.5px;color:var(--t3)">
+        ${disc?.abbreviation||''}${campus ? ' · ' + campus.campusName : ''}
+        · ${students.length} student${students.length!==1?'s':''}
+        · ${dates.length} class day${dates.length!==1?'s':''}
+        · ${monthLabel}
+      </span>
+      <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
+        <button class="trs-export-btn" id="asExportCSV">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>CSV
+        </button>
+        <button class="trs-export-btn" id="asExportPDF">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>PDF
+        </button>
+        <div class="trs-col-mgr-wrap">
+          <button class="trs-col-mgr-btn" id="asColMgrBtn" title="Show / hide columns">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="18" rx="1"/>
+              <rect x="14" y="3" width="7" height="18" rx="1"/>
+            </svg>
+          </button>
+          <div class="trs-col-mgr-panel" id="asColMgrPanel">
+            <div class="trs-col-mgr-head">
+              <span class="trs-col-mgr-title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                </svg>Columns
+              </span>
+              <button class="trs-col-mgr-link" id="asColMgrShowAll">Show All</button>
+            </div>
+            <div class="trs-col-mgr-list" id="asColMgrList"></div>
+            <div class="trs-col-mgr-foot">Applies to summary columns</div>
+          </div>
         </div>
       </div>
-      <button id="asPrintBtn" style="margin-left:auto;display:inline-flex;align-items:center;
-          gap:6px;height:34px;padding:0 14px;border-radius:var(--r-sm);
-          border:1px solid var(--border2);background:var(--surface2);
-          color:var(--t2);font-size:12.5px;font-weight:600;cursor:pointer">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 6 2 18 2 18 9"/>
-          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-          <rect x="6" y="14" width="12" height="8"/>
-        </svg>Print / PDF
-      </button>
-    </div>
+    </div>`;
 
-    ${!dates.length
+  output.innerHTML = infoBar + (
+    !dates.length
       ? `<div style="padding:32px;text-align:center;color:var(--t3);font-size:13px;
-                     border:1px dashed var(--border2);border-radius:var(--r-lg)">
+                     border:1px solid var(--border);border-top:none;border-radius:0 0 12px 12px">
            No class dates found for the selected months.
-           ${!_get('lecturePlans').length ? '<br><span style="font-size:11px">Tip: Assign a Lecture Plan to this batch to auto-populate dates.</span>' : ''}
+           ${!_get('lecturePlans').length ? '<br><span style="font-size:11px;color:var(--t4)">Tip: Assign a Lecture Plan to this batch to auto-populate dates.</span>' : ''}
          </div>`
-      : `<div style="overflow-x:auto;overflow-y:visible;
-                     border:1px solid var(--border);border-radius:var(--r-lg)">
+      : `<div style="overflow-x:auto;overflow-y:visible;border:1px solid var(--border);
+                     border-top:none;border-radius:0 0 12px 12px">
            <table id="asTable" style="border-collapse:collapse;font-size:12.5px;min-width:100%">
              <thead>
                <tr>
@@ -629,61 +673,236 @@ function _renderSheet(output, batchId, selMonths) {
                      border-right:2px solid var(--border);border-bottom:1px solid var(--border);
                      position:sticky;left:36px;z-index:4">Student Name</th>
                  ${monthHeaders}
-                 <th colspan="3" style="padding:6px 8px;text-align:center;font-size:10px;
+                 ${totalCols > 0 ? `<th colspan="${totalCols}" style="padding:6px 8px;text-align:center;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border2)">
-                   Total
-                 </th>
-                 <th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border2)">Total</th>` : ''}
+                 ${showPct ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);
-                     border-bottom:1px solid var(--border);min-width:48px">%</th>
+                     border-bottom:1px solid var(--border);min-width:48px">%</th>` : ''}
                </tr>
                <tr>
                  ${dateHeaders}
-                 <th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
+                 ${showP ? `<th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
                      color:var(--green);background:var(--surface2);
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border);
-                     min-width:30px">P</th>
-                 <th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border);min-width:30px">P</th>` : ''}
+                 ${showA ? `<th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
                      color:var(--red);background:var(--surface2);
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border);
-                     min-width:30px">A</th>
-                 <th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border);min-width:30px">A</th>` : ''}
+                 ${showL ? `<th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
                      color:var(--yellow);background:var(--surface2);
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border);
-                     min-width:30px">L</th>
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border);min-width:30px">L</th>` : ''}
                </tr>
              </thead>
              <tbody>${rows}</tbody>
            </table>
          </div>`
-    }`;
+  );
 
-  // ── Print ──────────────────────────────────────────────────
-  output.querySelector('#asPrintBtn')?.addEventListener('click', () => {
-    const table = output.querySelector('#asTable');
-    if (!table) return;
-    const win = window.open('', '_blank');
-    win.document.write(`
-      <html><head>
-        <title>Attendance Sheet — ${batch?.batchName||''}</title>
-        <style>
-          body{font-family:sans-serif;font-size:10px;margin:12px}
-          table{border-collapse:collapse;width:100%}
-          th,td{border:1px solid #ccc;padding:3px 5px;text-align:center}
-          th{background:#f3f4f6}
-          td:nth-child(2){text-align:left}
-          @media print{body{margin:6px}}
-        </style>
-      </head><body>
-        <h3 style="margin-bottom:6px">${batch?.batchName||''} — Attendance Sheet</h3>
-        <p style="color:#666;margin-bottom:10px;font-size:9px">
-          ${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} · ${students.length} students
-          · ${dates.length} days · ${monthLabel}
-        </p>
-        ${table.outerHTML}
-      </body></html>`);
-    win.document.close();
-    win.print();
+  // ── Wire export buttons ────────────────────────────────────
+  const _exportCtx = { batch, disc, campus, students, dates, byMonth, monthLabel, selMonths };
+
+  output.querySelector('#asExportCSV')?.addEventListener('click', () =>
+    _exportCSV(_exportCtx));
+
+  output.querySelector('#asExportPDF')?.addEventListener('click', () =>
+    _exportPDF(_exportCtx, output));
+
+  // ── Wire Column Manager ────────────────────────────────────
+  _wireAsColManager(output, batchId, selMonths);
+}
+
+// ── CSV Export ────────────────────────────────────────────────
+function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel, selMonths }) {
+  if (!students.length || !dates.length) { alert('No data to export.'); return; }
+
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+  const batchRecs = (AppState.get('attendance') || []).filter(r => r.batchId === batch?.id);
+  const recMap    = {};
+  batchRecs.forEach(r => { recMap[`${r.studentId}_${r.date}`] = r.status; });
+
+  const metaLines = [
+    'Attendance Sheet',
+    `Batch: ${batch?.batchName || '—'}`,
+    `${disc?.abbreviation||''}${campus?' · '+campus.campusName:''}`,
+    `Months: ${monthLabel}`,
+    `Generated: ${dateStr} ${timeStr}`,
+    '',
+  ].join('\n');
+
+  const dateHeaders = dates.map(d => {
+    const dt = new Date(d + 'T00:00:00');
+    return `${['Su','Mo','Tu','We','Th','Fr','Sa'][dt.getDay()]} ${dt.getDate()}/${dt.getMonth()+1}`;
   });
+  const headers = ['#', 'Student Name', ...dateHeaders, 'P', 'A', 'L', '%'];
+
+  const csvRows = students.map((stu, i) => {
+    let p = 0, a = 0, l = 0;
+    const cells = dates.map(d => {
+      const s = recMap[`${stu.id}_${d}`] || '';
+      if (s === 'P') p++; else if (s === 'A') a++; else if (s === 'L') l++;
+      return s;
+    });
+    const total = p + a + l;
+    const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
+    return [i+1, stu.studentName || '—', ...cells, p, a, l, pct]
+      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
+  });
+
+  const csv  = metaLines + headers.map(h=>`"${h}"`).join(',') + '\n' + csvRows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `Attendance-${batch?.batchName||'Sheet'}-${dateStr.replace(/ /g,'-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── PDF / Print Export ────────────────────────────────────────
+function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel }, output) {
+  const table = output.querySelector('#asTable');
+  if (!table) { alert('No sheet to export.'); return; }
+
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"/>
+    <title>Attendance Sheet — ${batch?.batchName||''}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:9px;color:#1e293b;background:#fff;padding:14px 16px}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;
+              border-bottom:2.5px solid #2563eb;padding-bottom:8px;margin-bottom:10px}
+      .header .title{font-size:15px;font-weight:700;color:#1e40af}
+      .header .sub{font-size:9px;color:#64748b;margin-top:2px}
+      .header .right{text-align:right;font-size:9px;color:#64748b;line-height:1.6}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #cbd5e1;padding:3px 4px;text-align:center;white-space:nowrap}
+      th{background:#f1f5f9;font-weight:700;font-size:8.5px}
+      td:nth-child(2){text-align:left;font-weight:600}
+      .month-hdr{background:#dbeafe;color:#1e40af;font-size:8px;font-weight:700}
+      .footer{margin-top:10px;padding-top:7px;border-top:1px solid #e2e8f0;
+              display:flex;justify-content:space-between;font-size:7.5px;color:#94a3b8}
+      @media print{body{padding:6px 8px}@page{size:A4 landscape;margin:6mm}}
+    </style>
+  </head><body>
+    <div class="header">
+      <div>
+        <div class="title">Attendance Sheet — ${batch?.batchName||''}</div>
+        <div class="sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} · ${students.length} students · ${dates.length} class days · ${monthLabel}</div>
+      </div>
+      <div class="right"><strong>${dateStr}</strong><div>${timeStr}</div></div>
+    </div>
+    ${table.outerHTML}
+    <div class="footer">
+      <span>Attendance Sheet · ${batch?.batchName||''}</span>
+      <span>Powered by <strong style="color:#2563eb">Learnomist</strong></span>
+    </div>
+    <div style="margin-top:10px;text-align:center">
+      <button onclick="window.print()" style="padding:6px 20px;background:#2563eb;color:#fff;
+        border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
+        Print / Save as PDF
+      </button>
+    </div>
+  </body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 500);
+}
+
+// ── Column Manager ─────────────────────────────────────────────
+function _wireAsColManager(output, batchId, selMonths) {
+  const btn   = output.querySelector('#asColMgrBtn');
+  const panel = output.querySelector('#asColMgrPanel');
+  const list  = output.querySelector('#asColMgrList');
+  if (!btn || !panel || !list) return;
+
+  const AS_COL_KEY = 'as_col_prefs';
+  const AS_COLS = [
+    { key: 'present', label: 'P (Present)' },
+    { key: 'absent',  label: 'A (Absent)'  },
+    { key: 'leave',   label: 'L (Leave)'   },
+    { key: 'percent', label: '% Attendance' },
+  ];
+  function _getPrefs() {
+    try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) return r; } catch(e){}
+    return { hidden: [] };
+  }
+  function _savePrefs(p) { AppState.set(AS_COL_KEY, p); }
+
+  const _positionPanel = () => {
+    const r = btn.getBoundingClientRect();
+    const w = 200;
+    let left = r.right - w;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    panel.style.left = left + 'px';
+    panel.style.top  = (r.bottom + 6) + 'px';
+  };
+
+  const _renderList = () => {
+    const prefs = _getPrefs();
+    list.innerHTML = '';
+    AS_COLS.forEach(col => {
+      const isVisible = !prefs.hidden.includes(col.key);
+      const item = document.createElement('div');
+      item.className = 'trs-col-mgr-item' + (isVisible ? '' : ' col-hidden');
+      item.innerHTML =
+        `<input type="checkbox" class="trs-col-mgr-chk" id="as_chk_${col.key}"${isVisible?' checked':''}/>`+
+        `<label class="trs-col-mgr-lbl" for="as_chk_${col.key}">${col.label}</label>`;
+      item.querySelector('.trs-col-mgr-chk').addEventListener('change', e => {
+        const p = _getPrefs();
+        if (e.target.checked) {
+          p.hidden = p.hidden.filter(h => h !== col.key);
+          item.classList.remove('col-hidden');
+        } else {
+          if (!p.hidden.includes(col.key)) p.hidden.push(col.key);
+          item.classList.add('col-hidden');
+        }
+        _savePrefs(p);
+        panel.classList.remove('open');
+        btn.style.cssText = '';
+        // Re-render sheet with new prefs
+        _renderSheet(output, batchId, selMonths);
+      });
+      list.appendChild(item);
+    });
+  };
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+      panel.classList.remove('open');
+      btn.style.cssText = '';
+    } else {
+      _renderList();
+      _positionPanel();
+      panel.classList.add('open');
+      btn.style.borderColor = 'var(--blue)';
+      btn.style.color = 'var(--blue)';
+      btn.style.background = 'var(--blue-dim)';
+    }
+  });
+
+  output.querySelector('#asColMgrShowAll')?.addEventListener('click', () => {
+    AppState.set(AS_COL_KEY, { hidden: [] });
+    panel.classList.remove('open');
+    btn.style.cssText = '';
+    _renderSheet(output, batchId, selMonths);
+  });
+
+  const _outside = e => {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.remove('open');
+      btn.style.cssText = '';
+    }
+  };
+  document.addEventListener('click', _outside);
+  window.addEventListener('scroll', () => { if (panel.classList.contains('open')) _positionPanel(); }, true);
+  window.addEventListener('resize', () => { if (panel.classList.contains('open')) _positionPanel(); });
 }
