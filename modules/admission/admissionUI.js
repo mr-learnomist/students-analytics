@@ -692,7 +692,7 @@ function _renderImport(body) {
             Bulk Student Import
           </div>
           <div style="font-size:12.5px;color:var(--t3)">
-            CSV file se multiple students, enrolments aur subjects ek sath add karo
+            Upload a CSV file to add multiple students, enrolments and subjects at once
           </div>
         </div>
         <button id="impSampleBtn" style="
@@ -723,14 +723,14 @@ function _renderImport(body) {
           </div>
           <div style="font-size:11.5px;color:var(--t2);line-height:1.65">
             <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
-              batchName</code> aur
+              batchName</code> and
             <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
-              subjectCode</code> dono empty
+              subjectCode</code> both empty
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--t3);line-height:1.6">
-            • Sirf Students module mein save hoga<br>
-            • CNIC already exist kare → row skip (no duplicate)<br>
-            • Enrolment ya admission nahi banta
+            • Saves to Students module only<br>
+            • CNIC already exists → row skipped (no duplicate)<br>
+            • No enrolment or admission created
           </div>
         </div>
 
@@ -745,15 +745,15 @@ function _renderImport(body) {
             <span style="font-size:12px;font-weight:700;color:var(--t1)">Batch Enrolment</span>
           </div>
           <div style="font-size:11.5px;color:var(--t2);line-height:1.65">
-            <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
-              batchName</code> fill karo,
+            Fill <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
+              batchName</code>, leave
             <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
               subjectCode</code> empty
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--t3);line-height:1.6">
             • New student → Students + Admissions + Enrolments<br>
-            • Existing student → sirf Enrolment add hoga<br>
-            • Batch system mein na ho → <b style="color:#ef4444">hard error</b>
+            • Existing student → enrolment added only<br>
+            • Batch not in system → <b style="color:#ef4444">hard error</b>
           </div>
         </div>
 
@@ -768,12 +768,12 @@ function _renderImport(body) {
             <span style="font-size:12px;font-weight:700;color:var(--t1)">Subject / Freeze</span>
           </div>
           <div style="font-size:11.5px;color:var(--t2);line-height:1.65">
-            <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
-              subjectCode</code> fill karo (batchName optional)
+            Fill <code style="font-size:10.5px;background:var(--surface3);padding:1px 5px;border-radius:3px">
+              subjectCode</code> (batchName optional)
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--t3);line-height:1.6">
-            • Student already exist karna chahiye (CNIC se match)<br>
-            • Existing enrolment mein subject add hoga<br>
+            • Student must already exist (matched by CNIC)<br>
+            • Subject added to existing enrolment<br>
             • Default status: <code style="font-size:10px">suspended</code>
           </div>
         </div>
@@ -792,10 +792,10 @@ function _renderImport(body) {
           <line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
         <div style="font-size:14px;font-weight:600;color:var(--t2)">
-          CSV file yahan drop karo ya click karke browse karo
+          Drop a CSV file here or click to browse
         </div>
         <div style="font-size:11.5px;color:var(--t4);margin-top:5px">
-          Sirf .csv files • UTF-8 encoding recommended
+          .csv files only • UTF-8 encoding recommended
         </div>
         <input id="impFileInput" type="file" accept=".csv,text/csv" style="display:none">
       </div>
@@ -838,7 +838,7 @@ function _renderImport(body) {
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
-            Import Karo
+            Import Now
           </button>
         </div>
       </div>
@@ -896,7 +896,7 @@ function _renderImport(body) {
 
   function _loadFile(file) {
     if (!file.name.endsWith('.csv') && file.type !== 'text/csv') {
-      Toast.error('Sirf .csv files allowed hain.');
+      Toast.error('Only .csv files are allowed.');
       return;
     }
     const reader = new FileReader();
@@ -923,8 +923,8 @@ function _renderImport(body) {
 
     const hasCriticalErrors = (processBulkImport(_csvText, { dryRun: true })).errors.length > 0;
     const confirmMsg = hasCriticalErrors
-      ? 'Kuch rows mein errors hain.\n\nSirf valid rows import hongi, errors skip hongi.\n\nProceed karna chahte hain?'
-      : 'Data permanently save ho jaega.\n\nImport karna chahte hain?';
+      ? 'Some rows have errors.\n\nOnly valid rows will be imported; error rows will be skipped.\n\nProceed?'
+      : 'Data will be permanently saved.\n\nProceed with import?';
 
     if (!confirm(confirmMsg)) return;
 
@@ -961,7 +961,7 @@ function _renderImportResults(body, summary, isDryRun) {
   const dryRunTag = isDryRun
     ? `<span style="font-size:11px;font-weight:700;color:#f59e0b;
            background:rgba(245,158,11,.12);padding:3px 10px;border-radius:20px;
-           letter-spacing:.02em">DRY RUN — koi data save nahi hua</span>`
+           letter-spacing:.02em">DRY RUN — no data has been saved</span>`
     : `<span style="font-size:11px;font-weight:700;color:#10b981;
            background:rgba(16,185,129,.12);padding:3px 10px;border-radius:20px;
            letter-spacing:.02em">✓ Import Complete</span>`;
@@ -1017,7 +1017,7 @@ function _renderImportResults(body, summary, isDryRun) {
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
       <div style="font-size:12.5px;color:#ef4444;font-weight:600">
-        ${errorCount} row${errorCount !== 1 ? 's' : ''} mein errors hain — fix karke dobara import karo
+        ${errorCount} row${errorCount !== 1 ? 's' : ''} have errors — fix them and re-upload
       </div>
     </div>` : '';
 
@@ -1045,5 +1045,5 @@ function _renderImportResults(body, summary, isDryRun) {
           ${rowsHtml}
         </tbody>
       </table>
-    </div>` : '<div style="color:var(--t3);font-size:13px;padding:12px 0">Koi rows process nahi hue.</div>'}`;
+    </div>` : '<div style="color:var(--t3);font-size:13px;padding:12px 0">No rows were processed.</div>'}`;
 }
