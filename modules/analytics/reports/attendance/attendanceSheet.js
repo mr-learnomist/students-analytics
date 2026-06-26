@@ -597,17 +597,26 @@ function _renderSheet(output, batchId, selMonths) {
 
   // ── Column prefs (persisted in AppState) ──────────────────
   const AS_COL_KEY = 'as_col_prefs';
+  const _DEFAULT_HIDDEN_SHEET = ['fatherName', 'email'];
   function _getAsColPrefs() {
-    try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) return r; } catch(e){}
-    return { hidden: [] };
+    try {
+      const r = AppState.get(AS_COL_KEY);
+      if (r && Array.isArray(r.hidden)) return r;
+    } catch(e){}
+    return { hidden: [..._DEFAULT_HIDDEN_SHEET] };
   }
 
-  const colPrefs  = _getAsColPrefs();
-  const showP     = !colPrefs.hidden.includes('present');
-  const showA     = !colPrefs.hidden.includes('absent');
-  const showL     = !colPrefs.hidden.includes('leave');
-  const showPct   = !colPrefs.hidden.includes('percent');
-  const totalCols = (showP?1:0) + (showA?1:0) + (showL?1:0);
+  const colPrefs        = _getAsColPrefs();
+  const showCnic        = !colPrefs.hidden.includes('cnic');
+  const showFatherName  = !colPrefs.hidden.includes('fatherName');
+  const showStudentPhone= !colPrefs.hidden.includes('studentPhone');
+  const showGuardianPhone=!colPrefs.hidden.includes('guardianPhone');
+  const showEmail       = !colPrefs.hidden.includes('email');
+  const showP           = !colPrefs.hidden.includes('present');
+  const showA           = !colPrefs.hidden.includes('absent');
+  const showL           = !colPrefs.hidden.includes('leave');
+  const showPct         = !colPrefs.hidden.includes('percent');
+  const totalCols       = (showP?1:0) + (showA?1:0) + (showL?1:0);
 
   // ── Student rows (respects col visibility) ─────────────────
   const rows = students.map((stu, idx) => {
@@ -642,11 +651,26 @@ function _renderSheet(output, batchId, selMonths) {
                  color:var(--t4);font-size:11px;font-family:var(--font-mono);
                  position:sticky;left:0;background:inherit;z-index:1">${idx + 1}</td>
       <td style="padding:6px 12px;border-bottom:1px solid var(--border);
-                 border-right:2px solid var(--border);font-weight:700;
+                 border-right:${!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);font-weight:700;
                  color:var(--t1);white-space:nowrap;
                  position:sticky;left:36px;background:inherit;z-index:1;min-width:160px">
         ${stu.studentName || '—'}
       </td>
+      ${showCnic ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:1px solid var(--border2);text-align:center;
+                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
+      ${showFatherName ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:1px solid var(--border2);text-align:left;
+                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.fatherName||'—'}</td>` : ''}
+      ${showStudentPhone ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:1px solid var(--border2);text-align:center;
+                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.studentPhone||'—'}</td>` : ''}
+      ${showGuardianPhone ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:1px solid var(--border2);text-align:center;
+                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.guardianPhone||'—'}</td>` : ''}
+      ${showEmail ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:2px solid var(--border);text-align:left;
+                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.email||'—'}</td>` : ''}
       ${cells}
       ${showP ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
@@ -715,7 +739,7 @@ function _renderSheet(output, batchId, selMonths) {
               <button class="as-col-mgr-link" id="asColMgrShowAll">Show All</button>
             </div>
             <div class="as-col-mgr-list" id="asColMgrList"></div>
-            <div class="as-col-mgr-foot">Applies to summary columns</div>
+            <div class="as-col-mgr-foot">Toggle student info &amp; summary columns</div>
           </div>
         </div>
       </div>
@@ -739,8 +763,23 @@ function _renderSheet(output, batchId, selMonths) {
                      position:sticky;left:0;z-index:4">#</th>
                  <th rowspan="2" style="padding:8px 12px;text-align:left;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
-                     border-right:2px solid var(--border);border-bottom:1px solid var(--border);
+                     border-right:${!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);border-bottom:1px solid var(--border);
                      position:sticky;left:36px;z-index:4">Student Name</th>
+                 ${showCnic ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:130px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">CNIC</th>` : ''}
+                 ${showFatherName ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:140px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Father Name</th>` : ''}
+                 ${showStudentPhone ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:120px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Student Phone</th>` : ''}
+                 ${showGuardianPhone ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:120px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Guardian Phone</th>` : ''}
+                 ${showEmail ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
+                     border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Email</th>` : ''}
                  ${monthHeaders}
                  ${totalCols > 0 ? `<th colspan="${totalCols}" style="padding:6px 8px;text-align:center;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);
@@ -792,6 +831,21 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const recMap    = {};
   batchRecs.forEach(r => { recMap[`${r.studentId}_${r.date}`] = r.status; });
 
+  // ── Determine which student-info columns to include (same as current view prefs)
+  const AS_COL_KEY = 'as_col_prefs';
+  const _DEFAULT_HIDDEN_CSV = ['fatherName', 'email'];
+  let colPrefsCSV = { hidden: [..._DEFAULT_HIDDEN_CSV] };
+  try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) colPrefsCSV = r; } catch(e){}
+  const csvShowCnic         = !colPrefsCSV.hidden.includes('cnic');
+  const csvShowFatherName   = !colPrefsCSV.hidden.includes('fatherName');
+  const csvShowStudentPhone = !colPrefsCSV.hidden.includes('studentPhone');
+  const csvShowGuardianPhone= !colPrefsCSV.hidden.includes('guardianPhone');
+  const csvShowEmail        = !colPrefsCSV.hidden.includes('email');
+  const csvShowP            = !colPrefsCSV.hidden.includes('present');
+  const csvShowA            = !colPrefsCSV.hidden.includes('absent');
+  const csvShowL            = !colPrefsCSV.hidden.includes('leave');
+  const csvShowPct          = !colPrefsCSV.hidden.includes('percent');
+
   const metaLines = [
     'Attendance Sheet',
     `Batch: ${batch?.batchName || '—'}`,
@@ -805,7 +859,21 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const dt = new Date(d + 'T00:00:00');
     return `${['Su','Mo','Tu','We','Th','Fr','Sa'][dt.getDay()]} ${dt.getDate()}/${dt.getMonth()+1}`;
   });
-  const headers = ['#', 'Student Name', ...dateHeaders, 'P', 'A', 'L', '%'];
+
+  const infoHeaders = [
+    ...(csvShowCnic         ? ['CNIC']           : []),
+    ...(csvShowFatherName   ? ['Father Name']    : []),
+    ...(csvShowStudentPhone ? ['Student Phone']  : []),
+    ...(csvShowGuardianPhone? ['Guardian Phone'] : []),
+    ...(csvShowEmail        ? ['Email']          : []),
+  ];
+  const summaryHeaders = [
+    ...(csvShowP   ? ['P'] : []),
+    ...(csvShowA   ? ['A'] : []),
+    ...(csvShowL   ? ['L'] : []),
+    ...(csvShowPct ? ['%'] : []),
+  ];
+  const headers = ['#', 'Student Name', ...infoHeaders, ...dateHeaders, ...summaryHeaders];
 
   const csvRows = students.map((stu, i) => {
     let p = 0, a = 0, l = 0;
@@ -816,7 +884,20 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     });
     const total = p + a + l;
     const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
-    return [i+1, stu.studentName || '—', ...cells, p, a, l, pct]
+    const infoCells = [
+      ...(csvShowCnic         ? [stu.cnic          || ''] : []),
+      ...(csvShowFatherName   ? [stu.fatherName    || ''] : []),
+      ...(csvShowStudentPhone ? [stu.studentPhone  || ''] : []),
+      ...(csvShowGuardianPhone? [stu.guardianPhone || ''] : []),
+      ...(csvShowEmail        ? [stu.email         || ''] : []),
+    ];
+    const summaryCells = [
+      ...(csvShowP   ? [p]   : []),
+      ...(csvShowA   ? [a]   : []),
+      ...(csvShowL   ? [l]   : []),
+      ...(csvShowPct ? [pct] : []),
+    ];
+    return [i+1, stu.studentName || '—', ...infoCells, ...cells, ...summaryCells]
       .map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
   });
 
@@ -855,6 +936,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel 
       th,td{border:1px solid #cbd5e1;padding:3px 4px;text-align:center;white-space:nowrap}
       th{background:#f1f5f9;font-weight:700;font-size:8.5px}
       td:nth-child(2){text-align:left;font-weight:600}
+      td:nth-child(3),td:nth-child(4),td:nth-child(5),td:nth-child(6),td:nth-child(7){text-align:left;font-size:8px}
       .month-hdr{background:#dbeafe;color:#1e40af;font-size:8px;font-weight:700}
       .footer{margin-top:10px;padding-top:7px;border-top:1px solid #e2e8f0;
               display:flex;justify-content:space-between;font-size:7.5px;color:#94a3b8}
@@ -893,14 +975,23 @@ function _wireAsColManager(output, batchId, selMonths) {
 
   const AS_COL_KEY = 'as_col_prefs';
   const AS_COLS = [
-    { key: 'present', label: 'P (Present)' },
-    { key: 'absent',  label: 'A (Absent)'  },
-    { key: 'leave',   label: 'L (Leave)'   },
-    { key: 'percent', label: '% Attendance' },
+    { key: 'cnic',          label: 'CNIC',           defaultHidden: false },
+    { key: 'fatherName',    label: 'Father Name',    defaultHidden: true  },
+    { key: 'studentPhone',  label: 'Student Phone',  defaultHidden: false },
+    { key: 'guardianPhone', label: 'Guardian Phone', defaultHidden: false },
+    { key: 'email',         label: 'Email',          defaultHidden: true  },
+    { key: 'present', label: 'P (Present)', defaultHidden: false },
+    { key: 'absent',  label: 'A (Absent)',  defaultHidden: false },
+    { key: 'leave',   label: 'L (Leave)',   defaultHidden: false },
+    { key: 'percent', label: '% Attendance', defaultHidden: false },
   ];
+  const _DEFAULT_HIDDEN = AS_COLS.filter(c => c.defaultHidden).map(c => c.key);
   function _getPrefs() {
-    try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) return r; } catch(e){}
-    return { hidden: [] };
+    try {
+      const r = AppState.get(AS_COL_KEY);
+      if (r && Array.isArray(r.hidden)) return r;
+    } catch(e){}
+    return { hidden: [..._DEFAULT_HIDDEN] };
   }
   function _savePrefs(p) { AppState.set(AS_COL_KEY, p); }
 
