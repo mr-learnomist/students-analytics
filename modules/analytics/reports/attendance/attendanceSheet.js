@@ -930,6 +930,10 @@ function _renderSheet(output, batchId, selMonths) {
   const batch   = AppState.findById('batches',     batchId);
   const disc    = AppState.findById('disciplines', batch?.disciplineId);
   const campus  = AppState.findById('campuses',    batch?.campusId);
+  const teacher = batch?.teacherId ? AppState.findById('teachers', batch.teacherId) : null;
+  const teacherName = teacher
+    ? [teacher.firstName, teacher.lastName].filter(Boolean).join(' ') || teacher.teacherName || teacher.name || ''
+    : (batch?.teacherName || '');
 
   // ── Students (active enrolments) ──────────────────────────
   const enrolments = _get('enrolments').filter(e => e.batchId === batchId && e.status === 'active');
@@ -1451,7 +1455,8 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       </div>`;
   }
 
-  const tablesHTML = monthKeys.map(mk => buildMonthTable(mk)).join('');
+  const _footerHtml = '<div class="page-footer" style="padding:5px 10px;border-top:1px solid #000;display:flex;justify-content:flex-end;font-size:8px;color:#94a3b8;margin-top:4px">Powered by <strong style="color:#2563eb;margin-left:4px">Learnomist</strong></div>';
+  const tablesHTML = monthKeys.map(mk => buildMonthTable(mk)).join('') + _footerHtml;
 
   // Build full HTML, open as Blob URL — avoids blank-print race condition with document.write
   const _htmlStr = `<!DOCTYPE html><html><head>
@@ -1474,10 +1479,11 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       /* ── Month block — each starts on its own print page */
       .month-block{
         padding:8px 10px 10px;
-        page-break-after:always;
-        break-after:page;
       }
-      .month-block:last-child{page-break-after:avoid;break-after:avoid}
+      .month-block + .month-block{
+        page-break-before:always;
+        break-before:page;
+      }
 
       /* ── Table base */
       table{border-collapse:collapse;width:100%;table-layout:auto}
@@ -1516,8 +1522,8 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
 
       /* ── Footer */
       .page-footer{
-        padding:5px 10px;border-top:1px solid #e2e8f0;
-        display:flex;justify-content:space-between;font-size:7px;color:#94a3b8;
+        padding:5px 10px;border-top:1px solid #000;
+        display:flex;justify-content:flex-end;font-size:8px;color:#94a3b8;
         margin-top:4px;
         page-break-before:avoid;break-before:avoid;
         page-break-after:avoid;break-after:avoid;
@@ -1546,17 +1552,13 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     <div class="page-header">
       <div>
         <div class="ph-title">Attendance Sheet — ${batch?.batchName||''}</div>
-        <div class="ph-sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} &nbsp;·&nbsp; ${students.length} student${students.length!==1?'s':''} &nbsp;·&nbsp; ${monthLabel}</div>
+        <div class="ph-sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} &nbsp;·&nbsp; ${students.length} student${students.length!==1?'s':''} &nbsp;·&nbsp; ${monthLabel}${teacherName?' &nbsp;·&nbsp; '+teacherName:''}</div>
       </div>
       <div class="ph-right"><strong>${dateStr}</strong><div>${timeStr}</div></div>
     </div>
 
     ${tablesHTML}
 
-    <div class="page-footer">
-      <span></span>
-      <span>Powered by <strong style="color:#2563eb">Learnomist</strong></span>
-    </div>
 
     <div class="no-print" style="position:fixed;bottom:16px;right:16px">
       <button onclick="window.print()" style="padding:8px 22px;background:#2563eb;color:#fff;
