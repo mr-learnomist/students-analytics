@@ -776,6 +776,8 @@ export function mountAttendanceSheet(container, onBack) {
     _subjectId = container.querySelector('#asSubject').value;
 
     let batches = _get('batches');
+    console.log('[Batch Debug] sample batch:', batches[0]);
+    console.log('[Batch Debug] _subjectId selected:', _subjectId);
     if (_campusId)  batches = batches.filter(b => b.campusId      === _campusId);
     if (_discId)    batches = batches.filter(b => b.disciplineId  === _discId);
     if (_session)   batches = batches.filter(b => b.sessionPeriod === _session);
