@@ -588,7 +588,7 @@ export function mountAttendanceSheet(container, onBack) {
         } else {
           item.textContent = o.label;
         }
-        item.addEventListener('mousedown', e => { e.preventDefault(); _pick(o.value); });
+        item.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); _pick(o.value); });
         listEl.appendChild(item);
       });
     }
@@ -646,7 +646,10 @@ export function mountAttendanceSheet(container, onBack) {
     window.addEventListener('scroll', () => { if (_open) _position(); }, true);
     window.addEventListener('resize', () => { if (_open) _position(); });
     document.addEventListener('mousedown', e => {
-      if (_open && !panel.contains(e.target) && e.target !== trigger) _close();
+      if (!_open) return;
+      // Use composedPath so detached nodes (after innerHTML reset) still work correctly
+      const path = e.composedPath ? e.composedPath() : [];
+      if (!path.includes(panel) && !path.includes(trigger)) _close();
     });
 
     return {
@@ -794,7 +797,7 @@ export function mountAttendanceSheet(container, onBack) {
 
   function _refreshMonths() {
     _batchId = container.querySelector('#asBatch').value || _batchDd.getValue();
-    _selMonths.clear();
+    _selMonths = new Set();
 
     if (!_batchId) {
       _monthDd.setOpts([]);
@@ -947,9 +950,18 @@ function _renderSheet(output, batchId, selMonths) {
   // ── Working dates filtered to selected months ──────────────
   const allDates = _workingDates(batchId, batch);
   const monthSet = new Set(selMonths);
-  const dates    = selMonths.length
+  const dates    = (selMonths.length > 0)
     ? allDates.filter(d => monthSet.has(d.slice(0,7)))
     : allDates;
+
+  if (!dates.length) {
+    output.innerHTML = `
+      <div style="padding:32px;text-align:center;color:var(--t3);font-size:13px;
+                  border:1px dashed var(--border2);border-radius:var(--r-lg)">
+        No class dates found for the selected months. Please select at least one month with class dates.
+      </div>`;
+    return;
+  }
 
   // Existing attendance records (for read-only view if any)
   const batchRecs = _get('attendance').filter(r => r.batchId === batchId);
