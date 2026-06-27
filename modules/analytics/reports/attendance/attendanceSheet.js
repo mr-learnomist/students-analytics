@@ -1364,11 +1364,11 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
 
     // Info col widths
     const infoColsHTML = [
-      pdfShowCnic          ? '<col style="width:88px"/>'  : '',
-      pdfShowFatherName    ? '<col style="width:90px"/>'  : '',
-      pdfShowStudentPhone  ? '<col style="width:74px"/>'  : '',
-      pdfShowGuardianPhone ? '<col style="width:74px"/>'  : '',
-      pdfShowEmail         ? '<col style="width:110px"/>' : '',
+      pdfShowCnic          ? '<col style="width:80px"/>'  : '',
+      pdfShowFatherName    ? '<col/>'                     : '',
+      pdfShowStudentPhone  ? '<col style="width:70px"/>'  : '',
+      pdfShowGuardianPhone ? '<col style="width:70px"/>'  : '',
+      pdfShowEmail         ? '<col style="width:100px"/>' : '',
     ].join('');
 
     const summCols = (pdfShowP?1:0)+(pdfShowA?1:0)+(pdfShowL?1:0)+(pdfShowPct?1:0);
@@ -1378,7 +1378,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const infoSpan = [pdfShowCnic,pdfShowFatherName,pdfShowStudentPhone,pdfShowGuardianPhone,pdfShowEmail].filter(Boolean).length;
 
     let hdr1 = `<th rowspan="2" class="h-no h-name" colspan="${1 + (infoSpan > 0 ? 0 : 0)}">#</th>
-                <th rowspan="2" class="h-no h-name" style="text-align:left;min-width:110px">Student Name</th>`;
+                <th rowspan="2" class="h-no h-name" style="text-align:left">Student Name</th>`;
     if (pdfShowCnic)          hdr1 += `<th rowspan="2" class="h-no">CNIC</th>`;
     if (pdfShowFatherName)    hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Father Name</th>`;
     if (pdfShowStudentPhone)  hdr1 += `<th rowspan="2" class="h-no">Stu. Phone</th>`;
@@ -1433,8 +1433,8 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       <div class="month-block">
         <table>
           <colgroup>
-            <col style="width:24px"/>
-            <col style="min-width:110px"/>
+            <col style="width:20px"/>
+            <col/>
             ${infoColsHTML}
             ${mDates.map(() => '<col class="att-col"/>').join('')}
             ${pdfShowP   ? '<col style="width:22px"/>' : ''}
@@ -1475,13 +1475,14 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       /* ── Month block — each starts on its own print page */
       .month-block{
         padding:8px 10px 10px;
-        page-break-after:always;
-        break-after:page;
       }
-      .month-block:last-child{page-break-after:avoid;break-after:avoid}
+      .month-block + .month-block{
+        page-break-before:always;
+        break-before:page;
+      }
 
       /* ── Table base */
-      table{border-collapse:collapse;width:100%;table-layout:fixed}
+      table{border-collapse:collapse;width:100%;table-layout:auto}
       th,td{border:1px solid #cbd5e1;padding:2px 2px;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
       /* ── Header types */
