@@ -1242,6 +1242,11 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
   const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
 
+  const _pdfTeacher = batch?.teacherId ? AppState.findById('teachers', batch.teacherId) : null;
+  const teacherName = _pdfTeacher
+    ? [_pdfTeacher.firstName, _pdfTeacher.lastName].filter(Boolean).join(' ') || _pdfTeacher.teacherName || _pdfTeacher.name || ''
+    : (batch?.teacherName || '');
+
   const batchRecs = (AppState.get('attendance') || []).filter(r => r.batchId === batch?.id);
   const recMap    = {};
   batchRecs.forEach(r => { recMap[`${r.studentId}_${r.date}`] = r.status; });
