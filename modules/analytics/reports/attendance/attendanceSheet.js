@@ -738,6 +738,7 @@ export function mountAttendanceSheet(container, onBack) {
       _subjDd.setValue('');
       _subjDd.disable(true);
       _subjectId = '';
+      container.querySelector('#asSubject').value = '';
     } else {
       _subjDd.disable(false);
       const levels   = (_get('levels') || []).filter(l => l.disciplineId === _discId);
@@ -773,11 +774,9 @@ export function mountAttendanceSheet(container, onBack) {
 
   function _refreshBatch() {
     _session   = container.querySelector('#asSession').value;
-    _subjectId = container.querySelector('#asSubject').value;
+    _subjectId = _subjDd.getValue() || container.querySelector('#asSubject').value;
 
     let batches = _get('batches');
-    console.log('[Batch Debug] sample batch:', batches[0]);
-    console.log('[Batch Debug] _subjectId selected:', _subjectId);
     if (_campusId)  batches = batches.filter(b => b.campusId      === _campusId);
     if (_discId)    batches = batches.filter(b => b.disciplineId  === _discId);
     if (_session)   batches = batches.filter(b => b.sessionPeriod === _session);
@@ -947,7 +946,6 @@ function _renderSheet(output, batchId, selMonths) {
     }
     return batch?.teacherName || batch?.teacher || '';
   })();
-  console.log('[Attendance] batch teacher fields:', { teacherId: batch?.teacherId, teacherName: batch?.teacherName, teacher, resolved: teacherName });
 
   // ── Students (active enrolments) ──────────────────────────
   const enrolments = _get('enrolments').filter(e => e.batchId === batchId && e.status === 'active');
