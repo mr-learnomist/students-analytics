@@ -99,18 +99,18 @@ function _injectAsStyles() {
 }
 .as-filter-body.open { display:flex; }
 
-/* ── Row 1: all dropdowns in one clean strip ── */
+/* ── Single unified filter row ── */
 .as-frow1 {
   display:flex; align-items:stretch;
   gap:0; width:100%; box-sizing:border-box;
-  border-bottom: 1px solid var(--border);
 }
 .as-fcell {
   display:flex; flex-direction:column;
-  padding: 10px 14px 10px;
+  padding: 10px 14px;
   border-right: 1px solid var(--border);
   box-sizing: border-box;
   min-width: 0;
+  flex: 1 1 0;
 }
 .as-fcell:last-child { border-right: none; }
 .as-fcell-label {
@@ -129,18 +129,10 @@ function _injectAsStyles() {
 .as-filter-sel:focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim); }
 .as-filter-sel:disabled { opacity:.4; cursor:not-allowed; }
 
-/* ── Row 2: Batch search + select + month chips + actions ── */
-.as-frow2 {
-  display:flex; align-items:center;
-  gap:10px; padding:10px 14px;
-  flex-wrap:wrap;
-}
-.as-batch-block {
-  display:flex; flex-direction:column; gap:5px;
-  flex: 0 0 200px;
-}
+/* ── Batch cell: search on top, dropdown below ── */
 .as-batch-search-wrap {
   position:relative;
+  margin-bottom:5px;
 }
 .as-batch-search-wrap svg {
   position:absolute; left:9px; top:50%; transform:translateY(-50%);
@@ -164,13 +156,10 @@ function _injectAsStyles() {
 }
 .as-batch-sel:focus { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim); }
 
-/* month chips */
-.as-month-block {
-  display:flex; flex-direction:column; gap:5px;
-  flex:1 1 200px; min-width:0;
-}
+/* ── Month chips cell ── */
 .as-month-chips-row {
   display:flex; flex-wrap:wrap; gap:5px; align-items:center;
+  padding-top:2px;
 }
 .as-chip {
   display:inline-flex; align-items:center; gap:5px;
@@ -187,24 +176,27 @@ function _injectAsStyles() {
 }
 .as-chip.active .chip-dot { background:var(--blue); }
 
-/* actions */
+/* ── Actions cell ── */
 .as-factions {
-  display:flex; gap:8px; align-items:center; flex-shrink:0;
-  margin-left:auto;
+  display:flex; flex-direction:column; gap:6px;
+  justify-content:flex-end; align-items:stretch;
+  flex: 0 0 auto; min-width:110px;
+  padding:10px 14px; border-left:1px solid var(--border);
+  box-sizing:border-box;
 }
 .as-filter-apply {
-  height:34px; padding:0 20px; border-radius:8px; border:none;
+  height:34px; padding:0 12px; border-radius:8px; border:none;
   background:var(--blue); color:#fff;
   font-size:13px; font-weight:700;
   cursor:pointer; transition:opacity .15s; font-family:inherit;
-  white-space:nowrap;
+  white-space:nowrap; width:100%;
 }
 .as-filter-apply:hover { opacity:.88; }
 .as-filter-clear {
-  height:34px; padding:0 14px; border-radius:8px;
+  height:30px; padding:0 12px; border-radius:8px;
   border:1px solid var(--border); background:transparent;
   color:var(--t2); font-size:12.5px; font-weight:600;
-  cursor:pointer; transition:all .15s; font-family:inherit;
+  cursor:pointer; transition:all .15s; font-family:inherit; width:100%;
 }
 .as-filter-clear:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
 
@@ -342,46 +334,41 @@ export function mountAttendanceSheet(container, onBack) {
         </button>
         <div class="as-filter-body open" id="asFilterBody">
 
-          <!-- Row 1: Campus · Discipline · Session · Subject — segmented strip -->
+          <!-- Single unified filter row: Campus · Discipline · Session · Subject · Batch · Month · Actions -->
           <div class="as-frow1">
 
-            <div class="as-fcell" style="flex:1 1 130px">
+            <div class="as-fcell">
               <div class="as-fcell-label">Campus</div>
               <select id="asCampus" class="as-filter-sel">
                 <option value="">All Campuses</option>
               </select>
             </div>
 
-            <div class="as-fcell" style="flex:0 0 110px">
+            <div class="as-fcell">
               <div class="as-fcell-label">Discipline</div>
               <select id="asDisc" class="as-filter-sel">
                 <option value="">All</option>
               </select>
             </div>
 
-            <div class="as-fcell" style="flex:0 0 110px">
+            <div class="as-fcell">
               <div class="as-fcell-label">Session</div>
               <select id="asSession" class="as-filter-sel">
                 <option value="">All</option>
               </select>
             </div>
 
-            <div class="as-fcell" style="flex:0 0 100px">
+            <div class="as-fcell">
               <div class="as-fcell-label">Subject</div>
               <select id="asSubject" class="as-filter-sel" disabled>
                 <option value="">All</option>
               </select>
             </div>
 
-          </div>
-
-          <!-- Row 2: Batch search+select · Month chips · Actions -->
-          <div class="as-frow2">
-
-            <!-- Batch column: search above dropdown -->
-            <div class="as-batch-block">
+            <!-- Batch: search input on top, dropdown below -->
+            <div class="as-fcell" style="flex:1.4 1 0">
               <div class="as-fcell-label">Batch</div>
-              <div class="as-batch-search-wrap" style="margin-bottom:5px">
+              <div class="as-batch-search-wrap">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
@@ -393,7 +380,7 @@ export function mountAttendanceSheet(container, onBack) {
             </div>
 
             <!-- Month chips -->
-            <div class="as-month-block">
+            <div class="as-fcell" style="flex:2 1 0">
               <div class="as-fcell-label">Month</div>
               <div class="as-month-chips-row" id="asMonthChips">
                 <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
@@ -402,8 +389,8 @@ export function mountAttendanceSheet(container, onBack) {
 
             <!-- Actions -->
             <div class="as-factions">
-              <button class="as-filter-clear" id="asClearBtn">Clear</button>
               <button class="as-filter-apply" id="asApplyBtn">Apply Filter</button>
+              <button class="as-filter-clear" id="asClearBtn">Clear</button>
             </div>
 
           </div>
