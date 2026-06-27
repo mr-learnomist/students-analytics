@@ -159,6 +159,12 @@ export function generateSampleCSV() {
     '#   dob: YYYY-MM-DD (optional)',
     '#   session: leave empty = auto-detected from dateOfAdmission',
     '#   batchName: must match exact name in system (case-insensitive)',
+    '#   campusName: STRONGLY RECOMMENDED when batchName is provided.',
+    '#     - Same batch name may exist in multiple campuses.',
+    '#     - If campusName given → enrollment goes to that campus batch.',
+    '#     - If campusName empty + student exists → uses student saved campus.',
+    '#     - If ambiguous (same name, multiple campuses, no campus given) → ERROR.',
+    '#     - For existing student: campusName change updates student record + admission.',
     '',
   ].join('\n');
 
@@ -336,10 +342,51 @@ function _validateRow(row, batches, students) {
   }
 
   // Batch lookup — HARD error if batch specified but not found
+  // Campus-aware: if campusName provided, match batch to that campus first.
+  // If campusName empty and student already exists, use their saved campusId.
   let batch = null;
   if (hasBatchName) {
-    batch = batches.find(b => b.batchName?.toLowerCase() === row.batchName.trim().toLowerCase());
+    const rawCampusName = row.campusName?.trim() || '';
+    // Try to resolve campusId from CSV campusName column
+    const csvCampus = rawCampusName
+      ? (AppState.get('campuses') || []).find(
+          c => c.campusName?.toLowerCase() === rawCampusName.toLowerCase()
+        )
+      : null;
+
+    // Determine the target campusId:
+    //   1. Campus explicitly in CSV row
+    //   2. Existing student's campusId (when no campus in CSV)
+    //   3. No campus filter (fall back to name-only — ambiguous)
+    const targetCampusId = csvCampus?.id
+      || existingForValidation?.campusId
+      || null;
+
+    if (targetCampusId) {
+      // Prefer campus-filtered match
+      batch = batches.find(
+        b => b.batchName?.toLowerCase() === row.batchName.trim().toLowerCase()
+          && b.campusId === targetCampusId
+      );
+    }
+
+    // Fallback: name-only (no campus info available)
     if (!batch) {
+      const nameMatches = batches.filter(
+        b => b.batchName?.toLowerCase() === row.batchName.trim().toLowerCase()
+      );
+      if (nameMatches.length === 1) {
+        batch = nameMatches[0];
+      } else if (nameMatches.length > 1) {
+        // Ambiguous — multiple batches with same name, campus required
+        errors.push(
+          'Batch "' + row.batchName.trim() + '" exists in multiple campuses. ' +
+          'Please specify campusName column to avoid wrong campus enrollment.'
+        );
+      }
+    }
+
+    if (!batch && !errors.some(e => e.includes('multiple campuses'))) {
       errors.push('Batch "' + row.batchName.trim() + '" does not exist in system — check exact name');
     }
   }
@@ -541,6 +588,25 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
     const paid = (row.challanPaid || '').toLowerCase() !== 'no'; // default: paid (bulk import = fee already collected)
     const enrolDate = row.dateOfAdmission?.trim() || existingStudent.dateOfAdmission || existingStudent.admissionDate || new Date().toISOString().split('T')[0];
 
+    // ── Campus change: if CSV has campusName and it differs from student's saved campus,
+    //    update the student record and their admission record accordingly.
+    const csvCampusForUpdate = row.campusName?.trim()
+      ? campuses.find(c => c.campusName?.toLowerCase() === row.campusName.trim().toLowerCase())
+      : null;
+    const campusChanged = csvCampusForUpdate && csvCampusForUpdate.id !== existingStudent.campusId;
+    if (campusChanged && !dryRun) {
+      AppState.update('students', existingStudent.id, {
+        campusId:       csvCampusForUpdate.id,
+        campusSnapshot: { id: csvCampusForUpdate.id, name: csvCampusForUpdate.campusName },
+      });
+      existingStudent.campusId = csvCampusForUpdate.id;
+      // Update any existing admission for this student to reflect new campus
+      const existingAdm = admissions.find(a => a.studentId === existingStudent.id);
+      if (existingAdm) {
+        AppState.update('admissions', existingAdm.id, { campusId: csvCampusForUpdate.id });
+      }
+    }
+
     // Build subject entry if subjectCode provided
     const subCode = row.subjectCode?.trim() || '';
     let initialSubjects = [];
@@ -581,6 +647,7 @@ function _processRow({ row, lineNo }, state, summary, dryRun, importedBy) {
       studentName: existingStudent.studentName,
       cnic: formattedCNIC,
       message: 'Existing student — enrolment added for "' + batch.batchName + '"' +
+        (campusChanged ? ' · campus updated to "' + csvCampusForUpdate.campusName + '"' : '') +
         (subCode ? ' · subject: ' + subCode : '') +
         (warnings.length ? ' | Warnings: ' + warnings.join(', ') : ''),
     });
