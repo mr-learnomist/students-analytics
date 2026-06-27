@@ -796,7 +796,11 @@ export function mountAttendanceSheet(container, onBack) {
       }
     }
 
-    const opts = [{ value: '', label: '— Select Batch —' }, ...batches.map(b => ({ value: b.id, label: b.batchName || '' }))];
+    const _natSort = (a, b) => {
+      const num = s => { const m = (s||'').match(/(\d+)(?!.*\d)/); return m ? parseInt(m[1]) : 0; };
+      return num(a.label) - num(b.label) || (a.label||'').localeCompare(b.label||'');
+    };
+    const opts = [{ value: '', label: '— Select Batch —' }, ...batches.map(b => ({ value: b.id, label: b.batchName || '' })).sort(_natSort)];
     const prevBatchId = _batchId;
     _batchDd.setOpts(opts);
     if (!opts.find(o => o.value === prevBatchId)) { _batchId = ''; _batchDd.setValue(''); container.querySelector('#asBatch').value = ''; }
@@ -1132,7 +1136,7 @@ function _renderSheet(output, batchId, selMonths) {
         ${disc?.abbreviation||''}${campus ? ' · ' + campus.campusName : ''}
         · ${students.length} student${students.length!==1?'s':''}
         · ${dates.length} class day${dates.length!==1?'s':''}
-        · ${monthLabel}
+        · ${monthLabel}${teacherName ? ' · ' + teacherName : ''}
       </span>
       <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
         <button class="as-export-btn" id="asExportCSV">
