@@ -931,6 +931,19 @@ function _renderSheet(output, batchId, selMonths) {
   const disc    = AppState.findById('disciplines', batch?.disciplineId);
   const campus  = AppState.findById('campuses',    batch?.campusId);
 
+  // ── Teacher lookup ────────────────────────────────────────
+  let teacher = null;
+  if (batch?.teacherId) {
+    teacher = AppState.findById("teachers", batch.teacherId);
+  }
+  if (!teacher) {
+    const bt = (_get("batchTeachers") || []).find(bt => bt.batchId === batchId);
+    if (bt?.teacherId) teacher = AppState.findById("teachers", bt.teacherId);
+  }
+  const teacherName = teacher
+    ? (teacher.teacherName || teacher.name || teacher.fullName || "")
+    : "";
+
   // ── Students (active enrolments) ──────────────────────────
   const enrolments = _get('enrolments').filter(e => e.batchId === batchId && e.status === 'active');
   const students   = enrolments
@@ -996,7 +1009,7 @@ function _renderSheet(output, batchId, selMonths) {
     const mk   = d.slice(0,7);
     const isLast = byMonth[mk][byMonth[mk].length-1] === d;
     const borderR = isLast ? '2px solid var(--border)' : '1px solid var(--border2)';
-    return `<th style="padding:4px 2px;text-align:center;min-width:34px;
+    return `<th style="padding:4px 2px;text-align:center;width:28px;
                        border-right:${borderR};border-bottom:1px solid var(--border);
                        background:var(--surface2)">
       <div style="font-size:9px;font-weight:600;color:${dayN===5?'var(--blue)':dayN===6?'var(--yellow)':'var(--t4)'}">
@@ -1046,7 +1059,7 @@ function _renderSheet(output, batchId, selMonths) {
                     : 'var(--t4)';
       return `<td style="text-align:center;padding:5px 2px;
                          border-bottom:1px solid var(--border);border-right:${borderR};
-                         font-size:11.5px;font-weight:700;color:${color};min-width:34px">
+                         font-size:11.5px;font-weight:700;color:${color};width:28px">
         ${status || ''}
       </td>`;
     }).join('');
@@ -1063,25 +1076,25 @@ function _renderSheet(output, batchId, selMonths) {
                  position:sticky;left:0;background:inherit;z-index:1">${idx + 1}</td>
       <td style="padding:6px 12px;border-bottom:1px solid var(--border);
                  border-right:${!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);font-weight:700;
-                 color:var(--t1);white-space:nowrap;
-                 position:sticky;left:36px;background:inherit;z-index:1;min-width:160px">
+                 color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                 position:sticky;left:36px;background:inherit;z-index:1;max-width:130px">
         ${stu.studentName || '—'}
       </td>
       ${showCnic ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
       ${showFatherName ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:left;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.fatherName||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stu.fatherName||'—'}</td>` : ''}
       ${showStudentPhone ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.studentPhone||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stu.studentPhone||'—'}</td>` : ''}
       ${showGuardianPhone ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.guardianPhone||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stu.guardianPhone||'—'}</td>` : ''}
       ${showEmail ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:2px solid var(--border);text-align:left;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.email||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${stu.email||'—'}</td>` : ''}
       ${cells}
       ${showP ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
@@ -1118,6 +1131,14 @@ function _renderSheet(output, batchId, selMonths) {
         · ${dates.length} class day${dates.length!==1?'s':''}
         · ${monthLabel}
       </span>
+      ${teacherName ? `<span style="color:var(--border2);font-size:16px;font-weight:300;margin:0 2px;flex-shrink:0">|</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--t2);white-space:nowrap;flex-shrink:0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--t3)">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span style="font-weight:600;color:var(--t1)">${teacherName}</span>
+      </span>` : ''}
       <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0">
         <button class="as-export-btn" id="asExportCSV">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1165,7 +1186,7 @@ function _renderSheet(output, batchId, selMonths) {
          </div>`
       : `<div style="overflow-x:auto;overflow-y:visible;border:1px solid var(--border);
                      border-top:none;border-radius:0 0 12px 12px">
-           <table id="asTable" style="border-collapse:collapse;font-size:12.5px;min-width:100%">
+           <table id="asTable" style="border-collapse:collapse;font-size:12.5px;width:100%;table-layout:fixed">
              <thead>
                <tr>
                  <th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
@@ -1173,23 +1194,23 @@ function _renderSheet(output, batchId, selMonths) {
                      border-right:1px solid var(--border2);border-bottom:1px solid var(--border);
                      position:sticky;left:0;z-index:4">#</th>
                  <th rowspan="2" style="padding:8px 12px;text-align:left;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);width:130px;
                      border-right:${!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);border-bottom:1px solid var(--border);
                      position:sticky;left:36px;z-index:4">Student Name</th>
                  ${showCnic ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:130px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);width:100px;
                      border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">CNIC</th>` : ''}
                  ${showFatherName ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:140px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);width:110px;
                      border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Father Name</th>` : ''}
                  ${showStudentPhone ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:120px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Student Phone</th>` : ''}
+                     font-weight:700;color:var(--t3);background:var(--surface2);width:90px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Stu. Phone</th>` : ''}
                  ${showGuardianPhone ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:120px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Guardian Phone</th>` : ''}
+                     font-weight:700;color:var(--t3);background:var(--surface2);width:90px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Grd. Phone</th>` : ''}
                  ${showEmail ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);width:130px;
                      border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Email</th>` : ''}
                  ${monthHeaders}
                  ${totalCols > 0 ? `<th colspan="${totalCols}" style="padding:6px 8px;text-align:center;font-size:10px;
@@ -1218,7 +1239,7 @@ function _renderSheet(output, batchId, selMonths) {
   );
 
   // ── Wire export buttons ────────────────────────────────────
-  const _exportCtx = { batch, disc, campus, students, dates, byMonth, monthLabel, selMonths };
+  const _exportCtx = { batch, disc, campus, students, dates, byMonth, monthLabel, selMonths, teacherName };
 
   output.querySelector('#asExportCSV')?.addEventListener('click', () =>
     _exportCSV(_exportCtx));
@@ -1323,7 +1344,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
 }
 
 // ── PDF / Print Export ────────────────────────────────────────
-function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel, selMonths }, output) {
+function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel, selMonths, teacherName }, output) {
   if (!students.length || !dates.length) { alert('No data to export.'); return; }
 
   const now     = new Date();
@@ -1344,6 +1365,17 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const pdfShowA             = !colPrefsPDF.hidden.includes('absent');
   const pdfShowL             = !colPrefsPDF.hidden.includes('leave');
   const pdfShowPct           = !colPrefsPDF.hidden.includes('percent');
+
+  // ── Teacher name fallback (if not passed from screen context)
+  let pdfTeacherName = teacherName || '';
+  if (!pdfTeacherName) {
+    let pdfTeacher = batch?.teacherId ? AppState.findById('teachers', batch.teacherId) : null;
+    if (!pdfTeacher) {
+      const bt2 = ((AppState.get('batchTeachers') || [])).find(bt => bt.batchId === batch?.id);
+      if (bt2?.teacherId) pdfTeacher = AppState.findById('teachers', bt2.teacherId);
+    }
+    pdfTeacherName = pdfTeacher ? (pdfTeacher.teacherName || pdfTeacher.name || pdfTeacher.fullName || '') : '';
+  }
 
   // ── Attendance record map
   const batchRecs = (AppState.get('attendance') || []).filter(r => r.batchId === batch?.id);
@@ -1545,7 +1577,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     <div class="page-header">
       <div>
         <div class="ph-title">Attendance Sheet — ${batch?.batchName||''}</div>
-        <div class="ph-sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} &nbsp;·&nbsp; ${students.length} student${students.length!==1?'s':''} &nbsp;·&nbsp; ${monthLabel}</div>
+        <div class="ph-sub">${disc?.abbreviation||''}${campus?' · '+campus.campusName:''} &nbsp;·&nbsp; ${students.length} student${students.length!==1?'s':''} &nbsp;·&nbsp; ${monthLabel}${pdfTeacherName ? ' &nbsp;·&nbsp; <strong>' + pdfTeacherName + '</strong>' : ''}</div>
       </div>
       <div class="ph-right"><strong>${dateStr}</strong><div>${timeStr}</div></div>
     </div>
