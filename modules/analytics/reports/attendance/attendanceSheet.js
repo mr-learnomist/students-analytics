@@ -781,10 +781,17 @@ export function mountAttendanceSheet(container, onBack) {
     if (_session)   batches = batches.filter(b => b.sessionPeriod === _session);
 
     if (_subjectId) {
-      const subj = (_get('subjects') || []).find(s => s.id === _subjectId);
-      if (subj?.subjectCode) {
-        const code = subj.subjectCode.toLowerCase();
-        batches = batches.filter(b => (b.batchName || '').toLowerCase().includes(code));
+      // Primary: direct subjectId field on batch
+      const hasDirectField = batches.some(b => b.subjectId !== undefined);
+      if (hasDirectField) {
+        batches = batches.filter(b => b.subjectId === _subjectId);
+      } else {
+        // Fallback: match subjectCode in batchName
+        const subj = (_get('subjects') || []).find(s => s.id === _subjectId);
+        if (subj?.subjectCode) {
+          const code = subj.subjectCode.toLowerCase();
+          batches = batches.filter(b => (b.batchName || '').toLowerCase().includes(code));
+        }
       }
     }
 
@@ -931,9 +938,14 @@ function _renderSheet(output, batchId, selMonths) {
   const disc    = AppState.findById('disciplines', batch?.disciplineId);
   const campus  = AppState.findById('campuses',    batch?.campusId);
   const teacher = batch?.teacherId ? AppState.findById('teachers', batch.teacherId) : null;
-  const teacherName = teacher
-    ? [teacher.firstName, teacher.lastName].filter(Boolean).join(' ') || teacher.teacherName || teacher.name || ''
-    : (batch?.teacherName || '');
+  const teacherName = (() => {
+    if (teacher) {
+      return [teacher.firstName, teacher.lastName].filter(Boolean).join(' ').trim()
+          || teacher.teacherName || teacher.fullName || teacher.name || '';
+    }
+    return batch?.teacherName || batch?.teacher || '';
+  })();
+  console.log('[Attendance] batch teacher fields:', { teacherId: batch?.teacherId, teacherName: batch?.teacherName, teacher, resolved: teacherName });
 
   // ── Students (active enrolments) ──────────────────────────
   const enrolments = _get('enrolments').filter(e => e.batchId === batchId && e.status === 'active');
@@ -1336,9 +1348,13 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
 
   const _pdfTeacher = batch?.teacherId ? AppState.findById('teachers', batch.teacherId) : null;
-  const teacherName = _pdfTeacher
-    ? [_pdfTeacher.firstName, _pdfTeacher.lastName].filter(Boolean).join(' ') || _pdfTeacher.teacherName || _pdfTeacher.name || ''
-    : (batch?.teacherName || '');
+  const teacherName = (() => {
+    if (_pdfTeacher) {
+      return [_pdfTeacher.firstName, _pdfTeacher.lastName].filter(Boolean).join(' ').trim()
+          || _pdfTeacher.teacherName || _pdfTeacher.fullName || _pdfTeacher.name || '';
+    }
+    return batch?.teacherName || batch?.teacher || '';
+  })();
 
   // ── Which student-info columns are currently visible
   const AS_COL_KEY = 'as_col_prefs';
