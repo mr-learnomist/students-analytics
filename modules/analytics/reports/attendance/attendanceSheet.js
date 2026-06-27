@@ -277,6 +277,87 @@ function _injectAsStyles() {
   font-size:10.5px; color:var(--t3); text-align:center;
   flex-shrink:0; background:var(--surface2);
 }
+
+/* ── Custom searchable dropdown (Subject / Batch / Month) ── */
+.as-cdd {
+  position:relative; width:100%;
+}
+.as-cdd-trigger {
+  display:flex; align-items:center; justify-content:space-between;
+  height:32px; padding:0 10px;
+  background:var(--surface); border:1px solid var(--border2);
+  border-radius:7px; color:var(--t1); font-size:13px;
+  cursor:pointer; width:100%; box-sizing:border-box;
+  font-family:inherit; transition:border-color .15s, box-shadow .15s;
+  gap:6px; text-align:left; outline:none; user-select:none;
+}
+.as-cdd-trigger:hover   { border-color:var(--blue); }
+.as-cdd-trigger.open    { border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim); }
+.as-cdd-trigger.disabled{ opacity:.4; cursor:not-allowed; pointer-events:none; }
+.as-cdd-val { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; }
+.as-cdd-val.placeholder { color:var(--t4); }
+.as-cdd-arrow { flex-shrink:0; color:var(--t3); transition:transform .18s; }
+.as-cdd-trigger.open .as-cdd-arrow { transform:rotate(180deg); }
+
+.as-cdd-panel {
+  position:fixed; z-index:9998;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; box-shadow:0 8px 32px rgba(0,0,0,.18);
+  display:none; flex-direction:column; overflow:hidden;
+  min-width:180px; max-height:280px;
+}
+.as-cdd-panel.open { display:flex; }
+
+.as-cdd-search-wrap {
+  padding:8px 10px 6px; border-bottom:1px solid var(--border); flex-shrink:0;
+  position:relative;
+}
+.as-cdd-search-wrap svg {
+  position:absolute; left:18px; top:50%; transform:translateY(-50%);
+  color:var(--t4); pointer-events:none;
+}
+.as-cdd-search {
+  width:100%; height:28px; padding:0 8px 0 28px;
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:6px; color:var(--t1); font-size:12px;
+  outline:none; font-family:inherit; box-sizing:border-box;
+}
+.as-cdd-search:focus { border-color:var(--blue); }
+
+.as-cdd-list { overflow-y:auto; flex:1; padding:4px 0; }
+.as-cdd-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:pointer; font-size:12.5px;
+  color:var(--t1); transition:background .1s; white-space:nowrap;
+  user-select:none;
+}
+.as-cdd-item:hover    { background:var(--surface2); }
+.as-cdd-item.selected { color:var(--blue); font-weight:700; }
+.as-cdd-item.hidden   { display:none; }
+.as-cdd-item-check {
+  width:14px; height:14px; border-radius:3px; border:1.5px solid var(--border2);
+  flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  transition:all .1s;
+}
+.as-cdd-item.selected .as-cdd-item-check {
+  background:var(--blue); border-color:var(--blue);
+}
+.as-cdd-item-check svg { display:none; }
+.as-cdd-item.selected .as-cdd-item-check svg { display:block; }
+.as-cdd-empty {
+  padding:16px 12px; text-align:center;
+  font-size:12px; color:var(--t4); font-style:italic;
+}
+.as-cdd-footer {
+  padding:6px 10px; border-top:1px solid var(--border);
+  display:flex; gap:6px; align-items:center; flex-shrink:0;
+  background:var(--surface2);
+}
+.as-cdd-footer-btn {
+  font-size:11px; font-weight:600; color:var(--blue);
+  background:none; border:none; padding:0; cursor:pointer; font-family:inherit;
+}
+.as-cdd-footer-btn:hover { opacity:.75; }
 `;
   document.head.appendChild(st);
 }
@@ -360,30 +441,58 @@ export function mountAttendanceSheet(container, onBack) {
 
             <div class="as-fcell">
               <div class="as-fcell-label">Subject</div>
-              <select id="asSubject" class="as-filter-sel" disabled>
-                <option value="">All</option>
-              </select>
+              <div class="as-cdd" id="asSubjectDd">
+                <button type="button" class="as-cdd-trigger disabled" id="asSubjectTrigger">
+                  <span class="as-cdd-val placeholder" id="asSubjectVal">— Select Discipline —</span>
+                  <svg class="as-cdd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="as-cdd-panel" id="asSubjectPanel">
+                  <div class="as-cdd-search-wrap">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input class="as-cdd-search" id="asSubjectSearch" type="text" placeholder="Search subjects…" autocomplete="off"/>
+                  </div>
+                  <div class="as-cdd-list" id="asSubjectList"></div>
+                </div>
+              </div>
+              <select id="asSubject" style="display:none"></select>
             </div>
 
-            <!-- Batch: search input on top, dropdown below -->
+            <!-- Batch: custom searchable dropdown -->
             <div class="as-fcell" style="flex:1.4 1 0">
               <div class="as-fcell-label">Batch</div>
-              <div class="as-batch-search-wrap">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input id="asBatchSearch" class="as-batch-search-inp" type="text" placeholder="Search batches…"/>
+              <div class="as-cdd" id="asBatchDd">
+                <button type="button" class="as-cdd-trigger" id="asBatchTrigger">
+                  <span class="as-cdd-val placeholder" id="asBatchVal">— Select Batch —</span>
+                  <svg class="as-cdd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="as-cdd-panel" id="asBatchPanel">
+                  <div class="as-cdd-search-wrap">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input class="as-cdd-search" id="asBatchSearch" type="text" placeholder="Search batches…" autocomplete="off"/>
+                  </div>
+                  <div class="as-cdd-list" id="asBatchList"></div>
+                </div>
               </div>
-              <select id="asBatch" class="as-batch-sel">
-                <option value="">— Select Batch —</option>
-              </select>
+              <select id="asBatch" style="display:none"><option value="">— Select Batch —</option></select>
             </div>
 
-            <!-- Month chips -->
-            <div class="as-fcell" style="flex:2 1 0">
+            <!-- Month: custom multi-select dropdown -->
+            <div class="as-fcell" style="flex:1.3 1 0">
               <div class="as-fcell-label">Month</div>
-              <div class="as-month-chips-row" id="asMonthChips">
-                <span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>
+              <div class="as-cdd" id="asMonthDd">
+                <button type="button" class="as-cdd-trigger" id="asMonthTrigger">
+                  <span class="as-cdd-val placeholder" id="asMonthVal">Select a batch first…</span>
+                  <svg class="as-cdd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="as-cdd-panel" id="asMonthPanel">
+                  <div class="as-cdd-list" id="asMonthList">
+                    <div class="as-cdd-empty">Select a batch first…</div>
+                  </div>
+                  <div class="as-cdd-footer">
+                    <button type="button" class="as-cdd-footer-btn" id="asMonthAll">All</button>
+                    <button type="button" class="as-cdd-footer-btn" id="asMonthNone">None</button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -417,6 +526,152 @@ export function mountAttendanceSheet(container, onBack) {
     container.querySelector('#asFilterArrow').classList.toggle('open', _filterOpen);
   });
 
+  // ═══════════════════════════════════════════════════
+  // Custom Dropdown Helper (_makeCdd)
+  // mode: 'single' | 'multi'
+  // opts: [{ value, label }]
+  // onChange(value|Set) called on selection change
+  // Returns { setValue(v), setOpts(arr), disable(bool), close() }
+  // ═══════════════════════════════════════════════════
+  function _makeCdd({ triggerId, panelId, searchId, listId, valId, mode = 'single', placeholder = 'Select…', onClose } = {}) {
+    const trigger = container.querySelector('#' + triggerId);
+    const panel   = container.querySelector('#' + panelId);
+    const searchEl= searchId ? container.querySelector('#' + searchId) : null;
+    const listEl  = container.querySelector('#' + listId);
+    const valEl   = container.querySelector('#' + valId);
+
+    let _opts     = []; // [{ value, label }]
+    let _selected = mode === 'multi' ? new Set() : ''; // single: string, multi: Set
+    let _open     = false;
+
+    const CHECKSVG = `<svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><polyline points="2 6 5 9 10 3"/></svg>`;
+
+    function _updateTriggerLabel() {
+      if (mode === 'single') {
+        const opt = _opts.find(o => o.value === _selected);
+        if (opt) {
+          valEl.textContent = opt.label;
+          valEl.classList.remove('placeholder');
+        } else {
+          valEl.textContent = placeholder;
+          valEl.classList.add('placeholder');
+        }
+      } else {
+        const count = _selected.size;
+        if (count === 0) {
+          valEl.textContent = placeholder;
+          valEl.classList.add('placeholder');
+        } else if (count === _opts.length && count > 0) {
+          valEl.textContent = 'All months';
+          valEl.classList.remove('placeholder');
+        } else {
+          valEl.textContent = count + ' month' + (count > 1 ? 's' : '') + ' selected';
+          valEl.classList.remove('placeholder');
+        }
+      }
+    }
+
+    function _renderList(filterText = '') {
+      const q = filterText.trim().toLowerCase();
+      listEl.innerHTML = '';
+      const visible = _opts.filter(o => !q || o.label.toLowerCase().includes(q));
+      if (!visible.length) {
+        listEl.innerHTML = '<div class="as-cdd-empty">No results</div>';
+        return;
+      }
+      visible.forEach(o => {
+        const item = document.createElement('div');
+        item.className = 'as-cdd-item' + (_isSelected(o.value) ? ' selected' : '');
+        item.dataset.value = o.value;
+        if (mode === 'multi') {
+          item.innerHTML = `<span class="as-cdd-item-check">${CHECKSVG}</span>${o.label}`;
+        } else {
+          item.textContent = o.label;
+        }
+        item.addEventListener('mousedown', e => { e.preventDefault(); _pick(o.value); });
+        listEl.appendChild(item);
+      });
+    }
+
+    function _isSelected(v) {
+      return mode === 'multi' ? _selected.has(v) : _selected === v;
+    }
+
+    function _pick(v) {
+      if (mode === 'single') {
+        _selected = _selected === v ? '' : v;
+        _close();
+      } else {
+        if (_selected.has(v)) _selected.delete(v); else _selected.add(v);
+        _renderList(searchEl?.value || '');
+      }
+      _updateTriggerLabel();
+      if (onClose) onClose(_selected);
+    }
+
+    function _position() {
+      const r = trigger.getBoundingClientRect();
+      const w = Math.max(r.width, 200);
+      panel.style.width = w + 'px';
+      // try below first
+      let top  = r.bottom + 4;
+      let left = r.left;
+      if (top + 280 > window.innerHeight) top = r.top - 4 - Math.min(280, panel.offsetHeight || 220);
+      if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+      panel.style.top  = top  + 'px';
+      panel.style.left = left + 'px';
+    }
+
+    function _open_panel() {
+      if (trigger.classList.contains('disabled')) return;
+      _open = true;
+      _renderList('');
+      if (searchEl) { searchEl.value = ''; }
+      panel.classList.add('open');
+      trigger.classList.add('open');
+      requestAnimationFrame(() => { _position(); if (searchEl) searchEl.focus(); });
+    }
+
+    function _close() {
+      _open = false;
+      panel.classList.remove('open');
+      trigger.classList.remove('open');
+    }
+
+    trigger.addEventListener('click', e => { e.stopPropagation(); _open ? _close() : _open_panel(); });
+    if (searchEl) {
+      searchEl.addEventListener('input', () => _renderList(searchEl.value));
+      searchEl.addEventListener('keydown', e => { if (e.key === 'Escape') _close(); });
+    }
+    window.addEventListener('scroll', () => { if (_open) _position(); }, true);
+    window.addEventListener('resize', () => { if (_open) _position(); });
+    document.addEventListener('mousedown', e => {
+      if (_open && !panel.contains(e.target) && e.target !== trigger) _close();
+    });
+
+    return {
+      getValue()   { return _selected; },
+      setValue(v)  {
+        _selected = mode === 'multi' ? new Set(v) : (v || '');
+        _updateTriggerLabel();
+        if (_open) _renderList(searchEl?.value || '');
+      },
+      setOpts(arr) {
+        _opts = arr;
+        _selected = mode === 'multi' ? new Set([..._selected].filter(v => arr.some(o => o.value === v))) : (arr.some(o => o.value === _selected) ? _selected : '');
+        _updateTriggerLabel();
+        if (_open) _renderList(searchEl?.value || '');
+      },
+      disable(yes) {
+        if (yes) { trigger.classList.add('disabled'); _close(); }
+        else      trigger.classList.remove('disabled');
+      },
+      close() { _close(); },
+      selectAll() { _selected = new Set(_opts.map(o => o.value)); _updateTriggerLabel(); if (_open) _renderList(); },
+      selectNone(){ _selected = new Set(); _updateTriggerLabel(); if (_open) _renderList(); },
+    };
+  }
+
   // ── Populate campus ────────────────────────────────────────
   const campSel = container.querySelector('#asCampus');
   _get('campuses').forEach(c => {
@@ -424,6 +679,37 @@ export function mountAttendanceSheet(container, onBack) {
     o.value = c.id; o.textContent = c.campusName;
     campSel.appendChild(o);
   });
+
+  // ── Build custom dropdowns ─────────────────────────────────
+  const _subjDd = _makeCdd({
+    triggerId: 'asSubjectTrigger', panelId: 'asSubjectPanel',
+    searchId: 'asSubjectSearch', listId: 'asSubjectList', valId: 'asSubjectVal',
+    mode: 'single', placeholder: '— Select Discipline —',
+    onClose: (v) => { _subjectId = v; container.querySelector('#asSubject').value = v; _refreshBatch(); }
+  });
+
+  const _batchDd = _makeCdd({
+    triggerId: 'asBatchTrigger', panelId: 'asBatchPanel',
+    searchId: 'asBatchSearch', listId: 'asBatchList', valId: 'asBatchVal',
+    mode: 'single', placeholder: '— Select Batch —',
+    onClose: (v) => {
+      _batchId = v;
+      const sel = container.querySelector('#asBatch');
+      sel.value = v;
+      _refreshMonths();
+    }
+  });
+
+  const _monthDd = _makeCdd({
+    triggerId: 'asMonthTrigger', panelId: 'asMonthPanel',
+    searchId: null, listId: 'asMonthList', valId: 'asMonthVal',
+    mode: 'multi', placeholder: 'Select a batch first…',
+    onClose: (set) => { _selMonths = set; }
+  });
+
+  // Month All / None buttons
+  container.querySelector('#asMonthAll')?.addEventListener('click', () => { _monthDd.selectAll(); _selMonths = _monthDd.getValue(); });
+  container.querySelector('#asMonthNone')?.addEventListener('click', () => { _monthDd.selectNone(); _selMonths = _monthDd.getValue(); });
 
   // ── Cascade helpers ────────────────────────────────────────
   function _refreshDisc() {
@@ -443,34 +729,24 @@ export function mountAttendanceSheet(container, onBack) {
 
   function _refreshSubject() {
     _discId = container.querySelector('#asDisc').value;
-    const subjSel = container.querySelector('#asSubject');
-    const prev    = subjSel.value;
-    subjSel.innerHTML = '';
 
     if (!_discId) {
-      subjSel.disabled = true;
-      subjSel.innerHTML = '<option value="">— Select Discipline —</option>';
+      _subjDd.setOpts([{ value: '', label: 'All' }]);
+      _subjDd.setValue('');
+      _subjDd.disable(true);
       _subjectId = '';
     } else {
-      subjSel.disabled = false;
-      // Get levels for this discipline
+      _subjDd.disable(false);
       const levels   = (_get('levels') || []).filter(l => l.disciplineId === _discId);
       const levelIds = levels.map(l => l.id);
-      // Get subjects for those levels (non-archived)
       const subjects = (_get('subjects') || [])
         .filter(s => levelIds.includes(s.levelId) && !s.isArchived)
         .sort((a, b) => (a.subjectCode || '').localeCompare(b.subjectCode || ''));
-      subjSel.innerHTML = '<option value="">All</option>';
-      subjects.forEach(s => {
-        const o = document.createElement('option');
-        o.value = s.id;
-        o.textContent = s.subjectCode || s.subjectName || '';
-        if (s.id === prev) o.selected = true;
-        subjSel.appendChild(o);
-      });
-      subjSel.value = prev;
-      _subjectId = subjSel.value;
+      const opts = [{ value: '', label: 'All Subjects' }, ...subjects.map(s => ({ value: s.id, label: s.subjectCode || s.subjectName || '' }))];
+      _subjDd.setOpts(opts);
+      if (!opts.find(o => o.value === _subjectId)) { _subjectId = ''; _subjDd.setValue(''); }
     }
+    container.querySelector('#asSubject').value = _subjectId;
     _refreshSession();
   }
 
@@ -493,60 +769,41 @@ export function mountAttendanceSheet(container, onBack) {
   }
 
   function _refreshBatch() {
-    _session      = container.querySelector('#asSession').value;
-    _subjectId    = container.querySelector('#asSubject').value;
-    _batchSearch  = (container.querySelector('#asBatchSearch')?.value || '').trim().toLowerCase();
-    const batchSel = container.querySelector('#asBatch');
-    const prev     = batchSel.value;
+    _session   = container.querySelector('#asSession').value;
+    _subjectId = container.querySelector('#asSubject').value;
 
     let batches = _get('batches');
-    if (_campusId) batches = batches.filter(b => b.campusId      === _campusId);
-    if (_discId)   batches = batches.filter(b => b.disciplineId  === _discId);
-    if (_session)  batches = batches.filter(b => b.sessionPeriod === _session);
+    if (_campusId)  batches = batches.filter(b => b.campusId      === _campusId);
+    if (_discId)    batches = batches.filter(b => b.disciplineId  === _discId);
+    if (_session)   batches = batches.filter(b => b.sessionPeriod === _session);
 
-    // Subject filter: narrow by subject's level → discipline (subjects are already
-    // scoped to the selected discipline's levels, so filter by subjectCode in batchName
-    // or use the subject's code as a hint in batch search)
     if (_subjectId) {
       const subj = (_get('subjects') || []).find(s => s.id === _subjectId);
       if (subj?.subjectCode) {
         const code = subj.subjectCode.toLowerCase();
-        batches = batches.filter(b =>
-          (b.batchName || '').toLowerCase().includes(code)
-        );
+        batches = batches.filter(b => (b.batchName || '').toLowerCase().includes(code));
       }
     }
 
-    // Batch name text search
-    if (_batchSearch) {
-      batches = batches.filter(b =>
-        (b.batchName || '').toLowerCase().includes(_batchSearch)
-      );
-    }
-
-    batchSel.innerHTML = '<option value="">— Select Batch —</option>';
-    batches.forEach(b => {
-      const o = document.createElement('option');
-      o.value = b.id; o.textContent = b.batchName;
-      if (b.id === prev) o.selected = true;
-      batchSel.appendChild(o);
-    });
-    _batchId = batchSel.value;
+    const opts = [{ value: '', label: '— Select Batch —' }, ...batches.map(b => ({ value: b.id, label: b.batchName || '' }))];
+    const prevBatchId = _batchId;
+    _batchDd.setOpts(opts);
+    if (!opts.find(o => o.value === prevBatchId)) { _batchId = ''; _batchDd.setValue(''); container.querySelector('#asBatch').value = ''; }
     _refreshMonths();
   }
 
   function _refreshMonths() {
-    _batchId = container.querySelector('#asBatch').value;
-    const chipsEl = container.querySelector('#asMonthChips');
+    _batchId = container.querySelector('#asBatch').value || _batchDd.getValue();
     _selMonths.clear();
 
     if (!_batchId) {
-      chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4);font-style:italic">Select a batch first…</span>';
+      _monthDd.setOpts([]);
+      _monthDd.disable(true);
       return;
     }
-    const batch = AppState.findById('batches', _batchId);
+    _monthDd.disable(false);
 
-    // Try to get months from LP assignment dates first
+    const batch = AppState.findById('batches', _batchId);
     let months = [];
     try {
       const assignment = getAssignmentForBatch(_batchId);
@@ -557,33 +814,24 @@ export function mountAttendanceSheet(container, onBack) {
       }
     } catch(e) { /* no LP */ }
 
-    // Fallback: derive from batch startDate / endDate
     if (!months.length) {
-      if (!batch?.startDate || !batch?.endDate) {
-        chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">Batch has no start/end date and no Lecture Plan assigned.</span>';
-        return;
+      if (batch?.startDate && batch?.endDate) {
+        months = _monthsBetween(batch.startDate, batch.endDate);
       }
-      months = _monthsBetween(batch.startDate, batch.endDate);
     }
 
     if (!months.length) {
-      chipsEl.innerHTML = '<span style="font-size:12px;color:var(--t4)">No months found for this batch.</span>';
+      _monthDd.setOpts([]);
       return;
     }
-    months.forEach(mk => _selMonths.add(mk));
-    chipsEl.innerHTML = months.map(mk => {
+
+    const opts = months.map(mk => {
       const [y, m] = mk.split('-');
-      return `<span class="as-chip active" data-month="${mk}">
-        <span class="chip-dot"></span>${MON_SHORT[parseInt(m)-1]} ${y}
-      </span>`;
-    }).join('');
-    chipsEl.querySelectorAll('.as-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const mk = chip.dataset.month;
-        if (_selMonths.has(mk)) { _selMonths.delete(mk); chip.classList.remove('active'); }
-        else                    { _selMonths.add(mk);    chip.classList.add('active');    }
-      });
+      return { value: mk, label: MON_SHORT[parseInt(m)-1] + ' ' + y };
     });
+    _monthDd.setOpts(opts);
+    _monthDd.selectAll();
+    _selMonths = _monthDd.getValue();
   }
 
   // ── Applied chips (badge + colored pills) ─────────────────
@@ -622,51 +870,37 @@ export function mountAttendanceSheet(container, onBack) {
     chipsRow.innerHTML  = chips.join('');
   }
 
-  // ── Wire filter events ─────────────────────────────────────
+  // ── Wire standard filter events ────────────────────────────
   campSel.addEventListener('change', _refreshDisc);
   container.querySelector('#asDisc').addEventListener('change', _refreshSubject);
-  container.querySelector('#asSubject').addEventListener('change', _refreshBatch);
   container.querySelector('#asSession').addEventListener('change', _refreshBatch);
-  container.querySelector('#asBatch').addEventListener('change', _refreshMonths);
-
-  // Batch search — live filter with small debounce
-  let _batchSearchTimer = null;
-  container.querySelector('#asBatchSearch').addEventListener('input', () => {
-    clearTimeout(_batchSearchTimer);
-    _batchSearchTimer = setTimeout(_refreshBatch, 180);
-  });
-  container.querySelector('#asBatchSearch').addEventListener('focus', e => {
-    e.target.style.borderColor = 'var(--blue)';
-  });
-  container.querySelector('#asBatchSearch').addEventListener('blur', e => {
-    e.target.style.borderColor = '';
-  });
 
   _refreshDisc();
 
-  // ── Clear ──────────────────────────────────────────────────
+  // ── Clear ──────────────────────────────────────────────────────────
   container.querySelector('#asClearBtn').addEventListener('click', () => {
     campSel.value = '';
     _campusId = _discId = _subjectId = _batchSearch = _session = _batchId = '';
-    _selMonths.clear();
+    _selMonths = new Set();
     _applied = null;
-    const batchSearchEl = container.querySelector('#asBatchSearch');
-    if (batchSearchEl) batchSearchEl.value = '';
-    const subjSel = container.querySelector('#asSubject');
-    if (subjSel) { subjSel.innerHTML = '<option value="">— Select Discipline first —</option>'; subjSel.disabled = true; }
+    _subjDd.setValue(''); _subjDd.disable(true);
+    _batchDd.setValue('');
+    _monthDd.setOpts([]); _monthDd.disable(true);
+    container.querySelector('#asSubject').value = '';
+    container.querySelector('#asBatch').value   = '';
     _refreshDisc();
     _renderAppliedChips();
     container.querySelector('#asOutput').innerHTML = '';
-    // Re-open filter after clear
     _filterOpen = true;
     container.querySelector('#asFilterBody').classList.add('open');
     container.querySelector('#asFilterArrow').classList.add('open');
   });
 
-  // ── Apply ──────────────────────────────────────────────────
+  // ── Apply ──────────────────────────────────────────────────────────
   container.querySelector('#asApplyBtn').addEventListener('click', () => {
-    _batchId   = container.querySelector('#asBatch').value;
-    _subjectId = container.querySelector('#asSubject').value;
+    _batchId   = _batchDd.getValue() || container.querySelector('#asBatch').value;
+    _subjectId = _subjDd.getValue()  || container.querySelector('#asSubject').value;
+    _selMonths = _monthDd.getValue();
     if (!_batchId) {
       container.querySelector('#asOutput').innerHTML = `
         <div style="padding:32px;text-align:center;color:var(--t3);font-size:13px;
