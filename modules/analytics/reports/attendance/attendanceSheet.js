@@ -1453,9 +1453,10 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
 
   const tablesHTML = monthKeys.map(mk => buildMonthTable(mk)).join('');
 
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html><html><head>
+  // Build full HTML, open as Blob URL — avoids blank-print race condition with document.write
+  const _htmlStr = `<!DOCTYPE html><html><head>
     <meta charset="UTF-8"/>
+    <title>Attendance Sheet — ${batch?.batchName||''}</title><meta charset="UTF-8"/>
     <title>Attendance Sheet — ${batch?.batchName||''}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
@@ -1562,9 +1563,22 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
         🖨️ Print / Save as PDF
       </button>
     </div>
-  </body></html>`);
-  win.document.close();
-  setTimeout(() => win.print(), 600);
+  </body></html>`;
+
+  const _blob    = new Blob([_htmlStr], { type: 'text/html;charset=utf-8' });
+  const _blobUrl = URL.createObjectURL(_blob);
+  const _win     = window.open(_blobUrl, '_blank');
+  if (_win) {
+    _win.addEventListener('load', () => {
+      setTimeout(() => { _win.print(); URL.revokeObjectURL(_blobUrl); }, 300);
+    }, { once: true });
+  } else {
+    // popup blocked — fallback to download
+    const _a = document.createElement('a');
+    _a.href = _blobUrl; _a.download = 'Attendance-' + (batch?.batchName||'Sheet') + '.html';
+    document.body.appendChild(_a); _a.click(); document.body.removeChild(_a);
+    setTimeout(() => URL.revokeObjectURL(_blobUrl), 3000);
+  }
 }
 
 // ── Column Manager ─────────────────────────────────────────────
