@@ -819,7 +819,7 @@ export const ConversionTracking = {
       filterableSubjects.forEach(code => {
         if (this._bfSubject && code !== this._bfSubject) return;
         const sub = st.subjects[code];
-        if (sub && sub.session && sub.session !== '—') sessionSet.add(sub.session);
+        if (sub && sub.session && sub.session !== '—') sessionSet.add(_normalizeSession(sub.session));
       });
     });
     const allSessions = [...sessionSet].sort((a,b) => _parseSession(a) - _parseSession(b));
@@ -831,7 +831,7 @@ export const ConversionTracking = {
         const sub = st.subjects[code];
         if (!sub) return;
         if (this._bfCampuses.length && !this._bfCampuses.includes(sub.campus)) return;
-        if (this._bfSessions.length && !this._bfSessions.includes(sub.session)) return;
+        if (this._bfSessions.length && !this._bfSessions.includes(_normalizeSession(sub.session))) return;
         if (sub.batchNo && sub.batchNo !== '—') batchSet.add(sub.batchNo);
       });
     });
@@ -1217,7 +1217,7 @@ export const ConversionTracking = {
         const sub = st.subjects[code];
         if (!sub) return false; // filter active + not enrolled → exclude
 
-        const sessionOk = !f.sessions.length || f.sessions.includes(sub.session);
+        const sessionOk = !f.sessions.length || f.sessions.includes(_normalizeSession(sub.session));
         const batchOk   = !f.batches.length  || f.batches.includes(sub.batchNo);
         if (!sessionOk || !batchOk) return false;
       }
@@ -1261,7 +1261,7 @@ export const ConversionTracking = {
         const sub = st.subjects[this._bfSubject];
         if (!sub) return false;
         const campusOk  = !hasCampus  || this._bfCampuses.includes(sub.campus);
-        const sessionOk = !hasSession || this._bfSessions.includes(sub.session);
+        const sessionOk = !hasSession || this._bfSessions.includes(_normalizeSession(sub.session));
         const batchOk   = !hasBatch   || this._bfBatches.includes(sub.batchNo);
         return campusOk && sessionOk && batchOk;
       }
@@ -1273,7 +1273,7 @@ export const ConversionTracking = {
       return enrolledCodes.some(code => {
         const sub = st.subjects[code];
         const campusOk  = !hasCampus  || this._bfCampuses.includes(sub.campus);
-        const sessionOk = !hasSession || this._bfSessions.includes(sub.session);
+        const sessionOk = !hasSession || this._bfSessions.includes(_normalizeSession(sub.session));
         const batchOk   = !hasBatch   || this._bfBatches.includes(sub.batchNo);
         return campusOk && sessionOk && batchOk;
       });
@@ -1314,9 +1314,16 @@ export const ConversionTracking = {
         const subjectCode = (parts[0] || '').toUpperCase();
         if (!chain.includes(subjectCode)) return;
 
-        const session = parts.length >= 3
+        const rawSession = parts.length >= 3
           ? parts.slice(1, parts.length - 1).join('-')
           : '—';
+        // Normalize: "JUNE-26" → "Jun-26", "june-26" → "Jun-26"
+        const session = rawSession === '—' ? '—' : rawSession
+          .split('-')
+          .map((p, i) => i === 0
+            ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()
+            : p)
+          .join('-');
         const batchNo = parts[parts.length - 1] || '—';
 
         if (!map[enr.studentId]) {
@@ -1585,7 +1592,7 @@ export const ConversionTracking = {
       allData.students.forEach(st => {
         const sub = st.subjects[code];
         if (sub) {
-          if (sub.session && sub.session !== '—') sessionSet.add(sub.session);
+          if (sub.session && sub.session !== '—') sessionSet.add(_normalizeSession(sub.session));
           if (sub.batchNo && sub.batchNo !== '—') batchSet.add(sub.batchNo);
         }
       });
@@ -1968,6 +1975,14 @@ export const ConversionTracking = {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   },
 };
+
+// ── Session normalizer: "JUNE-26" / "june-26" → "Jun-26" ────
+function _normalizeSession(s) {
+  if (!s || s === '—') return s;
+  return s.split('-').map((p, i) =>
+    i === 0 ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : p
+  ).join('-');
+}
 
 // ── Session parser: "Dec-25" → sortable number ───────────────
 const _MONTHS = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
