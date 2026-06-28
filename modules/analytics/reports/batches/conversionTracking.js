@@ -1957,24 +1957,15 @@ export const ConversionTracking = {
   </div>
 </body></html>`;
 
-    const w = window.open('', '_blank');
+    // Blob URL approach — HTTPS pe document.write blocked hota hai
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const w    = window.open(url, '_blank');
     if (!w) {
-      // Popup blocked — fallback: blob URL open karo
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.target   = '_blank';
-      a.rel      = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 3000);
-      return;
+      // Popup blocked — same tab mein open karo
+      window.location.href = url;
     }
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   },
 };
 
