@@ -618,6 +618,62 @@ function injectStyles() {
   cursor:pointer; transition:all .15s;
 }
 .ct-bf-clear:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
+
+/* ── Column Manager ── */
+.ct-col-mgr-wrap  { position:relative; flex-shrink:0; }
+.ct-col-mgr-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  height:30px; padding:0 10px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface2);
+  color:var(--t3); cursor:pointer; font-size:12px; font-weight:600;
+  font-family:inherit; transition:all .15s; white-space:nowrap;
+}
+.ct-col-mgr-btn:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-dim); }
+.ct-col-mgr-panel {
+  position:fixed; z-index:9999;
+  width:210px; background:var(--surface);
+  border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+  display:none; flex-direction:column; overflow:hidden;
+  max-height:min(360px, calc(100vh - 24px));
+}
+.ct-col-mgr-panel.open { display:flex; }
+.ct-col-mgr-head {
+  padding:9px 13px 7px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center;
+  justify-content:space-between; flex-shrink:0;
+}
+.ct-col-mgr-title {
+  font-size:11.5px; font-weight:700; color:var(--t1);
+  display:flex; align-items:center; gap:6px;
+}
+.ct-col-mgr-link {
+  font-size:11px; color:var(--blue); cursor:pointer;
+  background:none; border:none; padding:0;
+  text-decoration:underline; font-weight:600;
+}
+.ct-col-mgr-link:hover { opacity:.8; }
+.ct-col-mgr-list { padding:4px 0; overflow-y:auto; flex:1; }
+.ct-col-mgr-section {
+  padding:5px 12px 3px;
+  font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.07em; color:var(--t4);
+}
+.ct-col-mgr-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:default; user-select:none;
+  transition:background .1s;
+}
+.ct-col-mgr-item:hover { background:var(--surface2); }
+.ct-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+.ct-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
+.ct-col-mgr-item.col-hidden .ct-col-mgr-lbl { color:var(--t4); }
+.ct-col-mgr-foot {
+  padding:6px 12px; border-top:1px solid var(--border);
+  font-size:10.5px; color:var(--t3); text-align:center;
+  flex-shrink:0; background:var(--surface2);
+}
 `;
   document.head.appendChild(s);
 }
@@ -631,6 +687,23 @@ export const ConversionTracking = {
   // Per-subject filters: { FA1: { sessions:[], batches:[] }, ... }
   // Empty array = "all" (no filter). Non-empty = must match one of the values.
   _subjectFilters: {},
+
+  // ── Column Manager ───────────────────────────────────────────
+  CT_COL_KEY: 'ct_col_prefs_v1',
+  CT_COLS: [
+    { key: 'studentPhone',  label: 'Student Phone',  section: 'Extra Info', defaultHidden: false },
+    { key: 'guardianPhone', label: 'Guardian Phone', section: 'Extra Info', defaultHidden: false },
+    { key: 'cnic',          label: 'CNIC',           section: 'Extra Info', defaultHidden: false },
+  ],
+  _getColPrefs() {
+    try {
+      const r = AppState.get(this.CT_COL_KEY);
+      if (r && Array.isArray(r.hidden)) return r;
+    } catch(e){}
+    const def = this.CT_COLS.filter(c => c.defaultHidden).map(c => c.key);
+    return { hidden: def };
+  },
+  _saveColPrefs(p) { AppState.set(this.CT_COL_KEY, p); },
 
   // ── Batch Filter Panel state ──────────────────────────────
   // Tracks selected values in the new collapsible filter panel.
@@ -1171,6 +1244,27 @@ export const ConversionTracking = {
             </svg>
             PDF
           </button>
+          <div class="ct-col-mgr-wrap">
+            <button class="ct-col-mgr-btn" id="ctColMgrBtn" title="Show / hide columns">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="18" rx="1"/>
+                <rect x="14" y="3" width="7" height="18" rx="1"/>
+              </svg>
+              Columns
+            </button>
+            <div class="ct-col-mgr-panel" id="ctColMgrPanel">
+              <div class="ct-col-mgr-head">
+                <span class="ct-col-mgr-title">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                  </svg>Columns
+                </span>
+                <button class="ct-col-mgr-link" id="ctColMgrShowAll">Show All</button>
+              </div>
+              <div class="ct-col-mgr-list" id="ctColMgrList"></div>
+              <div class="ct-col-mgr-foot">Toggle extra student columns</div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1197,6 +1291,94 @@ export const ConversionTracking = {
         : this._applyFilters(allData, track.chain);
       this._exportPDF(data, track);
     });
+
+    // ── Column Manager wiring ────────────────────────────────
+    this._wireColMgr(el);
+  },
+
+  _wireColMgr(el) {
+    const btn   = el.querySelector('#ctColMgrBtn');
+    const panel = el.querySelector('#ctColMgrPanel');
+    const list  = el.querySelector('#ctColMgrList');
+    if (!btn || !panel || !list) return;
+
+    const _position = () => {
+      const r = btn.getBoundingClientRect();
+      const w = 210;
+      let left = r.right - w;
+      left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+      panel.style.left = left + 'px';
+      panel.style.top  = (r.bottom + 6) + 'px';
+    };
+
+    const _renderList = () => {
+      const prefs = this._getColPrefs();
+      list.innerHTML = '';
+      let lastSection = null;
+      this.CT_COLS.forEach(col => {
+        if (col.section !== lastSection) {
+          lastSection = col.section;
+          const sec = document.createElement('div');
+          sec.className = 'ct-col-mgr-section';
+          sec.textContent = col.section;
+          list.appendChild(sec);
+        }
+        const isVisible = !prefs.hidden.includes(col.key);
+        const item = document.createElement('div');
+        item.className = 'ct-col-mgr-item' + (isVisible ? '' : ' col-hidden');
+        item.innerHTML =
+          `<input type="checkbox" class="ct-col-mgr-chk" id="ct_chk_${col.key}"${isVisible?' checked':''}/>` +
+          `<label class="ct-col-mgr-lbl" for="ct_chk_${col.key}">${col.label}</label>`;
+        item.querySelector('.ct-col-mgr-chk').addEventListener('change', e => {
+          const p = this._getColPrefs();
+          if (e.target.checked) {
+            p.hidden = p.hidden.filter(h => h !== col.key);
+            item.classList.remove('col-hidden');
+          } else {
+            if (!p.hidden.includes(col.key)) p.hidden.push(col.key);
+            item.classList.add('col-hidden');
+          }
+          this._saveColPrefs(p);
+          panel.classList.remove('open');
+          btn.style.cssText = '';
+          this._renderBody();
+        });
+        list.appendChild(item);
+      });
+    };
+
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        panel.classList.remove('open');
+        btn.style.cssText = '';
+      } else {
+        _renderList();
+        _position();
+        panel.classList.add('open');
+        btn.style.borderColor = 'var(--blue)';
+        btn.style.color = 'var(--blue)';
+        btn.style.background = 'var(--blue-dim)';
+      }
+    });
+
+    el.querySelector('#ctColMgrShowAll')?.addEventListener('click', () => {
+      this._saveColPrefs({ hidden: [] });
+      panel.classList.remove('open');
+      btn.style.cssText = '';
+      this._renderBody();
+    });
+
+    const _outside = e => {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.classList.remove('open');
+        btn.style.cssText = '';
+      }
+    };
+    document.addEventListener('click', _outside);
+    window.addEventListener('scroll', () => { if (panel.classList.contains('open')) _position(); }, true);
+    window.addEventListener('resize', () => { if (panel.classList.contains('open')) _position(); });
   },
 
   // ── Apply per-subject session/batch filters ──────────────
@@ -1336,12 +1518,15 @@ export const ConversionTracking = {
             : (student.campus || student.campusName || '');
 
           map[enr.studentId] = {
-            studentId:   enr.studentId,
-            studentName: student.studentName || '—',
-            studentCode: student.studentCode || student.admissionNo || '',
-            campusId:    batchRec.campusId || '',
-            campusName:  campusName || '—',
-            subjects:    {},
+            studentId:     enr.studentId,
+            studentName:   student.studentName || '—',
+            studentCode:   student.studentCode || student.admissionNo || '',
+            campusId:      batchRec.campusId || '',
+            campusName:    campusName || '—',
+            studentPhone:  student.studentPhone  || student.phone        || '—',
+            guardianPhone: student.guardianPhone || student.parentPhone  || student.guardianContact || '—',
+            cnic:          student.cnic          || student.studentCnic  || '—',
+            subjects:      {},
           };
         }
 
@@ -1478,6 +1663,13 @@ export const ConversionTracking = {
     const colColors = ['rgba(79,133,247,.07)', 'rgba(139,92,246,.07)', 'rgba(16,185,129,.07)'];
     const accents   = ['#4f85f7', '#8b5cf6', '#10b981'];
 
+    // ── Col visibility ──────────────────────────────────────
+    const colPrefs         = this._getColPrefs();
+    const showStudentPhone  = !colPrefs.hidden.includes('studentPhone');
+    const showGuardianPhone = !colPrefs.hidden.includes('guardianPhone');
+    const showCnic          = !colPrefs.hidden.includes('cnic');
+    const hasExtraCols      = showStudentPhone || showGuardianPhone || showCnic;
+
     const sf = code => this._subjectFilters[code] || { sessions: [], batches: [] };
 
     const groupHeaders = chain.map((code, i) => {
@@ -1546,10 +1738,13 @@ export const ConversionTracking = {
 
       return `
         <tr>
-          <td style="min-width:160px;border-right:2px solid var(--border2);position:sticky;left:0;background:var(--surface);z-index:1">
+          <td style="min-width:160px;border-right:${hasExtraCols?'1px':'2px'} solid var(--border2);position:sticky;left:0;background:var(--surface);z-index:1">
             <div class="ct-student-name">${st.studentName}</div>
             ${st.studentCode ? `<div class="ct-student-id">${st.studentCode}</div>` : ''}
           </td>
+          ${showStudentPhone ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border2);font-size:11.5px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${st.studentPhone || '—'}</td>` : ''}
+          ${showGuardianPhone ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border2);font-size:11.5px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${st.guardianPhone || '—'}</td>` : ''}
+          ${showCnic ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:2px solid var(--border2);font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${st.cnic || '—'}</td>` : ''}
           ${cells}
         </tr>
       `;
@@ -1563,12 +1758,15 @@ export const ConversionTracking = {
               <th rowspan="2"
                   style="background:var(--surface2);
                          border-bottom:1px solid var(--border);
-                         border-right:2px solid var(--border2);
+                         border-right:${hasExtraCols?'1px':'2px'} solid var(--border2);
                          vertical-align:middle;
                          min-width:160px;
                          position:sticky;left:0;z-index:3;">
                 Student Info
               </th>
+              ${showStudentPhone ? `<th rowspan="2" style="background:var(--surface2);border-bottom:1px solid var(--border);border-right:1px solid var(--border2);vertical-align:middle;min-width:120px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;white-space:nowrap">Student Phone</th>` : ''}
+              ${showGuardianPhone ? `<th rowspan="2" style="background:var(--surface2);border-bottom:1px solid var(--border);border-right:1px solid var(--border2);vertical-align:middle;min-width:120px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;white-space:nowrap">Guardian Phone</th>` : ''}
+              ${showCnic ? `<th rowspan="2" style="background:var(--surface2);border-bottom:1px solid var(--border);border-right:2px solid var(--border2);vertical-align:middle;min-width:130px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;white-space:nowrap">CNIC</th>` : ''}
               ${groupHeaders}
             </tr>
             <tr>${colHeaders}</tr>
@@ -1747,12 +1945,19 @@ export const ConversionTracking = {
   // Builds ONE row per student with subject columns side-by-side,
   // exactly matching the screen table layout.
   _buildReportRows(data, chain) {
-    const subCols = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
+    const subCols  = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
+    const colPrefs = this._getColPrefs();
+    const showStudentPhone  = !colPrefs.hidden.includes('studentPhone');
+    const showGuardianPhone = !colPrefs.hidden.includes('guardianPhone');
+    const showCnic          = !colPrefs.hidden.includes('cnic');
     return data.students.map(st => {
       const row = {
         'Student':    st.studentName || '—',
         'Student ID': st.studentCode || '—',
       };
+      if (showStudentPhone)  row['Student Phone']  = st.studentPhone  || '—';
+      if (showGuardianPhone) row['Guardian Phone'] = st.guardianPhone || '—';
+      if (showCnic)          row['CNIC']           = st.cnic          || '—';
       chain.forEach(code => {
         const sub = st.subjects[code];
         row[`${code} Campus`]  = sub ? (sub.campus  || '—') : '—';
@@ -1797,22 +2002,39 @@ export const ConversionTracking = {
     ];
 
     // Row 1: group header — "Student Info" spanning 2, then each subject code spanning 5
-    const subCols = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
+    const subCols  = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
+    const colPrefs = this._getColPrefs();
+    const csvShowPhone  = !colPrefs.hidden.includes('studentPhone');
+    const csvShowGuard  = !colPrefs.hidden.includes('guardianPhone');
+    const csvShowCnic   = !colPrefs.hidden.includes('cnic');
+
+    const extraHeaders = [
+      ...(csvShowPhone  ? ['"Student Phone"']  : []),
+      ...(csvShowGuard  ? ['"Guardian Phone"'] : []),
+      ...(csvShowCnic   ? ['"CNIC"']           : []),
+    ];
+    const extraKeys = [
+      ...(csvShowPhone  ? ['Student Phone']  : []),
+      ...(csvShowGuard  ? ['Guardian Phone'] : []),
+      ...(csvShowCnic   ? ['CNIC']           : []),
+    ];
+
     const groupRow = [
       '"Student Info"', '""',
+      ...extraHeaders.map(() => '""'),
       ...exportChain.flatMap(code => [`"${code}"`, '""', '""', '""', '""']),
     ];
 
     // Row 2: actual column headers
     const headerRow = [
       '"Student"', '"Student ID"',
+      ...extraHeaders,
       ...exportChain.flatMap(code =>
         subCols.map(c => `"${code} ${c}"`)
       ),
     ];
 
-    const subCols2 = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
-    const csvKeys = ['Student', 'Student ID', ...exportChain.flatMap(c => subCols2.map(s => `${c} ${s}`))];
+    const csvKeys = ['Student', 'Student ID', ...extraKeys, ...exportChain.flatMap(c => subCols.map(s => `${c} ${s}`))];
     const dataRows = rows.map(r =>
       csvKeys.map(h => `"${(r[h] || '').replace(/"/g, '""')}"`).join(',')
     );
@@ -1848,10 +2070,18 @@ export const ConversionTracking = {
     const accentColors = ['#1d4ed8', '#6d28d9', '#065f46'];
     const headerBgs    = ['#dbeafe', '#ede9fe', '#d1fae5'];
 
+    const pdfColPrefs   = this._getColPrefs();
+    const pdfShowPhone  = !pdfColPrefs.hidden.includes('studentPhone');
+    const pdfShowGuard  = !pdfColPrefs.hidden.includes('guardianPhone');
+    const pdfShowCnic   = !pdfColPrefs.hidden.includes('cnic');
+
     // Group header row (subject names spanning 5 cols each)
     const groupThCells = `
       <th rowspan="2" style="min-width:140px;background:#1e3a8a;border-right:2px solid #fff;vertical-align:middle">Student Info</th>
       <th rowspan="2" style="min-width:80px;background:#1e3a8a;border-right:2px solid rgba(255,255,255,.3);vertical-align:middle">Student ID</th>
+      ${pdfShowPhone  ? `<th rowspan="2" style="min-width:100px;background:#1e3a8a;border-right:1px solid rgba(255,255,255,.2);vertical-align:middle;font-size:9px">Stu. Phone</th>` : ''}
+      ${pdfShowGuard  ? `<th rowspan="2" style="min-width:100px;background:#1e3a8a;border-right:1px solid rgba(255,255,255,.2);vertical-align:middle;font-size:9px">Guard. Phone</th>` : ''}
+      ${pdfShowCnic   ? `<th rowspan="2" style="min-width:110px;background:#1e3a8a;border-right:2px solid rgba(255,255,255,.3);vertical-align:middle;font-size:9px">CNIC</th>` : ''}
       ${pdfChain.map((code, i) => `
         <th colspan="${subCols.length}"
             style="background:${headerBgs[i]};color:${accentColors[i]};
@@ -1875,21 +2105,28 @@ export const ConversionTracking = {
     ).join('');
 
     // Data rows
+    const extraPdfKeys = [
+      ...(pdfShowPhone ? ['Student Phone']  : []),
+      ...(pdfShowGuard ? ['Guardian Phone'] : []),
+      ...(pdfShowCnic  ? ['CNIC']           : []),
+    ];
     const tdRows = rows.map((r, idx) => {
       const keys = Object.keys(r);
-      const cells = keys.map((h, ci) => {
-        // Determine if this is the first column of a subject group
+      const cells = keys.map((h) => {
         const isStudentName = h === 'Student';
         const isStudentId   = h === 'Student ID';
+        const isExtraCol    = extraPdfKeys.includes(h);
+        const isLastExtra   = h === (extraPdfKeys[extraPdfKeys.length - 1] || '');
         const subjectIdx    = pdfChain.findIndex(code => h.startsWith(code + ' '));
         const isFirstSubCol = subjectIdx >= 0 && h === `${pdfChain[subjectIdx]} Campus`;
 
         let style = `padding:6px 8px;border-bottom:1px solid #e2e8f0;`;
-        if (isStudentName) style += `font-weight:600;color:#1e293b;border-right:2px solid #cbd5e1;`;
-        if (isStudentId)   style += `color:#64748b;font-size:10px;border-right:2px solid #e2e8f0;`;
+        if (isStudentName) style += `font-weight:600;color:#1e293b;border-right:${extraPdfKeys.length?'1px':'2px'} solid #cbd5e1;`;
+        if (isStudentId)   style += `color:#64748b;font-size:10px;border-right:${extraPdfKeys.length?'1px':'2px'} solid #e2e8f0;`;
+        if (isExtraCol)    style += `color:#475569;font-size:9.5px;font-family:monospace;${isLastExtra?'border-right:2px solid #cbd5e1;':'border-right:1px solid #e2e8f0;'}`;
         if (isFirstSubCol && subjectIdx > 0) style += `border-left:2px solid ${accentColors[subjectIdx]}44;`;
         if (subjectIdx >= 0) style += `background:${idx%2===0 ? colColors[subjectIdx] : 'transparent'};`;
-        else style += idx%2===0 ? 'background:#fff;' : 'background:#f8faff;';
+        else if (!isExtraCol) style += idx%2===0 ? 'background:#fff;' : 'background:#f8faff;';
 
         return `<td style="${style}">${r[h] || '—'}</td>`;
       });
