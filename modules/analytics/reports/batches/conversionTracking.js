@@ -1875,7 +1875,7 @@ export const ConversionTracking = {
         const isStudentName = h === 'Student';
         const isStudentId   = h === 'Student ID';
         const subjectIdx    = pdfChain.findIndex(code => h.startsWith(code + ' '));
-        const isFirstSubCol = subjectIdx >= 0 && h === `${track.chain[subjectIdx]} Campus`;
+        const isFirstSubCol = subjectIdx >= 0 && h === `${pdfChain[subjectIdx]} Campus`;
 
         let style = `padding:6px 8px;border-bottom:1px solid #e2e8f0;`;
         if (isStudentName) style += `font-weight:600;color:#1e293b;border-right:2px solid #cbd5e1;`;
@@ -1958,6 +1958,20 @@ export const ConversionTracking = {
 </body></html>`;
 
     const w = window.open('', '_blank');
+    if (!w) {
+      // Popup blocked — fallback: blob URL open karo
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.target   = '_blank';
+      a.rel      = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      return;
+    }
     w.document.write(html);
     w.document.close();
     setTimeout(() => w.print(), 600);
