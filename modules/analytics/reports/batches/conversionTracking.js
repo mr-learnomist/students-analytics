@@ -1762,9 +1762,9 @@ export const ConversionTracking = {
             <div class="ct-student-name">${st.studentName}</div>
             ${st.studentCode ? `<div class="ct-student-id">${st.studentCode}</div>` : ''}
           </td>
-          ${showStudentPhone ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border2);font-size:11.5px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${st.studentPhone || '—'}</td>` : ''}
-          ${showGuardianPhone ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border2);font-size:11.5px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${st.guardianPhone || '—'}</td>` : ''}
-          ${showCnic ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:2px solid var(--border2);font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${st.cnic || '—'}</td>` : ''}
+          ${showStudentPhone ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border2);font-size:11.5px;color:var(--t2);white-space:nowrap;font-family:'Arial',sans-serif">${st.studentPhone || '—'}</td>` : ''}
+          ${showGuardianPhone ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border2);font-size:11.5px;color:var(--t2);white-space:nowrap;font-family:'Arial',sans-serif">${st.guardianPhone || '—'}</td>` : ''}
+          ${showCnic ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border);border-right:2px solid var(--border2);font-size:11px;color:var(--t2);white-space:nowrap;font-family:'Arial',sans-serif">${st.cnic || '—'}</td>` : ''}
           ${cells}
         </tr>
       `;
@@ -2039,27 +2039,36 @@ export const ConversionTracking = {
       ...(csvShowCnic   ? ['CNIC']           : []),
     ];
 
+    // Group header row: "Student Info", extra cols blank, then each subject code spanning 5
     const groupRow = [
-      '"Student Info"', '""',
+      '"Student"',
       ...extraHeaders.map(() => '""'),
       ...exportChain.flatMap(code => [`"${code}"`, '""', '""', '""', '""']),
     ];
 
-    // Row 2: actual column headers
+    // Sub-header row: just the sub-column names (no subject prefix)
     const headerRow = [
-      '"Student"', '"Student ID"',
-      ...extraHeaders,
-      ...exportChain.flatMap(code =>
-        subCols.map(c => `"${code} ${c}"`)
+      '""',
+      ...extraHeaders.map(() => '""'),
+      ...exportChain.flatMap(() =>
+        subCols.map(c => `"${c}"`)
       ),
     ];
 
-    const csvKeys = ['Student', 'Student ID', ...extraKeys, ...exportChain.flatMap(c => subCols.map(s => `${c} ${s}`))];
+    // Data keys still use prefixed keys to look up _buildReportRows output
+    const csvKeys = ['Student', ...extraKeys, ...exportChain.flatMap(c => subCols.map(s => `${c} ${s}`))];
+
+    // Phone/CNIC fields: prefix with = to force text in Excel (prevents scientific notation)
+    const phoneFields = new Set(['Student Phone', 'Guardian Phone', 'CNIC']);
+
     const dataRows = rows.map(r =>
       csvKeys.map(h => {
         const val = r[h];
-        // Blank cell rakho agar value missing ya dash ho
         const clean = (!val || val === '—') ? '' : val;
+        // Force text format for phone/CNIC to avoid scientific notation in Excel
+        if (phoneFields.has(h) && clean) {
+          return `"=""${clean.replace(/"/g, '""')}"""`;
+        }
         return `"${clean.replace(/"/g, '""')}"`;
       }).join(',')
     );
@@ -2147,7 +2156,7 @@ export const ConversionTracking = {
 
         let style = `padding:6px 8px;border-bottom:1px solid #e2e8f0;`;
         if (isStudentName) style += `font-weight:600;color:#1e293b;border-right:2px solid #cbd5e1;`;
-        if (isExtraCol)    style += `color:#475569;font-size:9.5px;font-family:monospace;${isLastExtra?'border-right:2px solid #cbd5e1;':'border-right:1px solid #e2e8f0;'}`;
+        if (isExtraCol)    style += `color:#475569;font-size:9.5px;font-family:'Arial',sans-serif;${isLastExtra?'border-right:2px solid #cbd5e1;':'border-right:1px solid #e2e8f0;'}`;
         if (isFirstSubCol && subjectIdx > 0) style += `border-left:2px solid ${accentColors[subjectIdx]}44;`;
         if (subjectIdx >= 0) style += `background:${idx%2===0 ? colColors[subjectIdx] : 'transparent'};`;
         else if (!isExtraCol) style += idx%2===0 ? 'background:#fff;' : 'background:#f8faff;';
@@ -2185,7 +2194,7 @@ export const ConversionTracking = {
   .header-right .date{font-weight:600;color:#1e293b;font-size:11px}
   .meta-row{display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap}
   .stat-box{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:6px 14px;text-align:center}
-  .stat-box .num{font-size:18px;font-weight:700;color:#2563eb;font-family:monospace}
+  .stat-box .num{font-size:18px;font-weight:700;color:#2563eb;font-family:'Arial',sans-serif}
   .stat-box .lbl{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
   .filters-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px}
   .filters-label{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
