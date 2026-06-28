@@ -2103,7 +2103,6 @@ export const ConversionTracking = {
     // Group header row (subject names spanning 5 cols each)
     const groupThCells = `
       <th rowspan="2" style="min-width:140px;background:#1e3a8a;border-right:2px solid #fff;vertical-align:middle">Student Info</th>
-      <th rowspan="2" style="min-width:80px;background:#1e3a8a;border-right:2px solid rgba(255,255,255,.3);vertical-align:middle">Student ID</th>
       ${pdfShowPhone  ? `<th rowspan="2" style="min-width:100px;background:#1e3a8a;border-right:1px solid rgba(255,255,255,.2);vertical-align:middle;font-size:9px">Stu. Phone</th>` : ''}
       ${pdfShowGuard  ? `<th rowspan="2" style="min-width:100px;background:#1e3a8a;border-right:1px solid rgba(255,255,255,.2);vertical-align:middle;font-size:9px">Guard. Phone</th>` : ''}
       ${pdfShowCnic   ? `<th rowspan="2" style="min-width:110px;background:#1e3a8a;border-right:2px solid rgba(255,255,255,.3);vertical-align:middle;font-size:9px">CNIC</th>` : ''}
@@ -2140,14 +2139,14 @@ export const ConversionTracking = {
       const cells = keys.map((h) => {
         const isStudentName = h === 'Student';
         const isStudentId   = h === 'Student ID';
+        if (isStudentId) return ''; // Student ID PDF mein nahi dikhana
         const isExtraCol    = extraPdfKeys.includes(h);
         const isLastExtra   = h === (extraPdfKeys[extraPdfKeys.length - 1] || '');
         const subjectIdx    = pdfChain.findIndex(code => h.startsWith(code + ' '));
         const isFirstSubCol = subjectIdx >= 0 && h === `${pdfChain[subjectIdx]} Campus`;
 
         let style = `padding:6px 8px;border-bottom:1px solid #e2e8f0;`;
-        if (isStudentName) style += `font-weight:600;color:#1e293b;border-right:${extraPdfKeys.length?'1px':'2px'} solid #cbd5e1;`;
-        if (isStudentId)   style += `color:#64748b;font-size:10px;border-right:${extraPdfKeys.length?'1px':'2px'} solid #e2e8f0;`;
+        if (isStudentName) style += `font-weight:600;color:#1e293b;border-right:2px solid #cbd5e1;`;
         if (isExtraCol)    style += `color:#475569;font-size:9.5px;font-family:monospace;${isLastExtra?'border-right:2px solid #cbd5e1;':'border-right:1px solid #e2e8f0;'}`;
         if (isFirstSubCol && subjectIdx > 0) style += `border-left:2px solid ${accentColors[subjectIdx]}44;`;
         if (subjectIdx >= 0) style += `background:${idx%2===0 ? colColors[subjectIdx] : 'transparent'};`;
