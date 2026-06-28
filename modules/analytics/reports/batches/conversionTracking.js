@@ -691,9 +691,14 @@ export const ConversionTracking = {
   // ── Column Manager ───────────────────────────────────────────
   CT_COL_KEY: 'ct_col_prefs_v1',
   CT_COLS: [
-    { key: 'studentPhone',  label: 'Student Phone',  section: 'Extra Info', defaultHidden: false },
-    { key: 'guardianPhone', label: 'Guardian Phone', section: 'Extra Info', defaultHidden: false },
-    { key: 'cnic',          label: 'CNIC',           section: 'Extra Info', defaultHidden: false },
+    { key: 'studentPhone',  label: 'Student Phone',  section: 'Extra Info',     defaultHidden: false },
+    { key: 'guardianPhone', label: 'Guardian Phone', section: 'Extra Info',     defaultHidden: false },
+    { key: 'cnic',          label: 'CNIC',           section: 'Extra Info',     defaultHidden: false },
+    { key: 'subCampus',     label: 'Campus',         section: 'Subject Columns', defaultHidden: false },
+    { key: 'subSession',    label: 'Session',        section: 'Subject Columns', defaultHidden: false },
+    { key: 'subBatch',      label: 'Batch #',        section: 'Subject Columns', defaultHidden: false },
+    { key: 'subTeacher',    label: 'Teacher',        section: 'Subject Columns', defaultHidden: false },
+    { key: 'subStatus',     label: 'Status',         section: 'Subject Columns', defaultHidden: false },
   ],
   _getColPrefs() {
     try {
@@ -1659,7 +1664,8 @@ export const ConversionTracking = {
 
   // ── Table ─────────────────────────────────────────────────
   _tableHTML(data, chain) {
-    const subCols   = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
+    const allSubCols = ['Campus', 'Session', 'Batch #', 'Teacher', 'Status'];
+    const subColKeys = ['subCampus', 'subSession', 'subBatch', 'subTeacher', 'subStatus'];
     const colColors = ['rgba(79,133,247,.07)', 'rgba(139,92,246,.07)', 'rgba(16,185,129,.07)'];
     const accents   = ['#4f85f7', '#8b5cf6', '#10b981'];
 
@@ -1669,6 +1675,11 @@ export const ConversionTracking = {
     const showGuardianPhone = !colPrefs.hidden.includes('guardianPhone');
     const showCnic          = !colPrefs.hidden.includes('cnic');
     const hasExtraCols      = showStudentPhone || showGuardianPhone || showCnic;
+
+    // Subject sub-column visibility
+    const subColVisible = subColKeys.map(k => !colPrefs.hidden.includes(k));
+    const subCols = allSubCols.filter((_, i) => subColVisible[i]);
+    const visibleSubColIndices = subColKeys.map((_, i) => i).filter(i => subColVisible[i]);
 
     const sf = code => this._subjectFilters[code] || { sessions: [], batches: [] };
 
@@ -1717,23 +1728,32 @@ export const ConversionTracking = {
             </td>
           `).join('');
         }
-        return `
-          <td class="${i > 0 ? 'ct-col-sep' : ''}" style="font-size:12px;color:var(--t2);white-space:nowrap">
+        // Build only visible sub-columns
+        const allCellDefs = [
+          `<td class="${i > 0 ? 'ct-col-sep' : ''}" style="font-size:12px;color:var(--t2);white-space:nowrap">
             ${sub.campus && sub.campus !== '—' ? sub.campus : `<span class="ct-dash">—</span>`}
-          </td>
-          <td>
+          </td>`,
+          `<td>
             ${sub.session && sub.session !== '—'
               ? `<span class="ct-session-pill">${sub.session}</span>`
               : `<span class="ct-dash">—</span>`}
-          </td>
-          <td><span class="ct-batch-no">${sub.batchNo}</span></td>
-          <td style="font-size:12px;color:var(--t2);white-space:nowrap">${sub.teacher}</td>
-          <td>
+          </td>`,
+          `<td><span class="ct-batch-no">${sub.batchNo}</span></td>`,
+          `<td style="font-size:12px;color:var(--t2);white-space:nowrap">${sub.teacher}</td>`,
+          `<td>
             <span class="ct-badge ct-badge-${sub.status}">
               ${_statusLabel(sub.status)}
             </span>
-          </td>
-        `;
+          </td>`,
+        ];
+        return visibleSubColIndices.map((vi, j) => {
+          // For first visible col of non-first subject, add separator
+          let cell = allCellDefs[vi];
+          if (i > 0 && j === 0) {
+            cell = cell.replace(/^<td/, '<td class="ct-col-sep"');
+          }
+          return cell;
+        }).join('');
       }).join('');
 
       return `
@@ -1952,19 +1972,19 @@ export const ConversionTracking = {
     const showCnic          = !colPrefs.hidden.includes('cnic');
     return data.students.map(st => {
       const row = {
-        'Student':    st.studentName || '—',
-        'Student ID': st.studentCode || '—',
+        'Student':    st.studentName || '',
+        'Student ID': st.studentCode || '',
       };
-      if (showStudentPhone)  row['Student Phone']  = st.studentPhone  || '—';
-      if (showGuardianPhone) row['Guardian Phone'] = st.guardianPhone || '—';
-      if (showCnic)          row['CNIC']           = st.cnic          || '—';
+      if (showStudentPhone)  row['Student Phone']  = (st.studentPhone  && st.studentPhone  !== '—') ? st.studentPhone  : '';
+      if (showGuardianPhone) row['Guardian Phone'] = (st.guardianPhone && st.guardianPhone !== '—') ? st.guardianPhone : '';
+      if (showCnic)          row['CNIC']           = (st.cnic          && st.cnic          !== '—') ? st.cnic          : '';
       chain.forEach(code => {
         const sub = st.subjects[code];
-        row[`${code} Campus`]  = sub ? (sub.campus  || '—') : '—';
-        row[`${code} Session`] = sub ? (sub.session || '—') : '—';
-        row[`${code} Batch #`] = sub ? (sub.batchNo || '—') : '—';
-        row[`${code} Teacher`] = sub ? (sub.teacher || '—') : '—';
-        row[`${code} Status`]  = sub ? _statusLabel(sub.status) : '—';
+        row[`${code} Campus`]  = sub ? (sub.campus  && sub.campus  !== '—' ? sub.campus  : '') : '';
+        row[`${code} Session`] = sub ? (sub.session && sub.session !== '—' ? sub.session : '') : '';
+        row[`${code} Batch #`] = sub ? (sub.batchNo && sub.batchNo !== '—' ? sub.batchNo : '') : '';
+        row[`${code} Teacher`] = sub ? (sub.teacher && sub.teacher !== '—' ? sub.teacher : '') : '';
+        row[`${code} Status`]  = sub ? _statusLabel(sub.status) : '';
       });
       return row;
     });
@@ -2036,7 +2056,12 @@ export const ConversionTracking = {
 
     const csvKeys = ['Student', 'Student ID', ...extraKeys, ...exportChain.flatMap(c => subCols.map(s => `${c} ${s}`))];
     const dataRows = rows.map(r =>
-      csvKeys.map(h => `"${(r[h] || '').replace(/"/g, '""')}"`).join(',')
+      csvKeys.map(h => {
+        const val = r[h];
+        // Blank cell rakho agar value missing ya dash ho
+        const clean = (!val || val === '—') ? '' : val;
+        return `"${clean.replace(/"/g, '""')}"`;
+      }).join(',')
     );
 
     const csvRows = [
@@ -2128,7 +2153,7 @@ export const ConversionTracking = {
         if (subjectIdx >= 0) style += `background:${idx%2===0 ? colColors[subjectIdx] : 'transparent'};`;
         else if (!isExtraCol) style += idx%2===0 ? 'background:#fff;' : 'background:#f8faff;';
 
-        return `<td style="${style}">${r[h] || '—'}</td>`;
+        return `<td style="${style}">${r[h] || ''}</td>`;
       });
       return `<tr>${cells.join('')}</tr>`;
     }).join('');
