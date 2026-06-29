@@ -19,10 +19,11 @@ export const STATUS_LABELS = {
 };
 
 // Per-subject statuses (student's status within a subject)
-export const ENR_SUBJECT_STATUSES = ['active', 'dormant', 'left_campus', 'change_campus', 'left_study', 'exempt'];
+export const ENR_SUBJECT_STATUSES = ['active', 'freeze', 'dormant', 'left_campus', 'change_campus', 'left_study', 'exempt'];
 
 export const ENR_SUBJECT_STATUS_LABELS = {
   active:        'Active',
+  freeze:        'Freeze',
   dormant:       'Dormant',
   left_campus:   'Left Campus',
   change_campus: 'Change Campus',
