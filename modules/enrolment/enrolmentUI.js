@@ -2123,7 +2123,6 @@ function openModal(enrolmentId = null) {
   function filterStudents() {
     let list = AppState.get('students') || [];
     if (_selCampus)   list = list.filter(s => s.campusId        === _selCampus);
-    if (_selSession)  list = list.filter(s => s.session         === _selSession);
     if (_selAdmBatch) list = list.filter(s => s.admissionBatch  === _selAdmBatch);
     // Preserve _enrolled state and _subjectData for already-loaded students
     _studentRows = list.map(s => {
@@ -2427,10 +2426,8 @@ function openModal(enrolmentId = null) {
     if (!wrap) return;
     const shown = new Set(_studentRows.map(s => s.id));
 
-    // Filter available students by current campus/session/admBatch selections
+    // Show ALL students regardless of campus — user can enrol any student
     let avail = AppState.get('students') || [];
-    if (_selCampus)   avail = avail.filter(s => s.campusId       === _selCampus);
-    if (_selSession)  avail = avail.filter(s => s.session        === _selSession);
     if (_selAdmBatch) avail = avail.filter(s => s.admissionBatch === _selAdmBatch);
     avail = avail.filter(s => !shown.has(s.id));
 
@@ -2517,7 +2514,10 @@ function openModal(enrolmentId = null) {
         dropdown.innerHTML = filtered.map((s, i) => `
           <div class="enrs-search-item" data-id="${s.id}" data-idx="${i}">
             <span>${highlight(s.studentName, q)}</span>
-            ${s.cnic || s.studentId ? `<span class="enrs-search-item-sub">${s.studentId || s.id}${s.cnic ? ' · ' + s.cnic : ''}</span>` : ''}
+            <span class="enrs-search-item-sub">
+              ${s.studentId || s.id}${s.cnic ? ' · ' + s.cnic : ''}
+              ${s.campusId ? ' · ' + (AppState.get('campuses')?.find(c=>c.id===s.campusId)?.name || s.campusId) : ''}
+            </span>
           </div>`).join('');
 
         // Wire click on each item
