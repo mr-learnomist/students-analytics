@@ -963,6 +963,8 @@ function renderTable() {
         duration:     calcDuration(batchRecord?.startDate, resolvedEndDate),
         subjectStatus: e.status || 'active',
         note:         e.notes || '',
+        _enrolmentStatus: e.status,
+        _studentId:   e.studentId || '',
       });
     }
   });
@@ -1243,27 +1245,26 @@ function renderTable() {
 
       const user = AppState.get('currentUser')?.username || null;
 
-      // 'freeze' subject-status → also set enrolment-level status to 'suspended'
-      // so the row moves to the Freeze tab
-      const enrolmentLevelStatus = newStatus === 'freeze'    ? 'suspended'
-                                 : newStatus === 'active'    ? 'active'
-                                 : enrolment.status;
-
       if (subjectIdx >= 0 && Array.isArray(enrolment.subjects) && enrolment.subjects[subjectIdx]) {
         const updatedSubjects = enrolment.subjects.map((sub, idx) =>
           idx === subjectIdx ? { ...sub, status: newStatus } : sub
         );
-        // If ALL subjects are back to active, lift the enrolment-level freeze too
+        // If ANY subject is freeze → enrolment = suspended; if ALL active → enrolment = active; else keep existing
+        const anyFreeze = updatedSubjects.some(s => s.status === 'freeze');
         const allActive = updatedSubjects.every(s => s.status === 'active');
+        const newEnrolmentStatus = anyFreeze ? 'suspended'
+                                 : allActive  ? 'active'
+                                 : enrolment.status;
         const r = EnrolmentService.update(enrolmentId, {
           subjects: updatedSubjects,
-          status: allActive ? 'active' : (newStatus === 'freeze' ? 'suspended' : enrolment.status),
+          status:   newEnrolmentStatus,
         }, user);
         if (r.success) { Toast.success('Status updated.'); renderTable(); renderSummary(); }
         else Toast.error(r.message || 'Update failed.');
       } else {
-        // No subjects array — update top-level status directly
-        const r = EnrolmentService.update(enrolmentId, { status: enrolmentLevelStatus }, user);
+        // No subjects array — map freeze → suspended for enrolment-level
+        const topStatus = newStatus === 'freeze' ? 'suspended' : newStatus;
+        const r = EnrolmentService.update(enrolmentId, { status: topStatus }, user);
         if (r.success) { Toast.success('Status updated.'); renderTable(); renderSummary(); }
         else Toast.error(r.message || 'Update failed.');
       }
