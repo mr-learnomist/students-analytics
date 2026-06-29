@@ -1561,13 +1561,12 @@ function openEditRowModal(enrolmentId) {
   function _batchesForSubject(subjectId) {
     return allBatches.filter(b => {
       if (b.isActive === false) return false;
+      // Only filter by subject if we have a specific subjectId
       if (subjectId) {
         const ids = Array.isArray(b.subjectIds) ? b.subjectIds.map(String) : (b.subjectId ? [String(b.subjectId)] : []);
+        // If batch has no subject restriction at all, show it; otherwise match
         if (ids.length && !ids.includes(String(subjectId))) return false;
       }
-      if (campusId && b.campusId && String(b.campusId) !== String(campusId)) return false;
-      if (discId   && b.disciplineId && String(b.disciplineId) !== String(discId)) return false;
-      if (levelId  && b.levelId     && String(b.levelId)       !== String(levelId)) return false;
       return true;
     }).map(_enrichBatch);
   }
@@ -1664,10 +1663,17 @@ function openEditRowModal(enrolmentId) {
   }
 
   // ── Build all batch sections ─────────────────────────────────
+  const allSubjects = AppState.get('subjects') || [];
   let batchSectionsHTML = '';
   if (hasSubjects) {
     batchSectionsHTML = enrolment.subjects.map((sub, idx) => {
-      const label    = sub.subjectCode ? `${sub.subjectCode}${sub.subjectName ? ' — ' + sub.subjectName : ''}` : (sub.subjectName || `Subject ${idx + 1}`);
+      // Try to get subject info from AppState if not stored on enrolment subject
+      const subjRec = sub.subjectId ? allSubjects.find(s => String(s.id) === String(sub.subjectId)) : null;
+      const subjectCode = sub.subjectCode || subjRec?.subjectCode || subjRec?.abbreviation || subjRec?.abbr || '';
+      const subjectName = sub.subjectName || subjRec?.subjectName || subjRec?.name || '';
+      const label = subjectCode
+        ? `${subjectCode}${subjectName ? ' — ' + subjectName : ''}`
+        : (subjectName || sub.batchName || `Subject ${idx + 1}`);
       const batches  = _batchesForSubject(sub.subjectId);
       return buildBatchSection(idx, label, sub.batchId || '', sub.batchName || '—', batches);
     }).join('');
