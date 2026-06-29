@@ -522,6 +522,43 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 
 <div id="toast-container"></div>
 
+<!-- Global window.open override — fixes blank PDF in all modules -->
+<script>
+(function() {
+  var _orig = window.open.bind(window);
+  window.open = function(url, target, features) {
+    if (url === '' && target === '_blank') {
+      var _html = '';
+      return {
+        document: {
+          write: function(h) { _html += h; },
+          close: function() {
+            var blob = new Blob([_html], { type: 'text/html;charset=utf-8' });
+            var burl = URL.createObjectURL(blob);
+            var win  = _orig(burl, '_blank');
+            if (win) {
+              win.addEventListener('load', function() {
+                win.print();
+                setTimeout(function() { URL.revokeObjectURL(burl); }, 1000);
+              });
+            } else {
+              var a = document.createElement('a');
+              a.href = burl; a.download = 'export.html';
+              document.body.appendChild(a); a.click();
+              document.body.removeChild(a);
+              setTimeout(function() { URL.revokeObjectURL(burl); }, 2000);
+            }
+          }
+        },
+        print: function() {},
+        focus: function() {}
+      };
+    }
+    return _orig(url, target, features);
+  };
+})();
+</script>
+
 <!-- Chart.js loaded before app module so Chart global is available -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
