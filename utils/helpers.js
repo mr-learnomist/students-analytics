@@ -139,3 +139,29 @@ export const State = (() => {
     }
   };
 })();
+
+// ── Print / PDF Export Utility ──────────────────────────────
+// Blob URL approach — popup-blocker safe
+// Usage (any module): import { printHTML } from '../../utils/helpers.js'
+//                     printHTML(html, 'filename')
+export function printHTML(html, filename) {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
+  if (win) {
+    win.addEventListener('load', function() {
+      win.print();
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    });
+  } else {
+    // Popup blocked — fallback to download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (filename || 'export') + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+    Toast.info('Popup blocked — file downloaded instead.');
+  }
+}
