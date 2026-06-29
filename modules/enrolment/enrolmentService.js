@@ -19,11 +19,10 @@ export const STATUS_LABELS = {
 };
 
 // Per-subject statuses (student's status within a subject)
-export const ENR_SUBJECT_STATUSES = ['active', 'freeze', 'dormant', 'left_campus', 'change_campus', 'left_study', 'exempt'];
+export const ENR_SUBJECT_STATUSES = ['active', 'dormant', 'left_campus', 'change_campus', 'left_study', 'exempt'];
 
 export const ENR_SUBJECT_STATUS_LABELS = {
   active:        'Active',
-  freeze:        'Freeze',
   dormant:       'Dormant',
   left_campus:   'Left Campus',
   change_campus: 'Change Campus',
@@ -83,15 +82,15 @@ export const EnrolmentService = {
       if (status)        opts.status  = status;
     }
 
-    const students = AppState.get('students') || [];
-    const batches  = AppState.get('batches')  || [];
+    const studentMap = new Map((AppState.get('students') || []).map(function(s) { return [s.id, s]; }));
+    const batchMap   = new Map((AppState.get('batches')  || []).map(function(b) { return [b.id, b]; }));
 
     return EnrolmentService.getAll(opts).map(function (e) {
-      const student = students.find(function (s) { return s.id === e.studentId; });
-      const batch   = batches.find(function  (b) { return b.id === e.batchId;   });
+      const student = studentMap.get(e.studentId);
+      const batch   = batchMap.get(e.batchId);
       return Object.assign({}, e, {
         studentName: student?.studentName || '—',
-        studentCnic: student?.cnic        || '',   // note: UI uses studentCnic (lowercase c)
+        studentCnic: student?.cnic        || '',
         batchName:   batch?.batchName     || '—',
       });
     });
@@ -138,7 +137,7 @@ export const EnrolmentService = {
     return { success: true, enrolment };
   },
 
-  // Update status / feeStatus / notes / batch fields
+  // Update status / feeStatus / notes (studentId & batchId are immutable)
   update(id, data, updatedBy) {
     const existing = AppState.findById(KEY, id);
     if (!existing) return { success: false, message: 'Enrolment not found.' };
@@ -148,15 +147,8 @@ export const EnrolmentService = {
       status:        ENROLMENT_STATUSES.includes(data.status) || ENR_SUBJECT_STATUSES.includes(data.status)
                        ? data.status    : existing.status,
       feeStatus:     FEE_STATUSES.includes(data.feeStatus)      ? data.feeStatus : existing.feeStatus,
-      notes:         data.notes     !== undefined ? (data.notes || '').trim() : existing.notes,
-      subjects:      Array.isArray(data.subjects) ? data.subjects              : existing.subjects,
-      // Batch fields — only overwrite if explicitly provided in data
-      batchId:       data.batchId   !== undefined ? data.batchId    : existing.batchId,
-      batchName:     data.batchName !== undefined ? data.batchName  : existing.batchName,
-      session:       data.session   !== undefined ? data.session    : existing.session,
-      startDate:     data.startDate !== undefined ? data.startDate  : existing.startDate,
-      endDate:       data.endDate   !== undefined ? data.endDate    : existing.endDate,
-      teacher:       data.teacher   !== undefined ? data.teacher    : existing.teacher,
+      notes:         data.notes !== undefined ? (data.notes || '').trim() : existing.notes,
+      subjects:      Array.isArray(data.subjects) ? data.subjects : existing.subjects,
       updatedBy:     updatedBy  || null,
       updatedAt:     new Date().toISOString(),
     };
