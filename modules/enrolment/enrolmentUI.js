@@ -675,6 +675,7 @@ function renderSummary() {
   // Same statuses as table inline dropdown
   const ENR_SUBJ_STATUS_OPTS = [
     { value: 'active',        label: 'Active' },
+    { value: 'freeze',        label: 'Freeze' },
     { value: 'dormant',       label: 'Dormant' },
     { value: 'exempt',        label: 'Exempt' },
     { value: 'change_campus', label: 'Change Campus' },
@@ -752,7 +753,12 @@ function renderTable() {
 
   // ── Tab counts (computed off full dataset, before search/other filters) ──
   const _allForCounts = rows;
-  const _freezeCount  = _allForCounts.filter(e => e.status === 'suspended').length;
+  // An enrolment is "frozen" if its top-level status is 'suspended'
+  // OR if any of its subjects has status 'freeze'
+  const _freezeCount  = _allForCounts.filter(e =>
+    e.status === 'suspended' ||
+    (Array.isArray(e.subjects) && e.subjects.length && e.subjects.some(s => s.status === 'freeze'))
+  ).length;
   const _dormantCount = _allForCounts.filter(e =>
     (Array.isArray(e.subjects) && e.subjects.length)
       ? e.subjects.some(sub => sub.status === 'dormant')
@@ -768,9 +774,15 @@ function renderTable() {
 
   // ── Filter by active tab (enrolment-level status) ──────────
   if (_activeTab === 'freeze') {
-    rows = rows.filter(e => e.status === 'suspended');
+    rows = rows.filter(e =>
+      e.status === 'suspended' ||
+      (Array.isArray(e.subjects) && e.subjects.length && e.subjects.some(s => s.status === 'freeze'))
+    );
   } else if (_activeTab === 'enrolled') {
-    rows = rows.filter(e => e.status !== 'suspended');
+    rows = rows.filter(e =>
+      e.status !== 'suspended' &&
+      !(Array.isArray(e.subjects) && e.subjects.length && e.subjects.some(s => s.status === 'freeze'))
+    );
   }
   // 'dormant' tab is filtered later at subject-row level (subjectStatus)
 
@@ -832,6 +844,7 @@ function renderTable() {
   // ── Per-subject status options ─────────────────────────────
   const ENR_SUBJ_STATUS_OPTS = [
     { value: 'active',        label: 'Active' },
+    { value: 'freeze',        label: 'Freeze' },
     { value: 'dormant',       label: 'Dormant' },
     { value: 'exempt',        label: 'Exempt' },
     { value: 'change_campus', label: 'Change Campus' },
@@ -962,6 +975,11 @@ function renderTable() {
   // ── Dormant tab: only show subject-rows whose subject-status is dormant ──
   if (_activeTab === 'dormant') {
     filteredRows = filteredRows.filter(r => r.subjectStatus === 'dormant');
+  }
+
+  // ── Freeze tab: only show subject-rows whose subject-status is freeze (or enrolment is suspended) ──
+  if (_activeTab === 'freeze') {
+    filteredRows = filteredRows.filter(r => r.subjectStatus === 'freeze' || r._enrolmentStatus === 'suspended');
   }
 
   // ── Apply campus / subject / session / teacher / batchNo filters ──
@@ -1225,18 +1243,28 @@ function renderTable() {
 
       const user = AppState.get('currentUser')?.username || null;
 
+      // 'freeze' subject-status → also set enrolment-level status to 'suspended'
+      // so the row moves to the Freeze tab
+      const enrolmentLevelStatus = newStatus === 'freeze'    ? 'suspended'
+                                 : newStatus === 'active'    ? 'active'
+                                 : enrolment.status;
+
       if (subjectIdx >= 0 && Array.isArray(enrolment.subjects) && enrolment.subjects[subjectIdx]) {
-        // Update the specific subject's status
         const updatedSubjects = enrolment.subjects.map((sub, idx) =>
           idx === subjectIdx ? { ...sub, status: newStatus } : sub
         );
-        const r = EnrolmentService.update(enrolmentId, { subjects: updatedSubjects }, user);
-        if (r.success) { Toast.success('Status updated.'); renderSummary(); }
+        // If ALL subjects are back to active, lift the enrolment-level freeze too
+        const allActive = updatedSubjects.every(s => s.status === 'active');
+        const r = EnrolmentService.update(enrolmentId, {
+          subjects: updatedSubjects,
+          status: allActive ? 'active' : (newStatus === 'freeze' ? 'suspended' : enrolment.status),
+        }, user);
+        if (r.success) { Toast.success('Status updated.'); renderTable(); renderSummary(); }
         else Toast.error(r.message || 'Update failed.');
       } else {
-        // No subjects array — update top-level status
-        const r = EnrolmentService.update(enrolmentId, { status: newStatus }, user);
-        if (r.success) { Toast.success('Status updated.'); renderSummary(); }
+        // No subjects array — update top-level status directly
+        const r = EnrolmentService.update(enrolmentId, { status: enrolmentLevelStatus }, user);
+        if (r.success) { Toast.success('Status updated.'); renderTable(); renderSummary(); }
         else Toast.error(r.message || 'Update failed.');
       }
     });
@@ -1532,6 +1560,7 @@ function openEditRowModal(enrolmentId, clickedSubjectIdx = -1) {
 
   const ENR_SUBJ_STATUS_OPTS = [
     { value: 'active',        label: 'Active' },
+    { value: 'freeze',        label: 'Freeze' },
     { value: 'dormant',       label: 'Dormant' },
     { value: 'exempt',        label: 'Exempt' },
     { value: 'change_campus', label: 'Change Campus' },
