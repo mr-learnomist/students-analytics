@@ -1538,8 +1538,128 @@ function openEditRowModal(enrolmentId) {
     .map(o => `<option value="${o.value}" ${enrolment.status === o.value ? 'selected' : ''}>${o.label}</option>`)
     .join('');
 
+  // ── Build batch-change section for each subject ──────────────
+  const allBatches  = AppState.get('batches')  || [];
+  const allCampuses = AppState.get('campuses') || [];
+  const today       = new Date().toISOString().split('T')[0];
+
+  // Helper: get batches available for a given subjectId
+  function _batchesForSubject(subjectId, campusId, disciplineId, levelId) {
+    return allBatches.filter(b => {
+      if (b.isActive === false) return false;
+      if (subjectId) {
+        const bSubjectIds = Array.isArray(b.subjectIds)
+          ? b.subjectIds.map(String)
+          : (b.subjectId ? [String(b.subjectId)] : []);
+        if (bSubjectIds.length && !bSubjectIds.includes(String(subjectId))) return false;
+      }
+      if (campusId    && b.campusId    && String(b.campusId)    !== String(campusId))    return false;
+      if (disciplineId && b.disciplineId && String(b.disciplineId) !== String(disciplineId)) return false;
+      if (levelId     && b.levelId     && String(b.levelId)     !== String(levelId))     return false;
+      return true;
+    }).map(b => {
+      const campus = allCampuses.find(c => String(c.id) === String(b.campusId));
+      const parts = (b.batchName || b.name || '').split('-');
+      const batchNo = parts[parts.length - 1] || '';
+      const session = parts.slice(1, parts.length - 1).join('-') || b.session || b.sessionPeriod || '';
+      return { ...b, batchNo, session, campusLabel: campus?.campusName || '', displayBatchName: b.batchName || b.name || b.id };
+    });
+  }
+
+  // Build subject-batch sections
+  const studentRec   = (AppState.get('students') || []).find(s => s.id === enrolment.studentId);
+  const campusId     = studentRec?.campusId    || '';
+  const disciplineId = studentRec?.disciplineId || '';
+  const levelId      = studentRec?.levelId     || '';
+
+  let subjectBatchSectionsHTML = '';
+  if (Array.isArray(enrolment.subjects) && enrolment.subjects.length > 0) {
+    subjectBatchSectionsHTML = enrolment.subjects.map((sub, idx) => {
+      const subjectLabel = sub.subjectCode
+        ? `${sub.subjectCode}${sub.subjectName ? ' — ' + sub.subjectName : ''}`
+        : (sub.subjectName || `Subject ${idx + 1}`);
+      const currentBatchId   = sub.batchId || '';
+      const currentBatchName = sub.batchName || '—';
+      const batches = _batchesForSubject(sub.subjectId, campusId, disciplineId, levelId);
+
+      const batchOptsHTML = batches.length === 0
+        ? `<div style="font-size:12px;color:var(--t3);padding:8px 0;font-style:italic">No active batches available for this subject.</div>`
+        : batches.map(b => `
+            <label class="enr-edit-batch-row" data-subject-idx="${idx}" data-batch-id="${b.id}"
+              style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border2);
+                border-radius:var(--r-sm);cursor:pointer;transition:all .12s;background:var(--surface2);margin-bottom:4px;
+                ${b.id === currentBatchId ? 'border-color:var(--blue);background:var(--blue-dim)' : ''}">
+              <input type="radio" name="enrEditBatch_${idx}" value="${b.id}" class="enr-edit-batch-radio"
+                data-subject-idx="${idx}"
+                ${b.id === currentBatchId ? 'checked' : ''}
+                style="width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--violet)">${b.displayBatchName}</div>
+                <div style="font-size:11px;color:var(--t3);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap">
+                  ${b.session    ? `<span>Session: <b style="color:var(--t2)">${b.session}</b></span>` : ''}
+                  ${b.batchNo    ? `<span>Batch #: <b style="color:var(--t2)">${b.batchNo}</b></span>`  : ''}
+                  ${b.campusLabel? `<span>Campus: <b style="color:var(--t2)">${b.campusLabel}</b></span>`: ''}
+                  ${b.startDate  ? `<span>Start: <b style="color:var(--t2)">${b.startDate}</b></span>`  : ''}
+                  ${b.teacher || b.teacherName ? `<span>Teacher: <b style="color:var(--t2)">${b.teacher || b.teacherName}</b></span>` : ''}
+                </div>
+              </div>
+            </label>`).join('');
+
+      return `
+      <div style="border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-bottom:12px">
+        <div style="background:var(--surface2);padding:8px 14px;border-bottom:1px solid var(--border);
+          display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--violet);font-family:var(--font-mono)">${subjectLabel}</span>
+          <span style="font-size:11px;color:var(--t3)">Current: <b style="color:var(--t2)">${currentBatchName}</b></span>
+        </div>
+        <div style="padding:10px 12px;max-height:200px;overflow-y:auto" id="enrEditBatchList_${idx}">
+          ${batchOptsHTML}
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    // Simple enrolment (no subjects array) — show single batch selector
+    const batches = _batchesForSubject('', campusId, disciplineId, levelId);
+    const currentBatchId   = enrolment.batchId || '';
+    const currentBatchName = enrolment.batchName || '—';
+    if (batches.length > 0) {
+      subjectBatchSectionsHTML = `
+      <div style="border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-bottom:12px">
+        <div style="background:var(--surface2);padding:8px 14px;border-bottom:1px solid var(--border);
+          display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--t1)">Batch</span>
+          <span style="font-size:11px;color:var(--t3)">Current: <b style="color:var(--t2)">${currentBatchName}</b></span>
+        </div>
+        <div style="padding:10px 12px;max-height:200px;overflow-y:auto">
+          ${batches.map(b => `
+            <label class="enr-edit-batch-row" data-subject-idx="-1" data-batch-id="${b.id}"
+              style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border2);
+                border-radius:var(--r-sm);cursor:pointer;transition:all .12s;background:var(--surface2);margin-bottom:4px;
+                ${b.id === currentBatchId ? 'border-color:var(--blue);background:var(--blue-dim)' : ''}">
+              <input type="radio" name="enrEditBatch_simple" value="${b.id}" class="enr-edit-batch-radio"
+                data-subject-idx="-1"
+                ${b.id === currentBatchId ? 'checked' : ''}
+                style="width:14px;height:14px;accent-color:var(--blue);cursor:pointer;flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--violet)">${b.displayBatchName}</div>
+                <div style="font-size:11px;color:var(--t3);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap">
+                  ${b.session    ? `<span>Session: <b style="color:var(--t2)">${b.session}</b></span>`    : ''}
+                  ${b.batchNo    ? `<span>Batch #: <b style="color:var(--t2)">${b.batchNo}</b></span>`    : ''}
+                  ${b.campusLabel? `<span>Campus: <b style="color:var(--t2)">${b.campusLabel}</b></span>`  : ''}
+                  ${b.startDate  ? `<span>Start: <b style="color:var(--t2)">${b.startDate}</b></span>`    : ''}
+                  ${b.teacher || b.teacherName ? `<span>Teacher: <b style="color:var(--t2)">${b.teacher || b.teacherName}</b></span>` : ''}
+                </div>
+              </div>
+            </label>`).join('')}
+        </div>
+      </div>`;
+    }
+  }
+
+  const hasBatchSection = subjectBatchSectionsHTML.trim().length > 0;
+
   overlay.innerHTML = `
-<div class="enr-modal" style="max-width:480px">
+<div class="enr-modal" style="max-width:520px">
   <div class="enr-modal-hdr">
     <span class="enr-modal-title">Edit Enrolment</span>
     <button class="enr-modal-close" id="enrEditClose">
@@ -1548,27 +1668,51 @@ function openEditRowModal(enrolmentId) {
       </svg>
     </button>
   </div>
-  <div class="enr-modal-body">
+  <div class="enr-modal-body" style="max-height:calc(100vh - 160px);overflow-y:auto">
+    <!-- Student (read-only) -->
     <div class="enr-field">
       <label class="enr-label">Student</label>
       <input class="enr-input" value="${studentName}" disabled style="opacity:.6;cursor:not-allowed"/>
     </div>
-    <div class="enr-field">
-      <label class="enr-label">Enrolment Date</label>
-      <input id="enrEditDate" type="date" class="enr-input" value="${enrolment.enrolmentDate || ''}"/>
+
+    <!-- Enrolment date + Status row -->
+    <div class="enr-form-row">
+      <div class="enr-field">
+        <label class="enr-label">Enrolment Date</label>
+        <input id="enrEditDate" type="date" class="enr-input" value="${enrolment.enrolmentDate || ''}"/>
+      </div>
+      <div class="enr-field">
+        <label class="enr-label">Status</label>
+        <select id="enrEditStatus" class="enr-input">${statusOpts}</select>
+      </div>
     </div>
-    <div class="enr-field">
-      <label class="enr-label">Status</label>
-      <select id="enrEditStatus" class="enr-input">${statusOpts}</select>
-    </div>
+
+    <!-- Notes -->
     <div class="enr-field">
       <label class="enr-label">Notes</label>
-      <textarea id="enrEditNotes" class="enr-input" rows="3" style="resize:vertical">${enrolment.notes || ''}</textarea>
+      <textarea id="enrEditNotes" class="enr-input" rows="2" style="resize:vertical">${enrolment.notes || ''}</textarea>
     </div>
+
+    ${hasBatchSection ? `
+    <!-- Batch Change -->
+    <div style="margin-top:4px">
+      <div style="font-size:11.5px;font-weight:700;color:var(--t2);text-transform:uppercase;
+        letter-spacing:.06em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.2">
+          <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+        Change Batch
+      </div>
+      ${subjectBatchSectionsHTML}
+    </div>` : ''}
   </div>
   <div class="enr-modal-footer">
     <button class="enr-btn enr-btn-ghost" id="enrEditCancel">Cancel</button>
-    <button class="enr-btn enr-btn-primary" id="enrEditSave">Save Changes</button>
+    <button class="enr-btn enr-btn-primary" id="enrEditSave">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Save Changes
+    </button>
   </div>
 </div>`;
 
@@ -1579,13 +1723,71 @@ function openEditRowModal(enrolmentId) {
   overlay.querySelector('#enrEditCancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
+  // ── Wire batch-row highlight on click ────────────────────────
+  overlay.querySelectorAll('.enr-edit-batch-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = row.dataset.subjectIdx;
+      // Un-highlight all rows for this subject
+      overlay.querySelectorAll(`.enr-edit-batch-row[data-subject-idx="${idx}"]`).forEach(r => {
+        r.style.borderColor = 'var(--border2)';
+        r.style.background  = 'var(--surface2)';
+      });
+      row.style.borderColor = 'var(--blue)';
+      row.style.background  = 'var(--blue-dim)';
+      const radio = row.querySelector('input[type=radio]');
+      if (radio) radio.checked = true;
+    });
+  });
+
   overlay.querySelector('#enrEditSave').addEventListener('click', () => {
     const status        = overlay.querySelector('#enrEditStatus').value;
     const enrolmentDate = overlay.querySelector('#enrEditDate').value;
     const notes         = overlay.querySelector('#enrEditNotes').value;
     const user          = AppState.get('currentUser')?.username || null;
 
-    const result = EnrolmentService.update(enrolmentId, { status, enrolmentDate, notes }, user);
+    let updatePayload = { status, enrolmentDate, notes };
+
+    // ── Collect batch changes ─────────────────────────────────
+    if (Array.isArray(enrolment.subjects) && enrolment.subjects.length > 0) {
+      const updatedSubjects = enrolment.subjects.map((sub, idx) => {
+        const selectedRadio = overlay.querySelector(`.enr-edit-batch-radio[data-subject-idx="${idx}"]:checked`);
+        if (!selectedRadio) return sub;
+        const newBatchId = selectedRadio.value;
+        if (newBatchId === (sub.batchId || '')) return sub; // unchanged
+        const newBatch = allBatches.find(b => b.id === newBatchId);
+        if (!newBatch) return sub;
+        return {
+          ...sub,
+          batchId:   newBatchId,
+          batchName: newBatch.batchName || newBatch.name || '',
+          batchNo:   (newBatch.batchName || '').split('-').pop() || '',
+          session:   newBatch.session || newBatch.sessionPeriod || sub.session || '',
+          startDate: newBatch.startDate || sub.startDate || '',
+          endDate:   newBatch.endDate   || sub.endDate   || '',
+          teacher:   newBatch.teacher   || newBatch.teacherName || sub.teacher || '',
+        };
+      });
+      updatePayload.subjects = updatedSubjects;
+      // Sync top-level batchId to first subject's batch
+      if (updatedSubjects[0]?.batchId) updatePayload.batchId = updatedSubjects[0].batchId;
+    } else {
+      // Simple enrolment — check single batch radio
+      const selectedRadio = overlay.querySelector('.enr-edit-batch-radio[data-subject-idx="-1"]:checked');
+      if (selectedRadio && selectedRadio.value !== (enrolment.batchId || '')) {
+        const newBatchId = selectedRadio.value;
+        const newBatch   = allBatches.find(b => b.id === newBatchId);
+        if (newBatch) {
+          updatePayload.batchId   = newBatchId;
+          updatePayload.batchName = newBatch.batchName || newBatch.name || '';
+          updatePayload.session   = newBatch.session   || newBatch.sessionPeriod || '';
+          updatePayload.startDate = newBatch.startDate || '';
+          updatePayload.endDate   = newBatch.endDate   || '';
+          updatePayload.teacher   = newBatch.teacher   || newBatch.teacherName || '';
+        }
+      }
+    }
+
+    const result = EnrolmentService.update(enrolmentId, updatePayload, user);
     if (result.success) {
       Toast.success('Enrolment updated.');
       close();
