@@ -519,6 +519,7 @@ function wireNavbar() {
     const vars = THEMES[t] || THEMES.dark;
     const root = document.documentElement;
     Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    document.body.classList.toggle('light', t === 'light');
     if (moon) moon.style.display = t === 'light' ? 'none' : '';
     if (sun)  sun.style.display  = t === 'light' ? ''     : 'none';
     document.body.style.background = '';
@@ -537,10 +538,10 @@ function wireNavbar() {
     }
   };
 
-  applyTheme(localStorage.getItem('sms_theme') || 'light');
+  applyTheme(localStorage.getItem('sms_theme') || 'dark');
 
   tBtn?.addEventListener('click', () => {
-    const next = (localStorage.getItem('sms_theme') || 'light') === 'dark' ? 'light' : 'dark';
+    const next = (localStorage.getItem('sms_theme') || 'dark') === 'dark' ? 'light' : 'dark';
     localStorage.setItem('sms_theme', next);
     applyTheme(next);
   });
