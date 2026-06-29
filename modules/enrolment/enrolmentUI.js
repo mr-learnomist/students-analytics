@@ -1149,7 +1149,7 @@ function renderTable() {
               <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
             </svg>
           </button>` : ''}
-          <button class="enr-icon-btn edit" data-id="${r._enrolmentId}" title="Edit">
+          <button class="enr-icon-btn edit" data-id="${r._enrolmentId}" data-subject-idx="${r._subjectIdx}" title="Edit">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -1244,7 +1244,7 @@ function renderTable() {
 
   // ── Wire edit / delete buttons ────────────────────────────
   tbody.querySelectorAll('.enr-icon-btn.edit').forEach(btn =>
-    btn.addEventListener('click', () => openEditRowModal(btn.dataset.id))
+    btn.addEventListener('click', () => openEditRowModal(btn.dataset.id, parseInt(btn.dataset.subjectIdx ?? '-1')))
   );
   tbody.querySelectorAll('.enr-icon-btn.del').forEach(btn =>
     btn.addEventListener('click', () => confirmDelete(btn.dataset.id))
@@ -1520,7 +1520,7 @@ function openAssignBatchModal({ enrolmentId, subjectIdx, subjectId, subjectName,
 // INLINE ROW EDIT MODAL — Edit a single enrolment's editable fields
 // (student name is read-only; status, dates, notes are editable)
 // ══════════════════════════════════════════════════════════════
-function openEditRowModal(enrolmentId) {
+function openEditRowModal(enrolmentId, clickedSubjectIdx = -1) {
   const enrolment = EnrolmentService.getById(enrolmentId);
   if (!enrolment) return;
 
@@ -1624,7 +1624,7 @@ function openEditRowModal(enrolmentId) {
 
   // ── Build one subject-batch section ─────────────────────────
   function buildBatchSection(subjectIdx, subjectLabel, currentBatchId, currentBatchName, batches) {
-    _selectedBatch[subjectIdx] = currentBatchId;
+    _selectedBatch[String(subjectIdx)] = currentBatchId;
     const listId   = `enrEbList_${subjectIdx}`;
     const searchId = `enrEbSearch_${subjectIdx}`;
 
@@ -1671,15 +1671,21 @@ function openEditRowModal(enrolmentId) {
   const allSubjects = AppState.get('subjects') || [];
   let batchSectionsHTML = '';
   if (hasSubjects) {
-    batchSectionsHTML = enrolment.subjects.map((sub, idx) => {
-      // Try to get subject info from AppState if not stored on enrolment subject
+    // Only show batch section for the specific subject row that was clicked
+    const subjectsToShow = clickedSubjectIdx >= 0
+      ? enrolment.subjects.filter((_, i) => i === clickedSubjectIdx)
+      : enrolment.subjects;
+    const idxOffset = clickedSubjectIdx >= 0 ? clickedSubjectIdx : 0;
+
+    batchSectionsHTML = subjectsToShow.map((sub, i) => {
+      const idx = clickedSubjectIdx >= 0 ? clickedSubjectIdx : i;
       const subjRec = sub.subjectId ? allSubjects.find(s => String(s.id) === String(sub.subjectId)) : null;
       const subjectCode = sub.subjectCode || subjRec?.subjectCode || subjRec?.abbreviation || subjRec?.abbr || '';
       const subjectName = sub.subjectName || subjRec?.subjectName || subjRec?.name || '';
       const label = subjectCode
         ? `${subjectCode}${subjectName ? ' — ' + subjectName : ''}`
         : (subjectName || sub.batchName || `Subject ${idx + 1}`);
-      const batches  = _batchesForSubject(sub.subjectId);
+      const batches = _batchesForSubject(sub.subjectId);
       return buildBatchSection(idx, label, sub.batchId || '', sub.batchName || '—', batches);
     }).join('');
   } else {
@@ -1800,7 +1806,7 @@ function openEditRowModal(enrolmentId) {
     const searchEl = section.querySelector(`#enrEbSearch_${subjectIdx}`);
 
     function _selectItem(batchId) {
-      _selectedBatch[subjectIdx] = batchId;
+      _selectedBatch[String(subjectIdx)] = batchId;
       listEl?.querySelectorAll('.enr-eb-item').forEach(item => {
         const isThis = item.dataset.batchId === batchId;
         item.classList.toggle('selected', isThis);
@@ -1838,8 +1844,12 @@ function openEditRowModal(enrolmentId) {
 
   // Wire all sections
   if (hasSubjects) {
-    enrolment.subjects.forEach((sub, idx) => {
-      _wireBatchSection(idx, _batchesForSubject(sub.subjectId));
+    const idxToWire = clickedSubjectIdx >= 0
+      ? [clickedSubjectIdx]
+      : enrolment.subjects.map((_, i) => i);
+    idxToWire.forEach(idx => {
+      const sub = enrolment.subjects[idx];
+      _wireBatchSection(idx, _batchesForSubject(sub?.subjectId || ''));
     });
   } else {
     _wireBatchSection(-1, _batchesForSubject(''));
@@ -1856,7 +1866,7 @@ function openEditRowModal(enrolmentId) {
 
     if (hasSubjects) {
       const updatedSubjects = enrolment.subjects.map((sub, idx) => {
-        const newBatchId = _selectedBatch[idx];
+        const newBatchId = _selectedBatch[String(idx)];
         if (!newBatchId || newBatchId === (sub.batchId || '')) return sub;
         const nb = allBatches.find(b => b.id === newBatchId);
         if (!nb) return sub;
@@ -1875,7 +1885,7 @@ function openEditRowModal(enrolmentId) {
       updatePayload.subjects = updatedSubjects;
       if (updatedSubjects[0]?.batchId) updatePayload.batchId = updatedSubjects[0].batchId;
     } else {
-      const newBatchId = _selectedBatch[-1];
+      const newBatchId = _selectedBatch['-1'];
       if (newBatchId && newBatchId !== (enrolment.batchId || '')) {
         const nb = allBatches.find(b => b.id === newBatchId);
         if (nb) {
