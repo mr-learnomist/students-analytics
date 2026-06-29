@@ -1392,13 +1392,13 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const [y, m]  = mk.split('-');
     const mLabel  = MON_F[parseInt(m)-1] + ' ' + y;
 
-    // Info col widths — auto so table distributes space smartly
+    // Info col widths — fixed so table doesn't expand unnecessarily
     const infoColsHTML = [
-      pdfShowCnic          ? '<col style="min-width:70px;width:auto"/>'  : '',
-      pdfShowFatherName    ? '<col style="min-width:70px;width:auto"/>'  : '',
-      pdfShowStudentPhone  ? '<col style="min-width:62px;width:auto"/>'  : '',
-      pdfShowGuardianPhone ? '<col style="min-width:62px;width:auto"/>'  : '',
-      pdfShowEmail         ? '<col style="min-width:88px;width:auto"/>'  : '',
+      pdfShowCnic          ? '<col style="width:55px"/>'  : '',
+      pdfShowFatherName    ? '<col style="width:65px"/>'  : '',
+      pdfShowStudentPhone  ? '<col style="width:52px"/>'  : '',
+      pdfShowGuardianPhone ? '<col style="width:52px"/>'  : '',
+      pdfShowEmail         ? '<col style="width:75px"/>'  : '',
     ].join('');
 
     const summCols = (pdfShowP?1:0)+(pdfShowA?1:0)+(pdfShowL?1:0)+(pdfShowPct?1:0);
@@ -1408,7 +1408,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const infoSpan = [pdfShowCnic,pdfShowFatherName,pdfShowStudentPhone,pdfShowGuardianPhone,pdfShowEmail].filter(Boolean).length;
 
     let hdr1 = `<th rowspan="2" class="h-no h-name" colspan="${1 + (infoSpan > 0 ? 0 : 0)}">#</th>
-                <th rowspan="2" class="h-no h-name" style="text-align:left;min-width:110px">Student Name</th>`;
+                <th rowspan="2" class="h-no h-name" style="text-align:left">Student Name</th>`;
     if (pdfShowCnic)          hdr1 += `<th rowspan="2" class="h-no">CNIC</th>`;
     if (pdfShowFatherName)    hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Father Name</th>`;
     if (pdfShowStudentPhone)  hdr1 += `<th rowspan="2" class="h-no">Stu. Phone</th>`;
@@ -1463,8 +1463,8 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       <div class="month-block">
         <table>
           <colgroup>
-            <col style="width:24px"/>
-            <col style="min-width:100px;width:auto"/>
+            <col style="width:18px"/>
+            <col style="width:90px"/>
             ${infoColsHTML}
             ${mDates.map(() => '<col class="att-col"/>').join('')}
             ${pdfShowP   ? '<col style="width:22px"/>' : ''}
@@ -1512,7 +1512,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       }
 
       /* ── Table base */
-      table{border-collapse:collapse;width:100%;table-layout:auto}
+      table{border-collapse:collapse;width:100%;table-layout:fixed}
       th,td{border:1px solid #000;padding:2px 2px;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
       /* ── Header types */
