@@ -1864,9 +1864,19 @@ function openEditRowModal(enrolmentId, clickedSubjectIdx = -1) {
 
     let updatePayload = { status, enrolmentDate, notes };
 
+    console.log('[EditModal] clickedSubjectIdx:', clickedSubjectIdx);
+    console.log('[EditModal] hasSubjects:', hasSubjects);
+    console.log('[EditModal] enrolment.subjects:', enrolment.subjects);
+    console.log('[EditModal] _selectedBatch:', JSON.stringify(_selectedBatch));
+
     if (hasSubjects) {
       const updatedSubjects = enrolment.subjects.map((sub, idx) => {
+        // Only touch the row that was actually opened for editing
+        if (clickedSubjectIdx >= 0 && idx !== clickedSubjectIdx) return sub;
+
         const newBatchId = _selectedBatch[String(idx)];
+        console.log(`[EditModal] subject[${idx}] batchId old=${sub.batchId} new=${newBatchId}`);
+        // No selection made, or same batch selected — keep original row intact
         if (!newBatchId || newBatchId === (sub.batchId || '')) return sub;
         const nb = allBatches.find(b => b.id === newBatchId);
         if (!nb) return sub;
@@ -1883,7 +1893,9 @@ function openEditRowModal(enrolmentId, clickedSubjectIdx = -1) {
         };
       });
       updatePayload.subjects = updatedSubjects;
-      if (updatedSubjects[0]?.batchId) updatePayload.batchId = updatedSubjects[0].batchId;
+      // Update top-level batchId only if the FIRST subject's batch was the one changed
+      const changedSub = updatedSubjects[clickedSubjectIdx >= 0 ? clickedSubjectIdx : 0];
+      if (changedSub?.batchId) updatePayload.batchId = changedSub.batchId;
     } else {
       const newBatchId = _selectedBatch['-1'];
       if (newBatchId && newBatchId !== (enrolment.batchId || '')) {
@@ -1900,6 +1912,8 @@ function openEditRowModal(enrolmentId, clickedSubjectIdx = -1) {
     }
 
     const result = EnrolmentService.update(enrolmentId, updatePayload, user);
+    console.log('[EditModal] update result:', result);
+    console.log('[EditModal] updatePayload:', JSON.stringify(updatePayload));
     if (result.success) {
       Toast.success('Enrolment updated.');
       close();
