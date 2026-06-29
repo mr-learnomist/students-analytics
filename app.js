@@ -516,12 +516,14 @@ function wireNavbar() {
   const sun  = tBtn?.querySelector('.icon-sun');
 
   const applyTheme = t => {
-    const vars = THEMES[t] || THEMES.dark;
+    const vars = THEMES[t] || THEMES.light;
     const root = document.documentElement;
     Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
     document.body.classList.toggle('light', t === 'light');
-    if (moon) moon.style.display = t === 'light' ? 'none' : '';
-    if (sun)  sun.style.display  = t === 'light' ? ''     : 'none';
+    const _moon = document.querySelector('#themeToggle .icon-moon');
+    const _sun  = document.querySelector('#themeToggle .icon-sun');
+    if (_moon) _moon.style.display = t === 'light' ? 'none' : '';
+    if (_sun)  _sun.style.display  = t === 'light' ? ''     : 'none';
     document.body.style.background = '';
     document.body.style.color      = '';
     const banner = document.querySelector('.welcome-banner');
@@ -538,12 +540,15 @@ function wireNavbar() {
     }
   };
 
-  applyTheme(localStorage.getItem('sms_theme') || 'dark');
+  applyTheme(localStorage.getItem('sms_theme') || 'light');
 
-  tBtn?.addEventListener('click', () => {
-    const next = (localStorage.getItem('sms_theme') || 'dark') === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('sms_theme', next);
-    applyTheme(next);
+  // Event delegation — works even if button re-renders
+  document.addEventListener('click', e => {
+    if (e.target.closest('#themeToggle')) {
+      const next = (localStorage.getItem('sms_theme') || 'light') === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('sms_theme', next);
+      applyTheme(next);
+    }
   });
 
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
