@@ -108,7 +108,7 @@ export const Navbar = {
       if (sun) sun.style.display = theme === 'light' ? '' : 'none';
     };
 
-    const saved = localStorage.getItem('sms_theme') || 'dark';
+    const saved = localStorage.getItem('sms_theme') || 'light';
     applyTheme(saved);
 
     themeBtn?.addEventListener('click', () => {
