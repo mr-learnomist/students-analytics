@@ -537,10 +537,10 @@ function wireNavbar() {
     }
   };
 
-  applyTheme(localStorage.getItem('sms_theme') || 'dark');
+  applyTheme(localStorage.getItem('sms_theme') || 'light');
 
   tBtn?.addEventListener('click', () => {
-    const next = (localStorage.getItem('sms_theme') || 'dark') === 'dark' ? 'light' : 'dark';
+    const next = (localStorage.getItem('sms_theme') || 'light') === 'dark' ? 'light' : 'dark';
     localStorage.setItem('sms_theme', next);
     applyTheme(next);
   });
