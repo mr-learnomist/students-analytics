@@ -227,6 +227,7 @@ let _sortCol        = '';    // 'student'|'subject'|'batchNo'|'session'|'teacher
 let _sortDir        = 'asc'; // 'asc'|'desc'
 let _selected       = new Set(); // bulk-delete: selected enrolment IDs
 let _activeTab       = 'enrolled'; // 'enrolled' | 'freeze' | 'dormant'
+let _searchDebounce  = null;       // debounce timer for search input
 
 // ── Main mount ────────────────────────────────────────────────
 export const EnrolmentModule = {
@@ -596,7 +597,9 @@ function wireEvents() {
 
   _container.querySelector('#enrSearch')?.addEventListener('input', e => {
     _search = e.target.value;
-    renderTable();
+    // Debounce: wait 120ms after last keystroke before re-rendering
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(() => renderTable(), 120);
   });
 
   _container.querySelector('#enrAddBtn')?.addEventListener('click', () => openModal());
@@ -852,119 +855,111 @@ function renderTable() {
     { value: 'left_campus',   label: 'Left Campus' },
   ];
 
+  // ── Cache lookups as Maps — avoid repeated .find() inside loops ──
+  const _batchMap   = new Map((AppState.get('batches')   || []).map(b => [b.id, b]));
+  const _campusMap  = new Map((AppState.get('campuses')  || []).map(c => [c.id, c]));
+  const _studentMap = new Map((AppState.get('students')  || []).map(s => [s.id, s]));
+  const _subjectMap = new Map((AppState.get('subjects')  || []).map(s => [String(s.id), s]));
+  const _lpAssign   = AppState.get('lpAssignments') || {};
+
   // ── Expand each enrolment into per-subject rows ────────────
-  // Each enrolment may have multiple subjects; each gets its own table row.
-  // If no subjects stored, fall back to batchName-based row.
   const expandedRows = [];
   rows.forEach(e => {
     const subjects = Array.isArray(e.subjects) && e.subjects.length ? e.subjects : null;
     if (subjects) {
-      subjects.forEach(sub => {
-        const parsed = parseBatchName(sub.batchName || e.batchName);
-        const subBatchRec = (AppState.get('batches') || []).find(b => b.id === sub.batchId);
-        const _sCampus = subBatchRec?.campusId
-          ? (AppState.get('campuses') || []).find(c => c.id === subBatchRec.campusId)
-          : null;
+      subjects.forEach((sub, subIdx) => {
+        const parsed      = parseBatchName(sub.batchName || e.batchName);
+        const subBatchRec = sub.batchId ? _batchMap.get(sub.batchId) : null;
+        const _sCampus    = subBatchRec?.campusId ? _campusMap.get(subBatchRec.campusId) : null;
 
-        // ── For suspended/freeze rows: resolve campus from student record ──
-        const _studentRec = !_sCampus ? (AppState.get('students') || []).find(s => s.id === e.studentId) : null;
-        const _fallbackCampus = _studentRec?.campusId
-          ? (AppState.get('campuses') || []).find(c => c.id === _studentRec.campusId)
-          : null;
+        // fallback campus from student record
+        const _studentRec     = !_sCampus ? _studentMap.get(e.studentId) : null;
+        const _fallbackCampus = _studentRec?.campusId ? _campusMap.get(_studentRec.campusId) : null;
 
-        // ── For freeze rows: derive subject display from subjectCode/subjectName ──
-        const _subjectRec = sub.subjectId ? (AppState.get('subjects') || []).find(s => String(s.id) === String(sub.subjectId)) : null;
+        // subject display
+        const _subjectRec    = sub.subjectId ? _subjectMap.get(String(sub.subjectId)) : null;
         const subjectDisplay = sub.subjectCode || _subjectRec?.subjectCode || _subjectRec?.abbreviation || sub.subjectName || _subjectRec?.subjectName || parsed.subject;
         const sessionDisplay = subBatchRec?.session || subBatchRec?.sessionPeriod || sub.session || parsed.session || '—';
-        // Prefer live batch record for batchNo — parse from batchName as fallback
-        const liveBatchNo = subBatchRec
+        const liveBatchNo    = subBatchRec
           ? (subBatchRec.batchNo || (subBatchRec.batchName || '').split('-').pop() || '')
           : '';
         const batchNoDisplay = liveBatchNo || sub.batchNo || parsed.batchNo || (sub.batchId ? '—' : 'Pending');
 
-        // ── Live sync: resolve startDate/endDate from batch record (not stored snapshot) ──
+        // live dates
         const liveStartDate = subBatchRec?.startDate || sub.startDate || '';
         let liveEndDate = subBatchRec?.endDate || sub.endDate || '';
         if (subBatchRec && subBatchRec.endDateMode !== 'manual') {
           try {
-            const allAssign = AppState.get('lpAssignments') || {};
-            const lpa       = allAssign[subBatchRec.id];
-            if (lpa && lpa.rows) {
+            const lpa = _lpAssign[subBatchRec.id];
+            if (lpa?.rows) {
               const datedRows = lpa.rows.filter(r => r.date).sort((a, b) => a.date.localeCompare(b.date));
               if (datedRows.length) liveEndDate = datedRows[datedRows.length - 1].date;
             }
-          } catch(_) { /* fallback to batch stored endDate */ }
+          } catch(_) {}
         }
 
-        // Resolve campus: batch campus → fallback to student campus
         const resolvedCampus = _sCampus || _fallbackCampus;
 
         expandedRows.push({
-          _enrolmentId: e.id,
-          _subjectId:   sub.subjectId || '',
-          _subjectIdx:  subjects.indexOf(sub),
-          studentName:  e.studentName,
-          studentCnic:  e.studentCnic,
-          campus:       resolvedCampus ? (resolvedCampus.campusName || '').replace(/\s*campus$/i,'').trim() || resolvedCampus.campusName : '—',
-          subject:      subjectDisplay,
-          batchNo:      batchNoDisplay,
-          session:      sessionDisplay,
-          teacher:      subBatchRec?.teacher || subBatchRec?.teacherName || '—',
-          startDate:    liveStartDate,
-          endDate:      liveEndDate,
-          duration:     calcDuration(liveStartDate, liveEndDate),
-          subjectStatus: sub.status   || 'active',
-          note:         sub.note || e.notes || '',
-          // Extra metadata for Enroll/Unfreeze actions
-          _enrolmentStatus: e.status,
-          _subjectName: sub.subjectName || '',
-          _subjectCode: sub.subjectCode || '',
-          _admissionId: e._admissionId || '',
-          _studentId:   e.studentId || '',
-          _campusId:    resolvedCampus?.id || _studentRec?.campusId || '',
+          _enrolmentId:  e.id,
+          _subjectId:    sub.subjectId || '',
+          _subjectIdx:   subIdx,
+          studentName:   e.studentName,
+          studentCnic:   e.studentCnic,
+          campus:        resolvedCampus ? (resolvedCampus.campusName || '').replace(/\s*campus$/i,'').trim() || resolvedCampus.campusName : '—',
+          subject:       subjectDisplay,
+          batchNo:       batchNoDisplay,
+          session:       sessionDisplay,
+          teacher:       subBatchRec?.teacher || subBatchRec?.teacherName || '—',
+          startDate:     liveStartDate,
+          endDate:       liveEndDate,
+          duration:      calcDuration(liveStartDate, liveEndDate),
+          subjectStatus: sub.status || 'active',
+          note:          sub.note || e.notes || '',
+          _enrolmentStatus:  e.status,
+          _subjectName:  sub.subjectName || '',
+          _subjectCode:  sub.subjectCode || '',
+          _admissionId:  e._admissionId || '',
+          _studentId:    e.studentId || '',
+          _campusId:     resolvedCampus?.id || _studentRec?.campusId || '',
           _disciplineId: _studentRec?.disciplineId || '',
-          _levelId:     _studentRec?.levelId || '',
+          _levelId:      _studentRec?.levelId || '',
         });
       });
     } else {
-      const parsed = parseBatchName(e.batchName);
-      // Try to get dates from batch data
-      const batchRecord = (AppState.get('batches') || []).find(b => b.id === e.batchId);
-      const _bCampus = batchRecord?.campusId
-        ? (AppState.get('campuses') || []).find(c => c.id === batchRecord.campusId)
-        : null;
+      const parsed      = parseBatchName(e.batchName);
+      const batchRecord = e.batchId ? _batchMap.get(e.batchId) : null;
+      const _bCampus    = batchRecord?.campusId ? _campusMap.get(batchRecord.campusId) : null;
 
-      // Resolve end date: if LP mode, get last dated row from assignment; else use stored endDate
       let resolvedEndDate = batchRecord?.endDate || '';
       if (batchRecord && batchRecord.endDateMode !== 'manual') {
         try {
-          const allAssign = AppState.get('lpAssignments') || {};
-          const lpa       = allAssign[batchRecord.id];
-          if (lpa && lpa.rows) {
+          const lpa = _lpAssign[batchRecord.id];
+          if (lpa?.rows) {
             const datedRows = lpa.rows.filter(r => r.date).sort((a, b) => a.date.localeCompare(b.date));
             if (datedRows.length) resolvedEndDate = datedRows[datedRows.length - 1].date;
           }
-        } catch(e) { /* fallback to stored */ }
+        } catch(_) {}
       }
 
       expandedRows.push({
-        _enrolmentId: e.id,
-        _subjectId:   '',
-        _subjectIdx:  -1,
-        studentName:  e.studentName,
-        studentCnic:  e.studentCnic,
-        campus:       _bCampus ? (_bCampus.campusName || '').replace(/\s*campus$/i,'').trim() || _bCampus.campusName : '—',
-        subject:      parsed.subject,
-        batchNo:      parsed.batchNo,
-        session:      parsed.session,
-        teacher:      batchRecord?.teacher || batchRecord?.teacherName || '—',
-        startDate:    batchRecord?.startDate  || '',
-        endDate:      resolvedEndDate,
-        duration:     calcDuration(batchRecord?.startDate, resolvedEndDate),
+        _enrolmentId:  e.id,
+        _subjectId:    '',
+        _subjectIdx:   -1,
+        studentName:   e.studentName,
+        studentCnic:   e.studentCnic,
+        campus:        _bCampus ? (_bCampus.campusName || '').replace(/\s*campus$/i,'').trim() || _bCampus.campusName : '—',
+        subject:       parsed.subject,
+        batchNo:       parsed.batchNo,
+        session:       parsed.session,
+        teacher:       batchRecord?.teacher || batchRecord?.teacherName || '—',
+        startDate:     batchRecord?.startDate || '',
+        endDate:       resolvedEndDate,
+        duration:      calcDuration(batchRecord?.startDate, resolvedEndDate),
         subjectStatus: e.status || 'active',
-        note:         e.notes || '',
+        note:          e.notes || '',
         _enrolmentStatus: e.status,
-        _studentId:   e.studentId || '',
+        _studentId:    e.studentId || '',
       });
     }
   });
@@ -1259,13 +1254,13 @@ function renderTable() {
           subjects: updatedSubjects,
           status:   newEnrolmentStatus,
         }, user);
-        if (r.success) { Toast.success('Status updated.'); renderTable(); renderSummary(); }
+        if (r.success) { Toast.success('Status updated.'); renderTable(); }
         else Toast.error(r.message || 'Update failed.');
       } else {
         // No subjects array — map freeze → suspended for enrolment-level
         const topStatus = newStatus === 'freeze' ? 'suspended' : newStatus;
         const r = EnrolmentService.update(enrolmentId, { status: topStatus }, user);
-        if (r.success) { Toast.success('Status updated.'); renderTable(); renderSummary(); }
+        if (r.success) { Toast.success('Status updated.'); renderTable(); }
         else Toast.error(r.message || 'Update failed.');
       }
     });
@@ -1297,11 +1292,11 @@ function renderTable() {
           subjects: updatedSubjects,
           status: allActive ? 'active' : enrolment.status,
         }, user);
-        if (r.success) { Toast.success('Subject unfrozen — marked Active.'); renderTable(); renderSummary(); }
+        if (r.success) { Toast.success('Subject unfrozen — marked Active.'); renderTable(); }
         else Toast.error(r.message || 'Unfreeze failed.');
       } else {
         const r = EnrolmentService.update(enrolmentId, { status: 'active' }, user);
-        if (r.success) { Toast.success('Enrolment unfrozen.'); renderTable(); renderSummary(); }
+        if (r.success) { Toast.success('Enrolment unfrozen.'); renderTable(); }
         else Toast.error(r.message || 'Unfreeze failed.');
       }
     });
@@ -1538,7 +1533,6 @@ function openAssignBatchModal({ enrolmentId, subjectIdx, subjectId, subjectName,
       Toast.success(`Batch assigned — ${studentName} enrolled in ${selectedBatch.batchName || selectedBatchId}.`);
       close();
       renderTable();
-      renderSummary();
     } else {
       Toast.error(result.message || 'Enrolment failed.');
     }
@@ -1948,7 +1942,6 @@ function openEditRowModal(enrolmentId, clickedSubjectIdx = -1) {
       Toast.success('Enrolment updated.');
       close();
       renderTable();
-      renderSummary();
     } else {
       Toast.error(result.message || 'Update failed.');
     }
@@ -2769,7 +2762,7 @@ function openModal(enrolmentId = null) {
       const r = EnrolmentService.update(enrolmentId,
         { status, feeStatus, enrolmentDate, notes, subjects,
           session: _selSession, admissionBatch: _selAdmBatch }, user);
-      if (r.success) { Toast.success('Enrolment updated.'); close(); renderTable(); renderSummary(); }
+      if (r.success) { Toast.success('Enrolment updated.'); close(); renderTable(); }
       else Toast.error(r.message || 'Update failed.');
       return;
     }
@@ -2824,7 +2817,7 @@ function openModal(enrolmentId = null) {
             }, user);
             if (r.success) added++; else skipped++;
           });
-          close(); renderTable(); renderSummary();
+          close(); renderTable();
           if (skipped) Toast.error(added + ' enrolled, ' + skipped + ' skipped.');
           else Toast.success(added + ' student' + (added !== 1 ? 's' : '') + ' enrolled successfully.');
         },
@@ -2851,7 +2844,7 @@ function openModal(enrolmentId = null) {
       if (r.success) added++; else skipped++;
     });
 
-    close(); renderTable(); renderSummary();
+    close(); renderTable();
     if (skipped) Toast.error(added + ' enrolled, ' + skipped + ' skipped (duplicate or error).');
     else Toast.success(added + ' student' + (added !== 1 ? 's' : '') + ' enrolled successfully.');
   });
@@ -3038,7 +3031,6 @@ function confirmBulkDelete(ids) {
     _selected.clear();
     close();
     renderTable();
-    renderSummary();
     if (failed) Toast.error(deleted + ' deleted, ' + failed + ' failed.');
     else Toast.success(deleted + ' enrolment' + (deleted > 1 ? 's' : '') + ' deleted.');
   });
@@ -3088,7 +3080,6 @@ function confirmDelete(id) {
       Toast.success('Enrolment removed.');
       close();
       renderTable();
-      renderSummary();
     } else {
       Toast.error(result.message || 'Could not remove enrolment.');
     }
