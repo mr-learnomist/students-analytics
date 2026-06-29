@@ -860,9 +860,14 @@ function renderTable() {
           : null;
 
         // ── For freeze rows: derive subject display from subjectCode/subjectName ──
-        const subjectDisplay = sub.subjectCode || sub.subjectName || parsed.subject;
-        const sessionDisplay = sub.session || parsed.session || '—';
-        const batchNoDisplay = sub.batchNo || parsed.batchNo || (sub.batchId ? '—' : 'Pending');
+        const _subjectRec = sub.subjectId ? (AppState.get('subjects') || []).find(s => String(s.id) === String(sub.subjectId)) : null;
+        const subjectDisplay = sub.subjectCode || _subjectRec?.subjectCode || _subjectRec?.abbreviation || sub.subjectName || _subjectRec?.subjectName || parsed.subject;
+        const sessionDisplay = subBatchRec?.session || subBatchRec?.sessionPeriod || sub.session || parsed.session || '—';
+        // Prefer live batch record for batchNo — parse from batchName as fallback
+        const liveBatchNo = subBatchRec
+          ? (subBatchRec.batchNo || (subBatchRec.batchName || '').split('-').pop() || '')
+          : '';
+        const batchNoDisplay = liveBatchNo || sub.batchNo || parsed.batchNo || (sub.batchId ? '—' : 'Pending');
 
         // ── Live sync: resolve startDate/endDate from batch record (not stored snapshot) ──
         const liveStartDate = subBatchRec?.startDate || sub.startDate || '';
