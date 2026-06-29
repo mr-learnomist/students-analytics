@@ -2247,19 +2247,19 @@ function openModal(enrolmentId = null) {
 
     if (!_selSession) {
       wrap.innerHTML = `<div style="text-align:center;color:var(--t3);padding:32px;font-size:13px">
-        Select a session above to load students.</div>`;
+        Select campus and session above, then search for a student to add.</div>`;
       if (countEl) countEl.textContent = '';
       return;
     }
 
     if (!_studentRows.length) {
       wrap.innerHTML = `<div style="text-align:center;color:var(--t3);padding:32px;font-size:13px">
-        No students found for this session${_selAdmBatch ? ' / '+_selAdmBatch : ''}.</div>`;
-      if (countEl) countEl.textContent = '0 students';
+        Search for a student below and click <b style="color:var(--t2)">+ Add</b> to add them.</div>`;
+      if (countEl) countEl.textContent = '0 students added';
       return;
     }
 
-    if (countEl) countEl.textContent = _studentRows.length + ' student' + (_studentRows.length!==1?'s':'') + ' loaded';
+    if (countEl) countEl.textContent = _studentRows.length + ' student' + (_studentRows.length!==1?'s':'') + ' added';
 
     // Build column headers
     const subjColHeaders = selSubjs.map(sub => {
@@ -2426,7 +2426,13 @@ function openModal(enrolmentId = null) {
     const wrap = G('enrAddStudentWrap');
     if (!wrap) return;
     const shown = new Set(_studentRows.map(s => s.id));
-    const avail = (AppState.get('students') || []).filter(s => !shown.has(s.id));
+
+    // Filter available students by current campus/session/admBatch selections
+    let avail = AppState.get('students') || [];
+    if (_selCampus)   avail = avail.filter(s => s.campusId       === _selCampus);
+    if (_selSession)  avail = avail.filter(s => s.session        === _selSession);
+    if (_selAdmBatch) avail = avail.filter(s => s.admissionBatch === _selAdmBatch);
+    avail = avail.filter(s => !shown.has(s.id));
 
     // Inject searchable combobox styles once
     if (!document.getElementById('enrs-search-sel-css')) {
@@ -2686,11 +2692,10 @@ function openModal(enrolmentId = null) {
         <span id="enrStudentCount" style="font-size:11px;color:var(--t3);font-weight:400;text-transform:none"></span>
       </div>
       <p style="font-size:11.5px;color:var(--t3);margin:0 0 10px">
-        For each student, select the <b>session</b> and type the <b>batch number</b> for each subject.
-        The first student's values auto-fill all others — override individually if needed.
+        Search for a student below and add them. Then select the <b>batch</b> for each subject.
       </p>
+      <div id="enrAddStudentWrap" style="margin-bottom:12px"></div>
       <div id="enrMatrixWrap"></div>
-      <div id="enrAddStudentWrap" style="margin-top:10px"></div>
     </div>
 
   </div><!-- /body -->
@@ -2715,38 +2720,35 @@ function openModal(enrolmentId = null) {
     _selCampus   = e.target.value;
     _selAdmBatch = '';
     _firstRowData = {};
+    _studentRows  = [];
     renderAdmBatchOpts();
-    filterStudents();
-    renderStudentMatrix();
     renderAddStudentRow();
+    renderStudentMatrix();
   });
 
   // ── Wire session change ───────────────────────────────────
   G('enrFldSession').addEventListener('change', e => {
     _selSession  = e.target.value;
     _selAdmBatch = '';
-    _firstRowData = {}; // reset auto-fill on session change
+    _firstRowData = {};
+    _studentRows  = [];
     renderAdmBatchOpts();
-    filterStudents();
-    renderStudentMatrix();
     renderAddStudentRow();
+    renderStudentMatrix();
   });
 
   G('enrFldAdmBatch').addEventListener('change', e => {
     _selAdmBatch = e.target.value;
-    filterStudents();
-    renderStudentMatrix();
+    _studentRows  = [];
     renderAddStudentRow();
+    renderStudentMatrix();
   });
 
   // ── Initial renders ───────────────────────────────────────
   renderSubjectDropdown();
   renderAdmBatchOpts();
-  if (_selSession) {
-    filterStudents();
-  }
-  renderStudentMatrix();
   renderAddStudentRow();
+  renderStudentMatrix();
 
   // ── Save ──────────────────────────────────────────────────
   G('enrModalSave').addEventListener('click', () => {
