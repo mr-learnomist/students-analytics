@@ -1460,7 +1460,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
         <td class="t-name">${stu.studentName || '—'}</td>
         ${pdfVisibleInfo.map(key => {
           const meta = AS_INFO_META[key];
-          const cls = 't-info' + (meta.mono ? ' mono' : '') + (meta.align === 'left' ? ' t-left' : '');
+          const cls = 't-info' + (meta.mono ? ' mono' : '') + (meta.align === 'left' ? ' t-left' : '') + (key === 'fatherName' ? ' t-wrap' : '');
           return `<td class="${cls}">${meta.value(stu) || '—'}</td>`;
         }).join('')}
         ${pdfShowAttendance ? cells : ''}
@@ -1531,19 +1531,23 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       .h-no{background:#f1f5f9;font-weight:700;text-align:center;font-size:7.5px;color:#475569}
       .h-name{text-align:left}
       .h-month{background:#dbeafe;color:#1e40af;font-weight:700;text-align:center;font-size:8px}
-      .h-date{background:#f8fafc;font-weight:700;text-align:center;font-size:7px;color:#64748b;padding:2px 1px;width:18px}
+      .h-date{background:#f8fafc;font-weight:700;text-align:center;font-size:7px;color:#64748b;padding:2px 1px;width:12px}
       .h-fri{color:#2563eb}
       .h-sat{color:#d97706}
       .h-p{color:#16a34a}.h-a{color:#dc2626}.h-l{color:#d97706}.h-pct{color:#7c3aed}
 
       /* ── Attendance date col — very narrow so teacher can handwrite */
-      col.att-col{width:18px;max-width:22px}
+      col.att-col{width:12px;max-width:14px}
 
       /* ── Data cells */
       .t-num{text-align:center;color:#94a3b8;font-size:7.5px;font-family:monospace}
-      .t-name{font-weight:600;color:#0f172a;font-size:8px;text-align:left;padding-left:3px}
+      .t-name{font-weight:600;color:#0f172a;font-size:8px;text-align:left;padding-left:3px;
+        white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.15;
+        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
       .t-info{text-align:center;color:#1e293b;font-size:9px;font-weight:600}
       .t-left{text-align:left;padding-left:3px;color:#1e293b;font-size:9px;font-weight:600}
+      .t-wrap{white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.1;
+        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
       .mono{font-family:monospace;letter-spacing:-.3px;font-size:8.5px;font-weight:600}
       .alt td{background:#f8fafc}
 
