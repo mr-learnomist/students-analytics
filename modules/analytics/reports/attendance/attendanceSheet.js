@@ -21,6 +21,23 @@ const MON_FULL  = ['January','February','March','April','May','June',
 const MON_SHORT = ['Jan','Feb','Mar','Apr','May','Jun',
                    'Jul','Aug','Sep','Oct','Nov','Dec'];
 
+// ── Reorderable student-info columns (shared across sheet/CSV/PDF) ──
+const AS_INFO_ORDER_DEFAULT = ['studentId','cnic','fatherName','studentPhone','guardianPhone','email'];
+const AS_INFO_META = {
+  studentId:     { label: 'Student ID',     short: 'Student ID', minWidth: '110px', colW: '50px', align: 'center', mono: false, value: stu => stu.studentId },
+  cnic:          { label: 'CNIC',           short: 'CNIC',       minWidth: '130px', colW: '55px', align: 'center', mono: true,  value: stu => stu.cnic },
+  fatherName:    { label: 'Father Name',    short: 'Father Name',minWidth: '140px', colW: '65px', align: 'left',   mono: false, value: stu => stu.fatherName },
+  studentPhone:  { label: 'Student Phone',  short: 'Stu. Phone', minWidth: '120px', colW: '52px', align: 'center', mono: false, value: stu => stu.studentPhone },
+  guardianPhone: { label: 'Guardian Phone', short: 'Grd. Phone', minWidth: '120px', colW: '52px', align: 'center', mono: false, value: stu => stu.guardianPhone },
+  email:         { label: 'Email',          short: 'Email',      minWidth: '160px', colW: '75px', align: 'left',   mono: false, value: stu => stu.email },
+};
+// Normalize a stored order array: keep only known keys, then append any missing ones (new columns / corrupted prefs)
+function _asNormalizeOrder(order) {
+  const stored  = Array.isArray(order) ? order.filter(k => AS_INFO_ORDER_DEFAULT.includes(k)) : [];
+  const missing = AS_INFO_ORDER_DEFAULT.filter(k => !stored.includes(k));
+  return [...stored, ...missing];
+}
+
 // ── Data helpers ─────────────────────────────────────────────
 const _get = k => AppState.get(k) || [];
 
@@ -272,6 +289,18 @@ function _injectAsStyles() {
 .as-col-mgr-chk { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
 .as-col-mgr-lbl { font-size:12.5px; color:var(--t1); flex:1; cursor:pointer; }
 .as-col-mgr-item.col-hidden .as-col-mgr-lbl { color:var(--t4); }
+.as-col-mgr-reorder { display:flex; flex-direction:column; gap:1px; flex-shrink:0; }
+.as-col-mgr-move {
+  width:16px; height:12px; display:flex; align-items:center; justify-content:center;
+  background:none; border:none; padding:0; cursor:pointer; color:var(--t3);
+  border-radius:3px; transition:background .1s, color .1s;
+}
+.as-col-mgr-move:hover:not(:disabled) { background:var(--border2); color:var(--t1); }
+.as-col-mgr-move:disabled { opacity:.25; cursor:not-allowed; }
+.as-col-mgr-divider {
+  padding:6px 12px 3px; font-size:9.5px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--t4); border-top:1px solid var(--border); margin-top:2px;
+}
 .as-col-mgr-foot {
   padding:6px 12px; border-top:1px solid var(--border);
   font-size:10.5px; color:var(--t3); text-align:center;
@@ -1050,6 +1079,11 @@ function _renderSheet(output, batchId, selMonths) {
   const showL           = !colPrefs.hidden.includes('leave');
   const showPct         = !colPrefs.hidden.includes('percent');
   const totalCols       = (showP?1:0) + (showA?1:0) + (showL?1:0);
+  const showMap = { studentId: showStudentId, cnic: showCnic, fatherName: showFatherName,
+                     studentPhone: showStudentPhone, guardianPhone: showGuardianPhone, email: showEmail };
+  const infoOrder     = _asNormalizeOrder(colPrefs.order);
+  const visibleInfo   = infoOrder.filter(k => showMap[k]);
+  const lastInfoKey   = visibleInfo[visibleInfo.length - 1];
 
   // ── Student rows (respects col visibility) ─────────────────
   const rows = students.map((stu, idx) => {
@@ -1084,29 +1118,19 @@ function _renderSheet(output, batchId, selMonths) {
                  color:var(--t4);font-size:11px;font-family:var(--font-mono);
                  position:sticky;left:0;background:inherit;z-index:1">${idx + 1}</td>
       <td style="padding:6px 12px;border-bottom:1px solid var(--border);
-                 border-right:${!showStudentId&&!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);font-weight:700;
+                 border-right:${!visibleInfo.length?'2px':'1px'} solid var(--border);font-weight:700;
                  color:var(--t1);white-space:nowrap;
                  position:sticky;left:36px;background:inherit;z-index:1;min-width:160px">
         ${stu.studentName || '—'}
       </td>
-      ${showStudentId ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
-                 border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.studentId||'—'}</td>` : ''}
-      ${showCnic ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
-                 border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
-      ${showFatherName ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
-                 border-right:1px solid var(--border2);text-align:left;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.fatherName||'—'}</td>` : ''}
-      ${showStudentPhone ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
-                 border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.studentPhone||'—'}</td>` : ''}
-      ${showGuardianPhone ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
-                 border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.guardianPhone||'—'}</td>` : ''}
-      ${showEmail ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
-                 border-right:2px solid var(--border);text-align:left;
-                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.email||'—'}</td>` : ''}
+      ${visibleInfo.map(key => {
+        const meta = AS_INFO_META[key];
+        const isLast = key === lastInfoKey;
+        const val = meta.value(stu) || '—';
+        return `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:${isLast?'2px solid var(--border)':'1px solid var(--border2)'};text-align:${meta.align};
+                 font-size:11px;color:var(--t2);white-space:nowrap${meta.mono?';font-family:var(--font-mono)':''}">${val}</td>`;
+      }).join('')}
       ${showAttendance ? cells : ''}
       ${showP ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
@@ -1199,26 +1223,15 @@ function _renderSheet(output, batchId, selMonths) {
                      position:sticky;left:0;z-index:4">#</th>
                  <th rowspan="2" style="padding:8px 12px;text-align:left;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
-                     border-right:${!showStudentId&&!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);border-bottom:1px solid var(--border);
+                     border-right:${!visibleInfo.length?'2px':'1px'} solid var(--border);border-bottom:1px solid var(--border);
                      position:sticky;left:36px;z-index:4">Student Name</th>
-                 ${showStudentId ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:110px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Student ID</th>` : ''}
-                 ${showCnic ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:130px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">CNIC</th>` : ''}
-                 ${showFatherName ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:140px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Father Name</th>` : ''}
-                 ${showStudentPhone ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:120px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Student Phone</th>` : ''}
-                 ${showGuardianPhone ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:120px;
-                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Guardian Phone</th>` : ''}
-                 ${showEmail ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
-                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
-                     border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Email</th>` : ''}
+                 ${visibleInfo.map(key => {
+                   const meta = AS_INFO_META[key];
+                   const isLast = key === lastInfoKey;
+                   return `<th rowspan="2" style="padding:8px 10px;text-align:${meta.align};font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:${meta.minWidth};
+                     border-right:${isLast?'2px solid var(--border)':'1px solid var(--border2)'};border-bottom:1px solid var(--border)">${meta.label}</th>`;
+                 }).join('')}
                  ${showAttendance ? monthHeaders : ''}
                  ${totalCols > 0 ? `<th colspan="${totalCols}" style="padding:6px 8px;text-align:center;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);
@@ -1287,6 +1300,9 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const csvShowA            = !colPrefsCSV.hidden.includes('absent');
   const csvShowL            = !colPrefsCSV.hidden.includes('leave');
   const csvShowPct          = !colPrefsCSV.hidden.includes('percent');
+  const csvShowMap = { studentId: csvShowStudentId, cnic: csvShowCnic, fatherName: csvShowFatherName,
+                        studentPhone: csvShowStudentPhone, guardianPhone: csvShowGuardianPhone, email: csvShowEmail };
+  const csvVisibleInfo = _asNormalizeOrder(colPrefsCSV.order).filter(k => csvShowMap[k]);
 
   const metaLines = [
     'Attendance Sheet',
@@ -1302,14 +1318,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     return `${['Su','Mo','Tu','We','Th','Fr','Sa'][dt.getDay()]} ${dt.getDate()}/${dt.getMonth()+1}`;
   });
 
-  const infoHeaders = [
-    ...(csvShowStudentId    ? ['Student ID']     : []),
-    ...(csvShowCnic         ? ['CNIC']           : []),
-    ...(csvShowFatherName   ? ['Father Name']    : []),
-    ...(csvShowStudentPhone ? ['Student Phone']  : []),
-    ...(csvShowGuardianPhone? ['Guardian Phone'] : []),
-    ...(csvShowEmail        ? ['Email']          : []),
-  ];
+  const infoHeaders = csvVisibleInfo.map(key => AS_INFO_META[key].label);
   const summaryHeaders = [
     ...(csvShowP   ? ['P'] : []),
     ...(csvShowA   ? ['A'] : []),
@@ -1327,14 +1336,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     });
     const total = p + a + l;
     const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
-    const infoCells = [
-      ...(csvShowStudentId    ? [stu.studentId      || ''] : []),
-      ...(csvShowCnic         ? [stu.cnic          || ''] : []),
-      ...(csvShowFatherName   ? [stu.fatherName    || ''] : []),
-      ...(csvShowStudentPhone ? [stu.studentPhone  || ''] : []),
-      ...(csvShowGuardianPhone? [stu.guardianPhone || ''] : []),
-      ...(csvShowEmail        ? [stu.email         || ''] : []),
-    ];
+    const infoCells = csvVisibleInfo.map(key => AS_INFO_META[key].value(stu) || '');
     const summaryCells = [
       ...(csvShowP   ? [p]   : []),
       ...(csvShowA   ? [a]   : []),
@@ -1388,6 +1390,9 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const pdfShowA             = !colPrefsPDF.hidden.includes('absent');
   const pdfShowL             = !colPrefsPDF.hidden.includes('leave');
   const pdfShowPct           = !colPrefsPDF.hidden.includes('percent');
+  const pdfShowMap = { studentId: pdfShowStudentId, cnic: pdfShowCnic, fatherName: pdfShowFatherName,
+                        studentPhone: pdfShowStudentPhone, guardianPhone: pdfShowGuardianPhone, email: pdfShowEmail };
+  const pdfVisibleInfo = _asNormalizeOrder(colPrefsPDF.order).filter(k => pdfShowMap[k]);
 
   // ── Attendance record map
   const batchRecs = (AppState.get('attendance') || []).filter(r => r.batchId === batch?.id);
@@ -1407,29 +1412,20 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const mLabel  = MON_F[parseInt(m)-1] + ' ' + y;
 
     // Info col widths — fixed so table doesn't expand unnecessarily
-    const infoColsHTML = [
-      pdfShowStudentId     ? '<col style="width:50px"/>'  : '',
-      pdfShowCnic          ? '<col style="width:55px"/>'  : '',
-      pdfShowFatherName    ? '<col style="width:65px"/>'  : '',
-      pdfShowStudentPhone  ? '<col style="width:52px"/>'  : '',
-      pdfShowGuardianPhone ? '<col style="width:52px"/>'  : '',
-      pdfShowEmail         ? '<col style="width:75px"/>'  : '',
-    ].join('');
+    const infoColsHTML = pdfVisibleInfo.map(key => `<col style="width:${AS_INFO_META[key].colW}"/>`).join('');
 
     const summCols = (pdfShowP?1:0)+(pdfShowA?1:0)+(pdfShowL?1:0)+(pdfShowPct?1:0);
 
     // Header row 1 — month span + Total span
     const dateColCount = mDates.length;
-    const infoSpan = [pdfShowStudentId,pdfShowCnic,pdfShowFatherName,pdfShowStudentPhone,pdfShowGuardianPhone,pdfShowEmail].filter(Boolean).length;
+    const infoSpan = pdfVisibleInfo.length;
 
     let hdr1 = `<th rowspan="2" class="h-no h-name" colspan="${1 + (infoSpan > 0 ? 0 : 0)}">#</th>
                 <th rowspan="2" class="h-no h-name" style="text-align:left">Student Name</th>`;
-    if (pdfShowStudentId)     hdr1 += `<th rowspan="2" class="h-no">Student ID</th>`;
-    if (pdfShowCnic)          hdr1 += `<th rowspan="2" class="h-no">CNIC</th>`;
-    if (pdfShowFatherName)    hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Father Name</th>`;
-    if (pdfShowStudentPhone)  hdr1 += `<th rowspan="2" class="h-no">Stu. Phone</th>`;
-    if (pdfShowGuardianPhone) hdr1 += `<th rowspan="2" class="h-no">Grd. Phone</th>`;
-    if (pdfShowEmail)         hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Email</th>`;
+    hdr1 += pdfVisibleInfo.map(key => {
+      const meta = AS_INFO_META[key];
+      return `<th rowspan="2" class="h-no"${meta.align==='left'?' style="text-align:left"':''}>${meta.short}</th>`;
+    }).join('');
     if (pdfShowAttendance)    hdr1 += `<th colspan="${dateColCount}" class="h-month">${mLabel}</th>`;
     if (summCols > 0) hdr1 += `<th colspan="${summCols}" class="h-no">Total</th>`;
 
@@ -1462,12 +1458,11 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       return `<tr${rowCls}>
         <td class="t-num">${idx+1}</td>
         <td class="t-name">${stu.studentName || '—'}</td>
-        ${pdfShowStudentId     ? `<td class="t-info">${stu.studentId||'—'}</td>`    : ''}
-        ${pdfShowCnic          ? `<td class="t-info mono">${stu.cnic||'—'}</td>`         : ''}
-        ${pdfShowFatherName    ? `<td class="t-info t-left">${stu.fatherName||'—'}</td>` : ''}
-        ${pdfShowStudentPhone  ? `<td class="t-info">${stu.studentPhone||'—'}</td>`      : ''}
-        ${pdfShowGuardianPhone ? `<td class="t-info">${stu.guardianPhone||'—'}</td>`     : ''}
-        ${pdfShowEmail         ? `<td class="t-info t-left">${stu.email||'—'}</td>`      : ''}
+        ${pdfVisibleInfo.map(key => {
+          const meta = AS_INFO_META[key];
+          const cls = 't-info' + (meta.mono ? ' mono' : '') + (meta.align === 'left' ? ' t-left' : '');
+          return `<td class="${cls}">${meta.value(stu) || '—'}</td>`;
+        }).join('')}
         ${pdfShowAttendance ? cells : ''}
         ${pdfShowP   ? `<td class="t-sum t-p">${total>0?p:''}</td>`                              : ''}
         ${pdfShowA   ? `<td class="t-sum t-a">${total>0?a:''}</td>`                              : ''}
@@ -1636,28 +1631,42 @@ function _wireAsColManager(output, batchId, selMonths) {
   if (!btn || !panel || !list) return;
 
   const AS_COL_KEY = 'as_col_prefs';
-  const AS_COLS = [
-    { key: 'studentId',     label: 'Student ID',     defaultHidden: false },
-    { key: 'cnic',          label: 'CNIC',           defaultHidden: false },
-    { key: 'fatherName',    label: 'Father Name',    defaultHidden: true  },
-    { key: 'studentPhone',  label: 'Student Phone',  defaultHidden: false },
-    { key: 'guardianPhone', label: 'Guardian Phone', defaultHidden: false },
-    { key: 'email',         label: 'Email',          defaultHidden: true  },
-    { key: 'attendance',    label: 'Attendance',     defaultHidden: false },
-    { key: 'present', label: 'P (Present)', defaultHidden: false },
-    { key: 'absent',  label: 'A (Absent)',  defaultHidden: false },
-    { key: 'leave',   label: 'L (Leave)',   defaultHidden: false },
-    { key: 'percent', label: '% Attendance', defaultHidden: false },
+  const AS_FIXED_COLS = [
+    { key: 'attendance', label: 'Attendance',    defaultHidden: false },
+    { key: 'present',    label: 'P (Present)',   defaultHidden: false },
+    { key: 'absent',     label: 'A (Absent)',    defaultHidden: false },
+    { key: 'leave',      label: 'L (Leave)',     defaultHidden: false },
+    { key: 'percent',    label: '% Attendance',  defaultHidden: false },
   ];
-  const _DEFAULT_HIDDEN = AS_COLS.filter(c => c.defaultHidden).map(c => c.key);
+  const AS_INFO_DEFAULT_HIDDEN = { studentId: false, cnic: false, fatherName: true, studentPhone: false, guardianPhone: false, email: true };
+  const _DEFAULT_HIDDEN = [
+    ...AS_INFO_ORDER_DEFAULT.filter(k => AS_INFO_DEFAULT_HIDDEN[k]),
+    ...AS_FIXED_COLS.filter(c => c.defaultHidden).map(c => c.key),
+  ];
   function _getPrefs() {
     try {
       const r = AppState.get(AS_COL_KEY);
-      if (r && Array.isArray(r.hidden)) return r;
+      if (r && Array.isArray(r.hidden)) return { hidden: r.hidden, order: _asNormalizeOrder(r.order) };
     } catch(e){}
-    return { hidden: [..._DEFAULT_HIDDEN] };
+    return { hidden: [..._DEFAULT_HIDDEN], order: [...AS_INFO_ORDER_DEFAULT] };
   }
   function _savePrefs(p) { AppState.set(AS_COL_KEY, p); }
+  function _wireToggle(item, key) {
+    item.querySelector('.as-col-mgr-chk').addEventListener('change', e => {
+      const p = _getPrefs();
+      if (e.target.checked) {
+        p.hidden = p.hidden.filter(h => h !== key);
+        item.classList.remove('col-hidden');
+      } else {
+        if (!p.hidden.includes(key)) p.hidden.push(key);
+        item.classList.add('col-hidden');
+      }
+      _savePrefs(p);
+      panel.classList.remove('open');
+      btn.style.cssText = '';
+      _renderSheet(output, batchId, selMonths);
+    });
+  }
 
   const _positionPanel = () => {
     const r = btn.getBoundingClientRect();
@@ -1671,27 +1680,53 @@ function _wireAsColManager(output, batchId, selMonths) {
   const _renderList = () => {
     const prefs = _getPrefs();
     list.innerHTML = '';
-    AS_COLS.forEach(col => {
+
+    // ── Reorderable student-info columns ──
+    prefs.order.forEach((key, idx) => {
+      const meta = AS_INFO_META[key];
+      const isVisible = !prefs.hidden.includes(key);
+      const item = document.createElement('div');
+      item.className = 'as-col-mgr-item' + (isVisible ? '' : ' col-hidden');
+      item.innerHTML =
+        `<div class="as-col-mgr-reorder">
+           <button type="button" class="as-col-mgr-move" data-dir="up" ${idx===0?'disabled':''} title="Move up">▲</button>
+           <button type="button" class="as-col-mgr-move" data-dir="down" ${idx===prefs.order.length-1?'disabled':''} title="Move down">▼</button>
+         </div>` +
+        `<input type="checkbox" class="as-col-mgr-chk" id="as_chk_${key}"${isVisible?' checked':''}/>`+
+        `<label class="as-col-mgr-lbl" for="as_chk_${key}">${meta.label}</label>`;
+      _wireToggle(item, key);
+      item.querySelectorAll('.as-col-mgr-move').forEach(mbtn => {
+        mbtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const p   = _getPrefs();
+          const ord = p.order;
+          const i   = ord.indexOf(key);
+          const j   = mbtn.dataset.dir === 'up' ? i - 1 : i + 1;
+          if (i === -1 || j < 0 || j >= ord.length) return;
+          [ord[i], ord[j]] = [ord[j], ord[i]];
+          p.order = ord;
+          _savePrefs(p);
+          _renderList();
+          _renderSheet(output, batchId, selMonths);
+        });
+      });
+      list.appendChild(item);
+    });
+
+    // ── Fixed columns (attendance grid + P/A/L/%) — not reorderable ──
+    const divider = document.createElement('div');
+    divider.className = 'as-col-mgr-divider';
+    divider.textContent = 'Attendance & Summary';
+    list.appendChild(divider);
+
+    AS_FIXED_COLS.forEach(col => {
       const isVisible = !prefs.hidden.includes(col.key);
       const item = document.createElement('div');
       item.className = 'as-col-mgr-item' + (isVisible ? '' : ' col-hidden');
       item.innerHTML =
         `<input type="checkbox" class="as-col-mgr-chk" id="as_chk_${col.key}"${isVisible?' checked':''}/>`+
         `<label class="as-col-mgr-lbl" for="as_chk_${col.key}">${col.label}</label>`;
-      item.querySelector('.as-col-mgr-chk').addEventListener('change', e => {
-        const p = _getPrefs();
-        if (e.target.checked) {
-          p.hidden = p.hidden.filter(h => h !== col.key);
-          item.classList.remove('col-hidden');
-        } else {
-          if (!p.hidden.includes(col.key)) p.hidden.push(col.key);
-          item.classList.add('col-hidden');
-        }
-        _savePrefs(p);
-        panel.classList.remove('open');
-        btn.style.cssText = '';
-        _renderSheet(output, batchId, selMonths);
-      });
+      _wireToggle(item, col.key);
       list.appendChild(item);
     });
   };
@@ -1713,7 +1748,8 @@ function _wireAsColManager(output, batchId, selMonths) {
   });
 
   output.querySelector('#asColMgrShowAll')?.addEventListener('click', () => {
-    AppState.set(AS_COL_KEY, { hidden: [] });
+    const p = _getPrefs();
+    _savePrefs({ hidden: [], order: p.order });
     panel.classList.remove('open');
     btn.style.cssText = '';
     _renderSheet(output, batchId, selMonths);
