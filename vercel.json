@@ -3,12 +3,14 @@
   "builds": [
     { "src": "api/data.js",       "use": "@vercel/node" },
     { "src": "api/attendance.js", "use": "@vercel/node" },
+    { "src": "api/students.js",   "use": "@vercel/node" },
     { "src": "api/backup.js",     "use": "@vercel/node" },
     { "src": "**/*",              "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/data",                    "dest": "/api/data.js"       },
     { "src": "/api/attendance",              "dest": "/api/attendance.js" },
+    { "src": "/api/students",                "dest": "/api/students.js"   },
     { "src": "/api/backup/create",           "dest": "/api/backup.js"     },
     { "src": "/api/backup/list",             "dest": "/api/backup.js"     },
     { "src": "/api/backup/restore",          "dest": "/api/backup.js"     },
