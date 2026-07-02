@@ -1044,6 +1044,7 @@ function _renderSheet(output, batchId, selMonths) {
   const showStudentPhone= !colPrefs.hidden.includes('studentPhone');
   const showGuardianPhone=!colPrefs.hidden.includes('guardianPhone');
   const showEmail       = !colPrefs.hidden.includes('email');
+  const showAttendance  = !colPrefs.hidden.includes('attendance');
   const showP           = !colPrefs.hidden.includes('present');
   const showA           = !colPrefs.hidden.includes('absent');
   const showL           = !colPrefs.hidden.includes('leave');
@@ -1090,7 +1091,7 @@ function _renderSheet(output, batchId, selMonths) {
       </td>
       ${showStudentId ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.studentId||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap">${stu.studentId||'—'}</td>` : ''}
       ${showCnic ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
                  font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
@@ -1106,7 +1107,7 @@ function _renderSheet(output, batchId, selMonths) {
       ${showEmail ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:2px solid var(--border);text-align:left;
                  font-size:11px;color:var(--t2);white-space:nowrap">${stu.email||'—'}</td>` : ''}
-      ${cells}
+      ${showAttendance ? cells : ''}
       ${showP ? `<td style="padding:6px 8px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
                  font-weight:700;font-size:12px;color:var(--green)">${total > 0 ? p : ''}</td>` : ''}
@@ -1218,7 +1219,7 @@ function _renderSheet(output, batchId, selMonths) {
                  ${showEmail ? `<th rowspan="2" style="padding:8px 10px;text-align:left;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
                      border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Email</th>` : ''}
-                 ${monthHeaders}
+                 ${showAttendance ? monthHeaders : ''}
                  ${totalCols > 0 ? `<th colspan="${totalCols}" style="padding:6px 8px;text-align:center;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);
                      border-right:1px solid var(--border2);border-bottom:1px solid var(--border2)">Total</th>` : ''}
@@ -1227,7 +1228,7 @@ function _renderSheet(output, batchId, selMonths) {
                      border-bottom:1px solid var(--border);min-width:48px">%</th>` : ''}
                </tr>
                <tr>
-                 ${dateHeaders}
+                 ${showAttendance ? dateHeaders : ''}
                  ${showP ? `<th style="padding:5px 6px;text-align:center;font-size:10px;font-weight:700;
                      color:var(--green);background:var(--surface2);
                      border-right:1px solid var(--border2);border-bottom:1px solid var(--border);min-width:30px">P</th>` : ''}
@@ -1281,6 +1282,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const csvShowStudentPhone = !colPrefsCSV.hidden.includes('studentPhone');
   const csvShowGuardianPhone= !colPrefsCSV.hidden.includes('guardianPhone');
   const csvShowEmail        = !colPrefsCSV.hidden.includes('email');
+  const csvShowAttendance   = !colPrefsCSV.hidden.includes('attendance');
   const csvShowP            = !colPrefsCSV.hidden.includes('present');
   const csvShowA            = !colPrefsCSV.hidden.includes('absent');
   const csvShowL            = !colPrefsCSV.hidden.includes('leave');
@@ -1314,7 +1316,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     ...(csvShowL   ? ['L'] : []),
     ...(csvShowPct ? ['%'] : []),
   ];
-  const headers = ['#', 'Student Name', ...infoHeaders, ...dateHeaders, ...summaryHeaders];
+  const headers = ['#', 'Student Name', ...infoHeaders, ...(csvShowAttendance ? dateHeaders : []), ...summaryHeaders];
 
   const csvRows = students.map((stu, i) => {
     let p = 0, a = 0, l = 0;
@@ -1339,7 +1341,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
       ...(csvShowL   ? [l]   : []),
       ...(csvShowPct ? [pct] : []),
     ];
-    return [i+1, stu.studentName || '—', ...infoCells, ...cells, ...summaryCells]
+    return [i+1, stu.studentName || '—', ...infoCells, ...(csvShowAttendance ? cells : []), ...summaryCells]
       .map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
   });
 
@@ -1381,6 +1383,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const pdfShowStudentPhone  = !colPrefsPDF.hidden.includes('studentPhone');
   const pdfShowGuardianPhone = !colPrefsPDF.hidden.includes('guardianPhone');
   const pdfShowEmail         = !colPrefsPDF.hidden.includes('email');
+  const pdfShowAttendance    = !colPrefsPDF.hidden.includes('attendance');
   const pdfShowP             = !colPrefsPDF.hidden.includes('present');
   const pdfShowA             = !colPrefsPDF.hidden.includes('absent');
   const pdfShowL             = !colPrefsPDF.hidden.includes('leave');
@@ -1427,16 +1430,16 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
     if (pdfShowStudentPhone)  hdr1 += `<th rowspan="2" class="h-no">Stu. Phone</th>`;
     if (pdfShowGuardianPhone) hdr1 += `<th rowspan="2" class="h-no">Grd. Phone</th>`;
     if (pdfShowEmail)         hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Email</th>`;
-    hdr1 += `<th colspan="${dateColCount}" class="h-month">${mLabel}</th>`;
+    if (pdfShowAttendance)    hdr1 += `<th colspan="${dateColCount}" class="h-month">${mLabel}</th>`;
     if (summCols > 0) hdr1 += `<th colspan="${summCols}" class="h-no">Total</th>`;
 
     // Header row 2 — individual dates
-    const hdr2 = mDates.map(d => {
+    const hdr2 = (pdfShowAttendance ? mDates.map(d => {
       const dt   = new Date(d + 'T00:00:00');
       const dayN = dt.getDay();
       const isFri = dayN === 5, isSat = dayN === 6;
       return `<th class="h-date${isFri?' h-fri':isSat?' h-sat':''}">${DAY_S[dayN]}<br>${dt.getDate()}</th>`;
-    }).join('') +
+    }).join('') : '') +
     (pdfShowP   ? `<th class="h-no h-p">P</th>`  : '') +
     (pdfShowA   ? `<th class="h-no h-a">A</th>`  : '') +
     (pdfShowL   ? `<th class="h-no h-l">L</th>`  : '') +
@@ -1459,13 +1462,13 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       return `<tr${rowCls}>
         <td class="t-num">${idx+1}</td>
         <td class="t-name">${stu.studentName || '—'}</td>
-        ${pdfShowStudentId     ? `<td class="t-info mono">${stu.studentId||'—'}</td>`    : ''}
+        ${pdfShowStudentId     ? `<td class="t-info">${stu.studentId||'—'}</td>`    : ''}
         ${pdfShowCnic          ? `<td class="t-info mono">${stu.cnic||'—'}</td>`         : ''}
         ${pdfShowFatherName    ? `<td class="t-info t-left">${stu.fatherName||'—'}</td>` : ''}
         ${pdfShowStudentPhone  ? `<td class="t-info">${stu.studentPhone||'—'}</td>`      : ''}
         ${pdfShowGuardianPhone ? `<td class="t-info">${stu.guardianPhone||'—'}</td>`     : ''}
         ${pdfShowEmail         ? `<td class="t-info t-left">${stu.email||'—'}</td>`      : ''}
-        ${cells}
+        ${pdfShowAttendance ? cells : ''}
         ${pdfShowP   ? `<td class="t-sum t-p">${total>0?p:''}</td>`                              : ''}
         ${pdfShowA   ? `<td class="t-sum t-a">${total>0?a:''}</td>`                              : ''}
         ${pdfShowL   ? `<td class="t-sum t-l">${total>0?l:''}</td>`                              : ''}
@@ -1480,7 +1483,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
             <col style="width:18px"/>
             <col style="width:90px"/>
             ${infoColsHTML}
-            ${mDates.map(() => '<col class="att-col"/>').join('')}
+            ${pdfShowAttendance ? mDates.map(() => '<col class="att-col"/>').join('') : ''}
             ${pdfShowP   ? '<col style="width:22px"/>' : ''}
             ${pdfShowA   ? '<col style="width:22px"/>' : ''}
             ${pdfShowL   ? '<col style="width:22px"/>' : ''}
@@ -1640,6 +1643,7 @@ function _wireAsColManager(output, batchId, selMonths) {
     { key: 'studentPhone',  label: 'Student Phone',  defaultHidden: false },
     { key: 'guardianPhone', label: 'Guardian Phone', defaultHidden: false },
     { key: 'email',         label: 'Email',          defaultHidden: true  },
+    { key: 'attendance',    label: 'Attendance',     defaultHidden: false },
     { key: 'present', label: 'P (Present)', defaultHidden: false },
     { key: 'absent',  label: 'A (Absent)',  defaultHidden: false },
     { key: 'leave',   label: 'L (Leave)',   defaultHidden: false },
