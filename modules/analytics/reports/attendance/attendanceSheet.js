@@ -1090,7 +1090,7 @@ function _renderSheet(output, batchId, selMonths) {
       </td>
       ${showStudentId ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
-                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.id||'—'}</td>` : ''}
+                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.studentId||'—'}</td>` : ''}
       ${showCnic ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
                  font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
@@ -1326,7 +1326,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const total = p + a + l;
     const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
     const infoCells = [
-      ...(csvShowStudentId    ? [stu.id            || ''] : []),
+      ...(csvShowStudentId    ? [stu.studentId      || ''] : []),
       ...(csvShowCnic         ? [stu.cnic          || ''] : []),
       ...(csvShowFatherName   ? [stu.fatherName    || ''] : []),
       ...(csvShowStudentPhone ? [stu.studentPhone  || ''] : []),
@@ -1459,7 +1459,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       return `<tr${rowCls}>
         <td class="t-num">${idx+1}</td>
         <td class="t-name">${stu.studentName || '—'}</td>
-        ${pdfShowStudentId     ? `<td class="t-info mono">${stu.id||'—'}</td>`           : ''}
+        ${pdfShowStudentId     ? `<td class="t-info mono">${stu.studentId||'—'}</td>`    : ''}
         ${pdfShowCnic          ? `<td class="t-info mono">${stu.cnic||'—'}</td>`         : ''}
         ${pdfShowFatherName    ? `<td class="t-info t-left">${stu.fatherName||'—'}</td>` : ''}
         ${pdfShowStudentPhone  ? `<td class="t-info">${stu.studentPhone||'—'}</td>`      : ''}
