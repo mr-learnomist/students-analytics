@@ -1038,6 +1038,7 @@ function _renderSheet(output, batchId, selMonths) {
   }
 
   const colPrefs        = _getAsColPrefs();
+  const showStudentId   = !colPrefs.hidden.includes('studentId');
   const showCnic        = !colPrefs.hidden.includes('cnic');
   const showFatherName  = !colPrefs.hidden.includes('fatherName');
   const showStudentPhone= !colPrefs.hidden.includes('studentPhone');
@@ -1082,11 +1083,14 @@ function _renderSheet(output, batchId, selMonths) {
                  color:var(--t4);font-size:11px;font-family:var(--font-mono);
                  position:sticky;left:0;background:inherit;z-index:1">${idx + 1}</td>
       <td style="padding:6px 12px;border-bottom:1px solid var(--border);
-                 border-right:${!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);font-weight:700;
+                 border-right:${!showStudentId&&!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);font-weight:700;
                  color:var(--t1);white-space:nowrap;
                  position:sticky;left:36px;background:inherit;z-index:1;min-width:160px">
         ${stu.studentName || '—'}
       </td>
+      ${showStudentId ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
+                 border-right:1px solid var(--border2);text-align:center;
+                 font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.id||'—'}</td>` : ''}
       ${showCnic ? `<td style="padding:6px 10px;border-bottom:1px solid var(--border);
                  border-right:1px solid var(--border2);text-align:center;
                  font-size:11px;color:var(--t2);white-space:nowrap;font-family:var(--font-mono)">${stu.cnic||'—'}</td>` : ''}
@@ -1194,8 +1198,11 @@ function _renderSheet(output, batchId, selMonths) {
                      position:sticky;left:0;z-index:4">#</th>
                  <th rowspan="2" style="padding:8px 12px;text-align:left;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);min-width:160px;
-                     border-right:${!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);border-bottom:1px solid var(--border);
+                     border-right:${!showStudentId&&!showCnic&&!showFatherName&&!showStudentPhone&&!showGuardianPhone&&!showEmail?'2px':'1px'} solid var(--border);border-bottom:1px solid var(--border);
                      position:sticky;left:36px;z-index:4">Student Name</th>
+                 ${showStudentId ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
+                     font-weight:700;color:var(--t3);background:var(--surface2);min-width:110px;
+                     border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">Student ID</th>` : ''}
                  ${showCnic ? `<th rowspan="2" style="padding:8px 10px;text-align:center;font-size:10px;
                      font-weight:700;color:var(--t3);background:var(--surface2);min-width:130px;
                      border-right:1px solid var(--border2);border-bottom:1px solid var(--border)">CNIC</th>` : ''}
@@ -1268,6 +1275,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const _DEFAULT_HIDDEN_CSV = ['fatherName', 'email'];
   let colPrefsCSV = { hidden: [..._DEFAULT_HIDDEN_CSV] };
   try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) colPrefsCSV = r; } catch(e){}
+  const csvShowStudentId    = !colPrefsCSV.hidden.includes('studentId');
   const csvShowCnic         = !colPrefsCSV.hidden.includes('cnic');
   const csvShowFatherName   = !colPrefsCSV.hidden.includes('fatherName');
   const csvShowStudentPhone = !colPrefsCSV.hidden.includes('studentPhone');
@@ -1293,6 +1301,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
   });
 
   const infoHeaders = [
+    ...(csvShowStudentId    ? ['Student ID']     : []),
     ...(csvShowCnic         ? ['CNIC']           : []),
     ...(csvShowFatherName   ? ['Father Name']    : []),
     ...(csvShowStudentPhone ? ['Student Phone']  : []),
@@ -1317,6 +1326,7 @@ function _exportCSV({ batch, disc, campus, students, dates, byMonth, monthLabel,
     const total = p + a + l;
     const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
     const infoCells = [
+      ...(csvShowStudentId    ? [stu.id            || ''] : []),
       ...(csvShowCnic         ? [stu.cnic          || ''] : []),
       ...(csvShowFatherName   ? [stu.fatherName    || ''] : []),
       ...(csvShowStudentPhone ? [stu.studentPhone  || ''] : []),
@@ -1365,6 +1375,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
   const _DEF_HIDDEN = ['fatherName','email'];
   let colPrefsPDF = { hidden: [..._DEF_HIDDEN] };
   try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) colPrefsPDF = r; } catch(e){}
+  const pdfShowStudentId     = !colPrefsPDF.hidden.includes('studentId');
   const pdfShowCnic          = !colPrefsPDF.hidden.includes('cnic');
   const pdfShowFatherName    = !colPrefsPDF.hidden.includes('fatherName');
   const pdfShowStudentPhone  = !colPrefsPDF.hidden.includes('studentPhone');
@@ -1394,6 +1405,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
 
     // Info col widths — fixed so table doesn't expand unnecessarily
     const infoColsHTML = [
+      pdfShowStudentId     ? '<col style="width:50px"/>'  : '',
       pdfShowCnic          ? '<col style="width:55px"/>'  : '',
       pdfShowFatherName    ? '<col style="width:65px"/>'  : '',
       pdfShowStudentPhone  ? '<col style="width:52px"/>'  : '',
@@ -1405,10 +1417,11 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
 
     // Header row 1 — month span + Total span
     const dateColCount = mDates.length;
-    const infoSpan = [pdfShowCnic,pdfShowFatherName,pdfShowStudentPhone,pdfShowGuardianPhone,pdfShowEmail].filter(Boolean).length;
+    const infoSpan = [pdfShowStudentId,pdfShowCnic,pdfShowFatherName,pdfShowStudentPhone,pdfShowGuardianPhone,pdfShowEmail].filter(Boolean).length;
 
     let hdr1 = `<th rowspan="2" class="h-no h-name" colspan="${1 + (infoSpan > 0 ? 0 : 0)}">#</th>
                 <th rowspan="2" class="h-no h-name" style="text-align:left">Student Name</th>`;
+    if (pdfShowStudentId)     hdr1 += `<th rowspan="2" class="h-no">Student ID</th>`;
     if (pdfShowCnic)          hdr1 += `<th rowspan="2" class="h-no">CNIC</th>`;
     if (pdfShowFatherName)    hdr1 += `<th rowspan="2" class="h-no" style="text-align:left">Father Name</th>`;
     if (pdfShowStudentPhone)  hdr1 += `<th rowspan="2" class="h-no">Stu. Phone</th>`;
@@ -1446,6 +1459,7 @@ function _exportPDF({ batch, disc, campus, students, dates, byMonth, monthLabel,
       return `<tr${rowCls}>
         <td class="t-num">${idx+1}</td>
         <td class="t-name">${stu.studentName || '—'}</td>
+        ${pdfShowStudentId     ? `<td class="t-info mono">${stu.id||'—'}</td>`           : ''}
         ${pdfShowCnic          ? `<td class="t-info mono">${stu.cnic||'—'}</td>`         : ''}
         ${pdfShowFatherName    ? `<td class="t-info t-left">${stu.fatherName||'—'}</td>` : ''}
         ${pdfShowStudentPhone  ? `<td class="t-info">${stu.studentPhone||'—'}</td>`      : ''}
@@ -1620,6 +1634,7 @@ function _wireAsColManager(output, batchId, selMonths) {
 
   const AS_COL_KEY = 'as_col_prefs';
   const AS_COLS = [
+    { key: 'studentId',     label: 'Student ID',     defaultHidden: false },
     { key: 'cnic',          label: 'CNIC',           defaultHidden: false },
     { key: 'fatherName',    label: 'Father Name',    defaultHidden: true  },
     { key: 'studentPhone',  label: 'Student Phone',  defaultHidden: false },
