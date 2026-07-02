@@ -31,7 +31,17 @@ function mergeProtected(incoming, existing) {
     const inc = incoming[key];
     const cur = existing[key];
 
+    // ✅ FIX: pehle sirf "incoming[key] EMPTY array/object hai" check hota
+    // tha. Lekin agar incoming mein key BILKUL MISSING (undefined) ho —
+    // jaise ab 'students' ko state.js jaan-boojh kar payload se hata deta
+    // hai (kyunki wo ab alag endpoint se save hoti hai) — to purana check
+    // fail ho jata tha aur poori key hi Mongo se GAYAB ho jati thi (kyunki
+    // neeche poora 'data' object $set hota hai, merge nahi).
+    // Ab hum "key missing" ko bhi "empty" jaisa hi treat karte hain.
+    const incMissing = inc === undefined;
+
     const incEmpty =
+      incMissing ||
       (Array.isArray(inc) && inc.length === 0) ||
       (inc && typeof inc === 'object' && !Array.isArray(inc) && Object.keys(inc).length === 0);
 
@@ -40,7 +50,12 @@ function mergeProtected(incoming, existing) {
       (cur && typeof cur === 'object' && !Array.isArray(cur) && Object.keys(cur).length > 0);
 
     if (incEmpty && curHasData) {
-      console.warn(`[SMS] Blocked empty overwrite: ${key}`);
+      console.warn(`[SMS] Blocked empty/missing overwrite: ${key}`);
+      merged[key] = cur;
+    } else if (incMissing && cur !== undefined) {
+      // Key na incoming mein hai na existing mein data hai — phir bhi
+      // key ko poori tarah gayab mat hone do, jo bhi existing value hai
+      // (chahe empty) wahi rakho, taake shape consistent rahe.
       merged[key] = cur;
     }
   });
