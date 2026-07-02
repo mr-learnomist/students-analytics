@@ -1,9 +1,16 @@
 // ============================================================
 // utils/state.js — Central State Management
 // FIXED: Removed dangerous saveState() calls from loadState()
+// UPDATED: 'students' ab alag collection/endpoint (StudentsStorage)
+//          se load/save hote hain, taake main appstate document
+//          Vercel ki 4.5MB response limit ke andar rahe.
+//          studentUI.js / studentService.js ko koi change nahi
+//          karni padi — wo abhi bhi AppState.get/add/update/set
+//          use karte hain, routing yahan andar hi hoti hai.
 // ============================================================
 
 import Storage from './storage.js';
+import StudentsStorage from './studentsStorage.js';
 
 const DEFAULT_STATE = {
   disciplines:      [],
@@ -36,7 +43,12 @@ let _loaded = false; // ✅ guard: load complete hua ya nahi
 export const AppState = {
 
   async loadState() {
-    const fileData = await Storage.loadAll();
+    // ✅ Main appstate aur students ab do alag jagah se aate hain —
+    // dono parallel mein fetch karo taake load speed slow na ho.
+    const [fileData, studentsData] = await Promise.all([
+      Storage.loadAll(),
+      StudentsStorage.loadStudents(),
+    ]);
 
     // ✅ FIX: agar server se data load HI nahi ho saka (network down,
     // flaky connection, server timeout) to Storage.loadAll() ab `null`
@@ -51,17 +63,38 @@ export const AppState = {
       throw new Error('EDUTRACK_LOAD_FAILED');
     }
 
+    // ✅ Same guard — ab students endpoint ke liye bhi. Agar students
+    // load fail ho, to save block rakho warna khali array save ho
+    // ke real students data delete ho sakta hai.
+    if (studentsData === null) {
+      console.error('[AppState] Students server se load nahi ho sake — seed/save BLOCKED hai. Connection check karke page reload karein.');
+      _state = structuredClone(DEFAULT_STATE);
+      throw new Error('EDUTRACK_STUDENTS_LOAD_FAILED');
+    }
+
     const saved = fileData[STORAGE_KEY] || null;
 
     if (saved) {
       // ✅ Merge with defaults — missing keys fill ho jayein
       _state = { ...DEFAULT_STATE, ...saved };
 
+      // ✅ Students routing: naye 'students' collection ko authoritative
+      // maano agar us mein data hai. Agar naya collection abhi khali hai
+      // (migration script abhi nahi chala) lekin purane appstate.students
+      // mein data mojood hai, to purana hi use karo — taake migration se
+      // pehle koi data na khoye.
+      if (studentsData.length > 0) {
+        _state.students = studentsData;
+      } else if (Array.isArray(_state.students) && _state.students.length > 0) {
+        console.warn('[AppState] Students collection abhi khali hai — purane appstate.students data use ho raha hai. Migration script chalayein.');
+      } else {
+        _state.students = [];
+      }
+
       // ✅ Migration: naye keys add karo agar purani state mein nahi hain
       const migrations = {
         batchSchedules:    [],
         attendanceRecords: [],
-        students:          [],
         teachers:          [],
         lecturePlans:      [],
         lpRows:            {},
@@ -94,6 +127,7 @@ export const AppState = {
     } else {
       // ✅ Fresh install — pehli baar hi seed karo
       _state = structuredClone(DEFAULT_STATE);
+      _state.students = studentsData; // usually [] on fresh install
       this._seedDefaultData();
       // saveState() seedDefaultData ke andar call hoti hai — sirf fresh install pe
     }
@@ -109,7 +143,12 @@ export const AppState = {
     return _state;
   },
 
-  saveState() {
+  // ── saveState(changedKey) ──────────────────────────────────
+  // changedKey optional hai — agar diya gaya hai to sirf usi ke
+  // hisaab se decide karte hain ke students endpoint ko save
+  // bhejna hai ya nahi (main appstate hamesha save hoti hai,
+  // students ab alag jagah save hoti hain).
+  saveState(changedKey) {
     // ✅ Guard: load complete hone se pehle save mat karo
     if (!_loaded) {
       console.warn('[AppState] saveState() called before loadState() — skipped!');
@@ -117,10 +156,19 @@ export const AppState = {
     }
 
     // ✅ currentUser kabhi save mat karo — session alag handle hoti hai
+    // ✅ students ab main payload mein nahi jaate — alag endpoint pe jate hain
     const toSave = { ..._state };
     delete toSave.currentUser;
+    delete toSave.students;
 
     Storage.set(STORAGE_KEY, toSave);
+
+    // Students ko alag save karo — sirf jab changedKey na diya gaya ho
+    // (e.g. migration/seed ke waqt, jab sab kuch save hota hai) ya
+    // jab specifically 'students' change hua ho.
+    if (changedKey === undefined || changedKey === 'students') {
+      StudentsStorage.setStudents(_state.students || []);
+    }
   },
 
   get(key) {
@@ -129,7 +177,7 @@ export const AppState = {
 
   set(key, value) {
     _state[key] = value;
-    this.saveState();
+    this.saveState(key);
     this._notify(key, value);
   },
 
@@ -272,7 +320,7 @@ export const AppState = {
     ];
 
     _state.teachers          = [];
-    _state.students          = [];
+    _state.students          = _state.students || [];
     _state.batches           = [];
     _state.batchSchedules    = [];
     _state.attendanceRecords = [];
