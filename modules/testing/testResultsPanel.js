@@ -377,7 +377,7 @@ function _matchBatchByName(batchName, campusName) {
 
 // Find an existing calendar/schedule entry for this batch+test+date, or create
 // a new manual schedule (via testingService.addSchedule) if none exists yet.
-function _resolveOrCreateScheduleEntry(batchId, testName, testDate) {
+function _resolveOrCreateScheduleEntry(batchId, testName, testDate, subjectId) {
   const norm    = s => (s || '').trim().toLowerCase();
   const entries = _buildCalendarEntries({ batchId });
   const existing = entries.find(e => norm(e.testName) === norm(testName) && e.date === testDate);
@@ -388,11 +388,11 @@ function _resolveOrCreateScheduleEntry(batchId, testName, testDate) {
     testName,
     date:         testDate,
     testType:     'written',
-    subjectId:    '',
+    subjectId:    subjectId || '',
     totalMarks:   '',
     passingMarks: '',
   });
-  return { id: newId, batchId, testName, date: testDate };
+  return { id: newId, batchId, testName, date: testDate, subjectId: subjectId || '' };
 }
 
 // Get all currently-enrolled (non-dropped) students for a batch
@@ -405,10 +405,24 @@ function _getEnrolledStudents(batchId) {
   return allStudents.filter(s => enrolledIds.has(s.id) || s.batchId === batchId);
 }
 
+// Batch names follow the pattern "<SUBJECT>-<REST...>", e.g. "FA2-JUNE-26-07" → "FA2".
+// Match that prefix against subjectCode / subjectName to auto-fill the subject.
+function _extractSubjectIdFromBatchName(batchName) {
+  const prefix = (batchName || '').split('-')[0].trim().toLowerCase();
+  if (!prefix) return '';
+  const subjects = AppState.get('subjects') || [];
+  const match = subjects.find(s =>
+    (s.subjectCode || '').trim().toLowerCase() === prefix ||
+    (s.subjectName || '').trim().toLowerCase() === prefix
+  );
+  return match ? match.id : '';
+}
+
 // ── Main Panel export ─────────────────────────────────────────
 export const TestResultsPanel = {
 
   _container: null,
+  _editingId: null, // id of the result record currently being inline-edited
 
   // Filter state (same pattern as FinalResultsPanel)
   _filterCampus:  [],
@@ -423,6 +437,7 @@ export const TestResultsPanel = {
     this._filterSession = [];
     this._filterSubject = [];
     this._filterBatch   = [];
+    this._editingId      = null;
 
     this._injectStyles();
     container.innerHTML = this._template();
@@ -983,6 +998,67 @@ export const TestResultsPanel = {
         this._renderTable(container);
       });
     });
+
+    // Wire inline edit — Edit button enters edit mode for that row
+    area.querySelectorAll('[data-action="edit-tr"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._editingId = btn.dataset.id;
+        this._renderTable(container);
+      });
+    });
+
+    // Cancel edit — discard changes, re-render in view mode
+    area.querySelectorAll('[data-action="cancel-tr"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._editingId = null;
+        this._renderTable(container);
+      });
+    });
+
+    // Live toggle: checking "Absent" disables/clears the marks input
+    area.querySelectorAll('.tr-edit-absent-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const inp = area.querySelector(`.tr-edit-marks-input[data-id="${cb.dataset.id}"]`);
+        if (!inp) return;
+        inp.disabled = cb.checked;
+        if (cb.checked) inp.value = '';
+      });
+    });
+
+    // Save inline edit — writes the updated marks/absent back onto the same record
+    area.querySelectorAll('[data-action="save-tr"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id     = btn.dataset.id;
+        const rec    = _getResults().find(r => r.id === id);
+        if (!rec) return;
+
+        const absentCb   = area.querySelector(`.tr-edit-absent-cb[data-id="${id}"]`);
+        const marksInput = area.querySelector(`.tr-edit-marks-input[data-id="${id}"]`);
+        const absent     = absentCb?.checked || false;
+        const marks      = absent
+          ? null
+          : (marksInput?.value === '' ? null : Number(marksInput.value));
+
+        if (marks != null && rec.totalMarks && marks > rec.totalMarks) {
+          Toast.error(`Marks cannot exceed ${rec.totalMarks}.`);
+          return;
+        }
+
+        _upsertMark({
+          scheduleEntryId: rec.scheduleEntryId,
+          studentId:       rec.studentId,
+          marks,
+          absent,
+          subjectId:       rec.subjectId,
+          totalMarks:      rec.totalMarks,
+          passingMarks:    rec.passingMarks,
+        });
+
+        this._editingId = null;
+        Toast.success('Result updated.');
+        this._renderTable(container);
+      });
+    });
   },
 
   _rowHTML(r, i) {
@@ -1009,11 +1085,24 @@ export const TestResultsPanel = {
 
     const _tm = r.totalMarks || r.entry.totalMarks || null;
     const _tmSuffix = _tm ? ` <span style="color:var(--t3);font-size:11px">/ ${_tm}</span>` : '';
-    const marksDisplay = r.absent
-      ? `<span style="color:var(--yellow);font-weight:700">Absent</span>${_tmSuffix}`
-      : r.marks != null
-        ? `<span style="font-weight:700;font-family:var(--font-mono)">${r.marks}</span>${_tmSuffix}`
-        : `<span style="color:var(--t4)">—</span>${_tmSuffix}`;
+    const isEditing = r.id === this._editingId;
+
+    const marksDisplay = isEditing
+      ? `
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" class="fr-marks-input tr-edit-marks-input" data-id="${r.id}"
+                 value="${r.marks != null ? r.marks : ''}" min="0" max="${_tm || ''}"
+                 style="width:58px" ${r.absent ? 'disabled' : ''}/>
+          <span style="color:var(--t3);font-size:11px">/ ${_tm || '—'}</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:4px;margin-top:5px;font-size:11px;color:var(--t3);cursor:pointer">
+          <input type="checkbox" class="tr-edit-absent-cb" data-id="${r.id}" ${r.absent ? 'checked' : ''}/> Absent
+        </label>`
+      : r.absent
+        ? `<span style="color:var(--yellow);font-weight:700">Absent</span>${_tmSuffix}`
+        : r.marks != null
+          ? `<span style="font-weight:700;font-family:var(--font-mono)">${r.marks}</span>${_tmSuffix}`
+          : `<span style="color:var(--t4)">—</span>${_tmSuffix}`;
 
     const statusBadge = r.status === 'pass'    ? `<span class="tr-badge tr-badge-pass">Pass</span>`
                       : r.status === 'fail'    ? `<span class="tr-badge tr-badge-fail">Fail</span>`
@@ -1037,16 +1126,35 @@ export const TestResultsPanel = {
         <td>${statusBadge}</td>
         <td>
           <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">
-            <button class="fr-act-btn fr-del-btn"
-                    data-action="delete-tr"
-                    data-id="${r.id}"
-                    title="Delete">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                <path d="M10 11v6M14 11v6"/>
-              </svg>
-            </button>
+            ${isEditing ? `
+              <button class="fr-act-btn" data-action="save-tr" data-id="${r.id}" title="Save">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </button>
+              <button class="fr-act-btn" data-action="cancel-tr" data-id="${r.id}" title="Cancel">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            ` : `
+              <button class="fr-act-btn" data-action="edit-tr" data-id="${r.id}" title="Edit">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+              <button class="fr-act-btn fr-del-btn"
+                      data-action="delete-tr"
+                      data-id="${r.id}"
+                      title="Delete">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6M14 11v6"/>
+                </svg>
+              </button>
+            `}
           </div>
         </td>
       </tr>`;
@@ -2162,7 +2270,9 @@ export const TestResultsPanel = {
   // ── Preview of parsed sheet + student match summary ─────────────
   _renderImportPreview(el, parsed) {
     const { campusName, batchName, testName, testDate, entries } = parsed;
-    const batch = _matchBatchByName(batchName, campusName);
+    const batch     = _matchBatchByName(batchName, campusName);
+    const subjectId = _extractSubjectIdFromBatchName(batchName);
+    const subject   = subjectId ? AppState.findById('subjects', subjectId) : null;
 
     let matchedCount = 0, unmatched = [];
     let batchStudents = [];
@@ -2183,6 +2293,8 @@ export const TestResultsPanel = {
             ${batch ? '' : '<span style="color:var(--red);font-weight:700"> — not found</span>'}</div>
           <div><span style="color:var(--t3)">Test:</span> <strong>${testName || '—'}</strong></div>
           <div><span style="color:var(--t3)">Date:</span> <strong>${testDate || '—'}</strong></div>
+          <div><span style="color:var(--t3)">Subject:</span> <strong>${subject ? (subject.subjectCode || subject.subjectName) : '—'}</strong>
+            ${subjectId ? '' : '<span style="color:var(--yellow)"> — not matched from batch name</span>'}</div>
         </div>
       </div>
       <div class="import-summary-bar">
@@ -2209,7 +2321,8 @@ export const TestResultsPanel = {
     if (!testName || !testDate) { Toast.error('Test name or date could not be read from the file.'); return; }
 
     const batchStudents  = _getEnrolledStudents(batch.id);
-    const scheduleEntry  = _resolveOrCreateScheduleEntry(batch.id, testName, testDate);
+    const subjectId      = _extractSubjectIdFromBatchName(batchName);
+    const scheduleEntry  = _resolveOrCreateScheduleEntry(batch.id, testName, testDate, subjectId);
     const commonTotal    = entries.find(e => e.total != null && !isNaN(e.total))?.total || '';
     const passingFor     = t => (t ? Math.ceil(Number(t) * 0.5) : '');
 
@@ -2226,6 +2339,7 @@ export const TestResultsPanel = {
         studentId:       student.id,
         marks:           obtained,
         absent:          false,
+        subjectId:       subjectId || scheduleEntry.subjectId || '',
         totalMarks:      tm,
         passingMarks:    passingFor(tm),
       });
@@ -2240,6 +2354,7 @@ export const TestResultsPanel = {
         studentId:       s.id,
         marks:           null,
         absent:          true,
+        subjectId:       subjectId || scheduleEntry.subjectId || '',
         totalMarks:      commonTotal,
         passingMarks:    passingFor(commonTotal),
       });
