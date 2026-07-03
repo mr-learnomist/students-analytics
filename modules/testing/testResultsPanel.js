@@ -380,7 +380,18 @@ function _matchBatchByName(batchName, campusName) {
 function _resolveOrCreateScheduleEntry(batchId, testName, testDate, subjectId) {
   const norm    = s => (s || '').trim().toLowerCase();
   const entries = _buildCalendarEntries({ batchId });
-  const existing = entries.find(e => norm(e.testName) === norm(testName) && e.date === testDate);
+
+  // 1) Best match: same test name AND same date (normal re-import case).
+  let existing = entries.find(e => norm(e.testName) === norm(testName) && e.date === testDate);
+
+  // 2) Fallback: match by test name only. The actual exam date in the
+  //    uploaded sheet can differ from the planned Lecture Plan date for
+  //    that test — it's still the same test, so attach results to the
+  //    existing entry (e.g. the LP-derived one) instead of creating a
+  //    duplicate that Result Profile / other reports won't recognize.
+  if (!existing) {
+    existing = entries.find(e => norm(e.testName) === norm(testName));
+  }
   if (existing) return existing;
 
   const newId = addSchedule({
@@ -2285,6 +2296,19 @@ export const TestResultsPanel = {
     }
     const willBeAbsent = batch ? Math.max(batchStudents.length - matchedCount, 0) : 0;
 
+    let dateNote = '';
+    if (batch) {
+      const norm = s => (s || '').trim().toLowerCase();
+      const entries = _buildCalendarEntries({ batchId: batch.id });
+      const existing = entries.find(e => norm(e.testName) === norm(testName));
+      if (existing && existing.date && existing.date !== testDate) {
+        dateNote = `<div style="font-size:11.5px;color:var(--yellow);margin-top:8px">
+          Note: "${testName}" is scheduled for ${formatDate(existing.date)} in the Lecture Plan —
+          results will still be attached to that test (actual date on the sheet: ${formatDate(testDate)}).
+        </div>`;
+      }
+    }
+
     el.innerHTML = `
       <div class="import-preview" style="padding:12px 14px;margin-top:12px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12.5px">
@@ -2297,6 +2321,7 @@ export const TestResultsPanel = {
             ${subjectId ? '' : '<span style="color:var(--yellow)"> — not matched from batch name</span>'}</div>
         </div>
       </div>
+      ${dateNote}
       <div class="import-summary-bar">
         <span class="import-ok">${matchedCount} matched</span>
         ${willBeAbsent ? `<span style="color:var(--yellow);font-weight:700">${willBeAbsent} will be marked Absent</span>` : ''}
