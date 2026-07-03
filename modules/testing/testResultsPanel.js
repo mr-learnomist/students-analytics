@@ -2364,7 +2364,7 @@ export const TestResultsPanel = {
         studentId:       student.id,
         marks:           obtained,
         absent:          false,
-        subjectId:       subjectId || scheduleEntry.subjectId || '',
+        subjectId:       scheduleEntry.subjectId || subjectId || '',
         totalMarks:      tm,
         passingMarks:    passingFor(tm),
       });
@@ -2379,7 +2379,7 @@ export const TestResultsPanel = {
         studentId:       s.id,
         marks:           null,
         absent:          true,
-        subjectId:       subjectId || scheduleEntry.subjectId || '',
+        subjectId:       scheduleEntry.subjectId || subjectId || '',
         totalMarks:      commonTotal,
         passingMarks:    passingFor(commonTotal),
       });
