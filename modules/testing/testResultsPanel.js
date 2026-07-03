@@ -23,10 +23,12 @@ import { Auth }                  from '../../utils/auth.js';
 import {
   getSchedules,
   getScheduleStatus,
+  addSchedule,
   TEST_TYPE_META,
   formatDate,
 } from './testingService.js';
 import { getAllAssignments }      from '../lecturePlan/lecturePlanService.js';
+import { cnicDigitsOnly }         from '../student/studentService.js';
 
 // ── AppState key ──────────────────────────────────────────────
 const TR_KEY = 'testResults';   // Array of result records
@@ -277,6 +279,132 @@ function _getMark(scheduleEntryId, studentId) {
   ) || null;
 }
 
+// ── Excel Import helpers ─────────────────────────────────────
+// Expected sheet layout (Crystal Reports style export):
+//   Row 1: Campus name                (col A)
+//   Row 2: Batch name                 (col A)
+//   Row 3: Test name                  (col B)   e.g. "Test 1"
+//   Row 4: Test date                  (col B)   e.g. "7/3/2026"
+//   Row 5+: pairs of rows per student:
+//     [ studentId or CNIC , obtained marks ]
+//     [ (blank)           , total marks    ]
+// Any leading fully-blank rows are skipped automatically.
+
+function _isBlankCell(v) {
+  return v === undefined || v === null || String(v).trim() === '';
+}
+
+// Convert "7/3/2026" (M/D/YYYY) or an Excel serial date into 'YYYY-MM-DD'
+function _excelDateToISO(raw) {
+  if (_isBlankCell(raw)) return '';
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [, mm, dd, yyyy] = m;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  }
+  const n = Number(s);
+  if (!isNaN(n) && n > 20000) {
+    const d = new Date(Math.round((n - 25569) * 86400 * 1000));
+    return d.toISOString().split('T')[0];
+  }
+  return s;
+}
+
+// Parse the raw 2-column sheet (array of arrays) into header info + student rows
+function _parseResultsSheet(rows) {
+  let i = 0;
+  while (i < rows.length && _isBlankCell(rows[i]?.[0]) && _isBlankCell(rows[i]?.[1])) i++;
+
+  const campusName = String(rows[i]?.[0] || '').trim(); i++;
+  const batchName  = String(rows[i]?.[0] || '').trim(); i++;
+  const testName   = String(rows[i]?.[1] || '').trim(); i++;
+  const testDate   = _excelDateToISO(rows[i]?.[1]);      i++;
+
+  const entries = [];
+  while (i < rows.length) {
+    const idCell  = rows[i]?.[0];
+    const valCell = rows[i]?.[1];
+    if (_isBlankCell(idCell) && _isBlankCell(valCell)) { i++; continue; }
+
+    const idRaw    = String(idCell || '').trim();
+    const obtained = _isBlankCell(valCell) ? null : Number(valCell);
+
+    let total = null;
+    if (rows[i + 1] && _isBlankCell(rows[i + 1][0]) && !_isBlankCell(rows[i + 1][1])) {
+      total = Number(rows[i + 1][1]);
+      i += 2;
+    } else {
+      i += 1;
+    }
+    if (idRaw) entries.push({ idRaw, obtained, total });
+  }
+
+  return { campusName, batchName, testName, testDate, entries };
+}
+
+// Match a sheet ID cell to a student — by Student ID first, then by CNIC
+// (digits-only comparison, so dashes/formatting in either side don't matter).
+function _matchStudentByIdOrCNIC(idRaw, students) {
+  const idDigits = idRaw.replace(/\D/g, '');
+  return (
+    students.find(s => String(s.studentId || '').trim() === idRaw) ||
+    (idDigits.length >= 11
+      ? students.find(s => cnicDigitsOnly(s.cnic || '') === idDigits)
+      : null) ||
+    null
+  );
+}
+
+// Find the batch matching the sheet's batch name (disambiguated by campus if needed)
+function _matchBatchByName(batchName, campusName) {
+  const norm     = s => (s || '').trim().toLowerCase();
+  const batches  = AppState.get('batches')  || [];
+  const campuses = AppState.get('campuses') || [];
+
+  let candidates = batches.filter(b => norm(b.batchName) === norm(batchName));
+  if (candidates.length > 1 && campusName) {
+    const stripCampus = s => norm(s).replace(/\s*campus$/, '');
+    const campus = campuses.find(c => stripCampus(c.campusName) === stripCampus(campusName));
+    if (campus) {
+      const filtered = candidates.filter(b => b.campusId === campus.id);
+      if (filtered.length) candidates = filtered;
+    }
+  }
+  return candidates[0] || null;
+}
+
+// Find an existing calendar/schedule entry for this batch+test+date, or create
+// a new manual schedule (via testingService.addSchedule) if none exists yet.
+function _resolveOrCreateScheduleEntry(batchId, testName, testDate) {
+  const norm    = s => (s || '').trim().toLowerCase();
+  const entries = _buildCalendarEntries({ batchId });
+  const existing = entries.find(e => norm(e.testName) === norm(testName) && e.date === testDate);
+  if (existing) return existing;
+
+  const newId = addSchedule({
+    batchId,
+    testName,
+    date:         testDate,
+    testType:     'written',
+    subjectId:    '',
+    totalMarks:   '',
+    passingMarks: '',
+  });
+  return { id: newId, batchId, testName, date: testDate };
+}
+
+// Get all currently-enrolled (non-dropped) students for a batch
+function _getEnrolledStudents(batchId) {
+  const allStudents = AppState.get('students')   || [];
+  const enrolments  = AppState.get('enrolments') || [];
+  const enrolledIds = new Set(
+    enrolments.filter(e => e.batchId === batchId && e.status !== 'dropped').map(e => e.studentId)
+  );
+  return allStudents.filter(s => enrolledIds.has(s.id) || s.batchId === batchId);
+}
+
 // ── Main Panel export ─────────────────────────────────────────
 export const TestResultsPanel = {
 
@@ -317,6 +445,15 @@ export const TestResultsPanel = {
               <line x1="5"  y1="12" x2="19" y2="12"/>
             </svg>
             Add Test Result
+          </button>
+          <button class="tr-add-btn" id="trImportBtn" style="background:var(--surface2);color:var(--t1);border:1px solid var(--border2)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Import from Excel
           </button>
           <div style="flex:1"></div>
           <button id="trExportCSV" class="tr-export-btn" title="Export CSV">
@@ -414,6 +551,9 @@ export const TestResultsPanel = {
   _attachToolbar(container) {
     container.querySelector('#trAddBtn')?.addEventListener('click', () => {
       this._openAddModal(container);
+    });
+    container.querySelector('#trImportBtn')?.addEventListener('click', () => {
+      this._openImportModal(container);
     });
     container.querySelector('#trExportCSV')?.addEventListener('click', () => {
       this._exportCSV(container);
@@ -1941,6 +2081,179 @@ export const TestResultsPanel = {
   },
 
   // ── CSV Export (same style as FinalResultsPanel) ─────────────
+  // ── Import results from Excel (.xls/.xlsx) ─────────────────────
+  _openImportModal(container) {
+    let _parsed = null; // parsed sheet data, set once a file is loaded
+
+    Modal.open({
+      title: 'Import Test Results from Excel',
+      size:  'md',
+      body: `
+        <div id="triModalInner">
+          <div class="import-drop" id="triDropZone" style="cursor:pointer">
+            <input type="file" id="triFileInput" accept=".xls,.xlsx" style="display:none"/>
+            <div style="font-size:13px;color:var(--t2);font-weight:600">Click to select or drop a .xls / .xlsx file</div>
+            <div style="font-size:11.5px;color:var(--t3);margin-top:4px">
+              Campus, batch, test name &amp; date are read from the top of the sheet.<br/>
+              Students already enrolled in the batch who are missing from the file
+              will be marked <strong>Absent</strong>.
+            </div>
+          </div>
+          <div id="triResult"></div>
+        </div>
+      `,
+      actions: [
+        { label: 'Cancel', variant: 'ghost', close: true },
+        {
+          label:    'Import',
+          variant:  'primary',
+          close:    false,
+          disabled: true,
+          id:       'triImportBtn',
+          handler:  () => {
+            if (!_parsed) return;
+            this._runImport(_parsed, container);
+            Modal.close();
+          },
+        },
+      ],
+      onOpen: (modalEl) => {
+        const dropZone   = modalEl.querySelector('#triDropZone');
+        const fileInput  = modalEl.querySelector('#triFileInput');
+        const resultEl   = modalEl.querySelector('#triResult');
+        const importBtn  = [...modalEl.querySelectorAll('button')]
+                            .find(b => b.textContent.trim() === 'Import');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', e => {
+          e.preventDefault();
+          dropZone.classList.remove('drag-over');
+          if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', e => {
+          if (e.target.files?.[0]) handleFile(e.target.files[0]);
+        });
+
+        const handleFile = async (file) => {
+          resultEl.innerHTML = `<div style="font-size:12px;color:var(--t3);margin-top:10px">Reading ${file.name}…</div>`;
+          try {
+            const XLSX  = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+            const buf   = await file.arrayBuffer();
+            const wb    = XLSX.read(buf, { type: 'array' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows  = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+
+            _parsed = _parseResultsSheet(rows);
+            this._renderImportPreview(resultEl, _parsed);
+            if (importBtn) importBtn.disabled = !_parsed.entries.length;
+          } catch (err) {
+            _parsed = null;
+            if (importBtn) importBtn.disabled = true;
+            resultEl.innerHTML = `<div style="font-size:12px;color:var(--red);margin-top:10px">
+              Could not read that file: ${err.message || err}</div>`;
+          }
+        };
+      },
+    });
+  },
+
+  // ── Preview of parsed sheet + student match summary ─────────────
+  _renderImportPreview(el, parsed) {
+    const { campusName, batchName, testName, testDate, entries } = parsed;
+    const batch = _matchBatchByName(batchName, campusName);
+
+    let matchedCount = 0, unmatched = [];
+    let batchStudents = [];
+    if (batch) {
+      batchStudents = _getEnrolledStudents(batch.id);
+      entries.forEach(({ idRaw }) => {
+        if (_matchStudentByIdOrCNIC(idRaw, batchStudents)) matchedCount++;
+        else unmatched.push(idRaw);
+      });
+    }
+    const willBeAbsent = batch ? Math.max(batchStudents.length - matchedCount, 0) : 0;
+
+    el.innerHTML = `
+      <div class="import-preview" style="padding:12px 14px;margin-top:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12.5px">
+          <div><span style="color:var(--t3)">Campus:</span> <strong>${campusName || '—'}</strong></div>
+          <div><span style="color:var(--t3)">Batch:</span> <strong>${batchName || '—'}</strong>
+            ${batch ? '' : '<span style="color:var(--red);font-weight:700"> — not found</span>'}</div>
+          <div><span style="color:var(--t3)">Test:</span> <strong>${testName || '—'}</strong></div>
+          <div><span style="color:var(--t3)">Date:</span> <strong>${testDate || '—'}</strong></div>
+        </div>
+      </div>
+      <div class="import-summary-bar">
+        <span class="import-ok">${matchedCount} matched</span>
+        ${willBeAbsent ? `<span style="color:var(--yellow);font-weight:700">${willBeAbsent} will be marked Absent</span>` : ''}
+        ${unmatched.length ? `<span class="import-bad">${unmatched.length} unmatched in file</span>` : ''}
+        <span style="color:var(--t3)">${entries.length} row(s) read</span>
+      </div>
+      ${unmatched.length ? `<div class="import-err-list">
+        <div style="font-weight:700;margin-bottom:4px">Not found in this batch (no matching Student ID or CNIC):</div>
+        <ul>${unmatched.map(id => `<li>${id}</li>`).join('')}</ul>
+      </div>` : ''}
+      ${!batch ? `<div class="import-err-list"><li style="list-style:none">
+        No batch named "${batchName}" was found — check the batch name in the sheet, or create the batch first.
+      </li></div>` : ''}
+    `;
+  },
+
+  // ── Perform the actual import once confirmed ────────────────────
+  _runImport(parsed, container) {
+    const { campusName, batchName, testName, testDate, entries } = parsed;
+    const batch = _matchBatchByName(batchName, campusName);
+    if (!batch) { Toast.error(`No batch found matching "${batchName}".`); return; }
+    if (!testName || !testDate) { Toast.error('Test name or date could not be read from the file.'); return; }
+
+    const batchStudents  = _getEnrolledStudents(batch.id);
+    const scheduleEntry  = _resolveOrCreateScheduleEntry(batch.id, testName, testDate);
+    const commonTotal    = entries.find(e => e.total != null && !isNaN(e.total))?.total || '';
+    const passingFor     = t => (t ? Math.ceil(Number(t) * 0.5) : '');
+
+    const matchedIds = new Set();
+    let unmatchedCount = 0;
+
+    entries.forEach(({ idRaw, obtained, total }) => {
+      const student = _matchStudentByIdOrCNIC(idRaw, batchStudents);
+      if (!student) { unmatchedCount++; return; }
+      matchedIds.add(student.id);
+      const tm = (total != null && !isNaN(total)) ? total : commonTotal;
+      _upsertMark({
+        scheduleEntryId: scheduleEntry.id,
+        studentId:       student.id,
+        marks:           obtained,
+        absent:          false,
+        totalMarks:      tm,
+        passingMarks:    passingFor(tm),
+      });
+    });
+
+    // Any enrolled student not present in the file → Absent
+    let absentCount = 0;
+    batchStudents.forEach(s => {
+      if (matchedIds.has(s.id)) return;
+      _upsertMark({
+        scheduleEntryId: scheduleEntry.id,
+        studentId:       s.id,
+        marks:           null,
+        absent:          true,
+        totalMarks:      commonTotal,
+        passingMarks:    passingFor(commonTotal),
+      });
+      absentCount++;
+    });
+
+    Toast.success(
+      `Imported ${matchedIds.size} result(s) for ${batch.batchName || batchName} — ${testName}. ` +
+      `${absentCount} marked Absent.` +
+      (unmatchedCount ? ` ${unmatchedCount} row(s) in the file didn't match any enrolled student.` : '')
+    );
+    this._renderTable(container);
+  },
+
   _exportCSV(container) {
     const rows = this._getEnrichedRows(container);
     if (!rows.length) { Toast.error('No results to export.'); return; }
