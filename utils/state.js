@@ -1,16 +1,23 @@
 // ============================================================
 // utils/state.js — Central State Management
 // FIXED: Removed dangerous saveState() calls from loadState()
-// UPDATED: 'students' ab alag collection/endpoint (StudentsStorage)
-//          se load/save hote hain, taake main appstate document
-//          Vercel ki 4.5MB response limit ke andar rahe.
-//          studentUI.js / studentService.js ko koi change nahi
-//          karni padi — wo abhi bhi AppState.get/add/update/set
-//          use karte hain, routing yahan andar hi hoti hai.
+// UPDATED (students): 'students' alag collection/endpoint
+//          (StudentsStorage) se load/save hote hain.
+// UPDATED (batches + lecturePlans): 'batches' ab BatchesStorage
+//          se, aur 'lecturePlans' + 'lpRows' + 'lpAssignments'
+//          ab LecturePlanStorage se load/save hote hain — sab
+//          taake main appstate document Vercel ki 4.5MB response
+//          limit ke andar rahe.
+//          batchUI.js / lecturePlanUI_.js / lecturePlanService.js
+//          ko koi change nahi karni padi — wo abhi bhi
+//          AppState.get/add/update/set use karte hain, routing
+//          yahan andar hi transparently hoti hai.
 // ============================================================
 
 import Storage from './storage.js';
 import StudentsStorage from './studentsStorage.js';
+import BatchesStorage from './batchesStorage.js';
+import LecturePlanStorage from './lecturePlanStorage.js';
 
 const DEFAULT_STATE = {
   disciplines:      [],
@@ -40,14 +47,27 @@ const _subscribers = {};
 let _state = DEFAULT_STATE;
 let _loaded = false; // ✅ guard: load complete hua ya nahi
 
+// Lecture-plan related keys — inhe LecturePlanStorage handle karta hai
+const LECTURE_KEYS = ['lecturePlans', 'lpRows', 'lpAssignments'];
+
+function lectureDataIsEmpty(data) {
+  const plansEmpty  = !Array.isArray(data.lecturePlans) || data.lecturePlans.length === 0;
+  const rowsEmpty   = !data.lpRows || Object.keys(data.lpRows).length === 0;
+  const assignEmpty = !data.lpAssignments || Object.keys(data.lpAssignments).length === 0;
+  return plansEmpty && rowsEmpty && assignEmpty;
+}
+
 export const AppState = {
 
   async loadState() {
-    // ✅ Main appstate aur students ab do alag jagah se aate hain —
-    // dono parallel mein fetch karo taake load speed slow na ho.
-    const [fileData, studentsData] = await Promise.all([
+    // ✅ Main appstate, students, batches, aur lecture-data ab
+    // alag-alag jagah se aate hain — sab parallel mein fetch karo
+    // taake load speed slow na ho.
+    const [fileData, studentsData, batchesData, lectureData] = await Promise.all([
       Storage.loadAll(),
       StudentsStorage.loadStudents(),
+      BatchesStorage.loadBatches(),
+      LecturePlanStorage.loadLectureData(),
     ]);
 
     // ✅ FIX: agar server se data load HI nahi ho saka (network down,
@@ -63,13 +83,23 @@ export const AppState = {
       throw new Error('EDUTRACK_LOAD_FAILED');
     }
 
-    // ✅ Same guard — ab students endpoint ke liye bhi. Agar students
-    // load fail ho, to save block rakho warna khali array save ho
-    // ke real students data delete ho sakta hai.
+    // ✅ Same guard — students, batches, lecture-data teeno endpoints
+    // ke liye. Agar koi bhi load fail ho, to save block rakho warna
+    // khali data save ho ke real records delete ho sakte hain.
     if (studentsData === null) {
       console.error('[AppState] Students server se load nahi ho sake — seed/save BLOCKED hai. Connection check karke page reload karein.');
       _state = structuredClone(DEFAULT_STATE);
       throw new Error('EDUTRACK_STUDENTS_LOAD_FAILED');
+    }
+    if (batchesData === null) {
+      console.error('[AppState] Batches server se load nahi ho sake — seed/save BLOCKED hai. Connection check karke page reload karein.');
+      _state = structuredClone(DEFAULT_STATE);
+      throw new Error('EDUTRACK_BATCHES_LOAD_FAILED');
+    }
+    if (lectureData === null) {
+      console.error('[AppState] Lecture-plan data server se load nahi ho saka — seed/save BLOCKED hai. Connection check karke page reload karein.');
+      _state = structuredClone(DEFAULT_STATE);
+      throw new Error('EDUTRACK_LECTUREDATA_LOAD_FAILED');
     }
 
     const saved = fileData[STORAGE_KEY] || null;
@@ -78,17 +108,40 @@ export const AppState = {
       // ✅ Merge with defaults — missing keys fill ho jayein
       _state = { ...DEFAULT_STATE, ...saved };
 
-      // ✅ Students routing: naye 'students' collection ko authoritative
-      // maano agar us mein data hai. Agar naya collection abhi khali hai
-      // (migration script abhi nahi chala) lekin purane appstate.students
-      // mein data mojood hai, to purana hi use karo — taake migration se
-      // pehle koi data na khoye.
+      // ── Students routing ──────────────────────────────────
+      // Naye 'students' collection ko authoritative maano agar
+      // us mein data hai. Agar naya collection abhi khali hai
+      // (migration abhi nahi chali) lekin purane appstate.students
+      // mein data mojood hai, to purana hi use karo.
       if (studentsData.length > 0) {
         _state.students = studentsData;
       } else if (Array.isArray(_state.students) && _state.students.length > 0) {
         console.warn('[AppState] Students collection abhi khali hai — purane appstate.students data use ho raha hai. Migration script chalayein.');
       } else {
         _state.students = [];
+      }
+
+      // ── Batches routing ────────────────────────────────────
+      // Bilkul students jese hi fallback logic.
+      if (batchesData.length > 0) {
+        _state.batches = batchesData;
+      } else if (Array.isArray(_state.batches) && _state.batches.length > 0) {
+        console.warn('[AppState] Batches collection abhi khali hai — purane appstate.batches data use ho raha hai. Migration script chalayein.');
+      } else {
+        _state.batches = [];
+      }
+
+      // ── Lecture-plan routing (lecturePlans + lpRows + lpAssignments) ──
+      if (!lectureDataIsEmpty(lectureData)) {
+        _state.lecturePlans  = lectureData.lecturePlans;
+        _state.lpRows        = lectureData.lpRows;
+        _state.lpAssignments = lectureData.lpAssignments;
+      } else if (!lectureDataIsEmpty(_state)) {
+        console.warn('[AppState] Lecture-plan collection abhi khali hai — purana appstate.lecturePlans/lpRows/lpAssignments data use ho raha hai. Migration script chalayein.');
+      } else {
+        _state.lecturePlans  = [];
+        _state.lpRows        = {};
+        _state.lpAssignments = {};
       }
 
       // ✅ Migration: naye keys add karo agar purani state mein nahi hain
@@ -127,7 +180,11 @@ export const AppState = {
     } else {
       // ✅ Fresh install — pehli baar hi seed karo
       _state = structuredClone(DEFAULT_STATE);
-      _state.students = studentsData; // usually [] on fresh install
+      _state.students      = studentsData;               // usually [] on fresh install
+      _state.batches       = batchesData;                // usually [] on fresh install
+      _state.lecturePlans  = lectureData.lecturePlans;    // usually [] on fresh install
+      _state.lpRows        = lectureData.lpRows;          // usually {} on fresh install
+      _state.lpAssignments = lectureData.lpAssignments;   // usually {} on fresh install
       this._seedDefaultData();
       // saveState() seedDefaultData ke andar call hoti hai — sirf fresh install pe
     }
@@ -145,9 +202,9 @@ export const AppState = {
 
   // ── saveState(changedKey) ──────────────────────────────────
   // changedKey optional hai — agar diya gaya hai to sirf usi ke
-  // hisaab se decide karte hain ke students endpoint ko save
-  // bhejna hai ya nahi (main appstate hamesha save hoti hai,
-  // students ab alag jagah save hoti hain).
+  // hisaab se decide karte hain kaunse dedicated endpoint ko save
+  // bhejna hai (main appstate hamesha save hoti hai; students,
+  // batches, aur lecture-data ab alag jagah save hoti hain).
   saveState(changedKey) {
     // ✅ Guard: load complete hone se pehle save mat karo
     if (!_loaded) {
@@ -156,10 +213,14 @@ export const AppState = {
     }
 
     // ✅ currentUser kabhi save mat karo — session alag handle hoti hai
-    // ✅ students ab main payload mein nahi jaate — alag endpoint pe jate hain
+    // ✅ students/batches/lecture-keys ab main payload mein nahi jaate
     const toSave = { ..._state };
     delete toSave.currentUser;
     delete toSave.students;
+    delete toSave.batches;
+    delete toSave.lecturePlans;
+    delete toSave.lpRows;
+    delete toSave.lpAssignments;
 
     Storage.set(STORAGE_KEY, toSave);
 
@@ -168,6 +229,20 @@ export const AppState = {
     // jab specifically 'students' change hua ho.
     if (changedKey === undefined || changedKey === 'students') {
       StudentsStorage.setStudents(_state.students || []);
+    }
+
+    // Batches ko alag save karo — bilkul students jesa hi.
+    if (changedKey === undefined || changedKey === 'batches') {
+      BatchesStorage.setBatches(_state.batches || []);
+    }
+
+    // Lecture-plan data (teeno keys ek saath) ko alag save karo.
+    if (changedKey === undefined || LECTURE_KEYS.includes(changedKey)) {
+      LecturePlanStorage.setLectureData({
+        lecturePlans:  _state.lecturePlans  || [],
+        lpRows:        _state.lpRows        || {},
+        lpAssignments: _state.lpAssignments || {},
+      });
     }
   },
 
@@ -321,12 +396,12 @@ export const AppState = {
 
     _state.teachers          = [];
     _state.students          = _state.students || [];
-    _state.batches           = [];
+    _state.batches           = _state.batches  || [];
     _state.batchSchedules    = [];
     _state.attendanceRecords = [];
-    _state.lecturePlans      = [];
-    _state.lpRows            = {};
-    _state.lpAssignments     = {};
+    _state.lecturePlans      = _state.lecturePlans  || [];
+    _state.lpRows            = _state.lpRows        || {};
+    _state.lpAssignments     = _state.lpAssignments || {};
 
     // ✅ Fresh install pe save — ye theek hai
     this.saveState();
