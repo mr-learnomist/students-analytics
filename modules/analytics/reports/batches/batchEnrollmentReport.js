@@ -34,6 +34,16 @@ function getEnrollmentCountsByBatch() {
   return counts;
 }
 
+// Ordering helper: ACCA levels sort as Knowledge → Skills → Professional.
+// Anything else (unrecognised level name) sorts last, after Professional.
+function _levelRank(level) {
+  const name = (level?.levelName || level?.name || level?.id || '').toLowerCase();
+  if (name.includes('knowledge')) return 0;
+  if (name.includes('skill'))     return 1;
+  if (name.includes('prof'))      return 2;
+  return 3;
+}
+
 // ── Filter styles (shared with Batch Timeline — same id guard) ─
 function _injectStyles() {
   if (document.getElementById('bt-report-style')) return;
@@ -180,7 +190,24 @@ function renderBatchEnrollment(el, state) {
   if (!state.visibleCols) {
     state.visibleCols = new Set(ALL_COLS.filter(c => c.def).map(c => c.key));
   }
+  if (!state.colOrder) {
+    state.colOrder = ALL_COLS.map(c => c.key);
+  }
   const vis = (key) => state.visibleCols.has(key);
+  // Columns in the user's chosen order, visible ones only — this is the
+  // single source of truth for BOTH the on-screen table AND exports.
+  const orderedVisibleCols = () =>
+    state.colOrder.map(k => ALL_COLS.find(c => c.key === k)).filter(c => c && vis(c.key));
+
+  // Per-column render definition — plain text everywhere, no colour pills.
+  const COL_DEFS = {
+    campus:          { label:'Campus',           align:'left',   cell:r => r.campus,             style:'color:var(--t1)' },
+    subject:         { label:'Subject',          align:'left',   cell:r => r.subject,             style:'font-weight:700;color:var(--blue)' },
+    batchNo:         { label:'Batch',             align:'center', width:'52px',  cell:r => r.batchNo,             style:'font-weight:700;color:var(--t1)' },
+    teacher:         { label:'Teacher',          align:'left',   cell:r => r.teacher,             style:'color:var(--t2)' },
+    session:         { label:'Session',          align:'left',   cell:r => r.sessionPeriod||'—',  style:'color:var(--t2);white-space:nowrap' },
+    enrollmentCount: { label:'Enrollment Count', align:'center', minWidth:'140px', cell:r => r.enrollmentCount,  style:'color:var(--t1)' },
+  };
 
   // Build rows
   let rows = allBatches.map(b => {
@@ -219,8 +246,14 @@ function renderBatchEnrollment(el, state) {
   rows.sort((a, b) => {
     if (state.sort === 'enrollDesc') return b.enrollmentCount - a.enrollmentCount;
     if (state.sort === 'enrollAsc')  return a.enrollmentCount - b.enrollmentCount;
-    // 'batchAsc' default — campus, then batch #
-    return (a.campus + a.batchNo).localeCompare(b.campus + b.batchNo);
+    // 'batchAsc' default — campus, then level (Skills before Professional), then subject, then batch # (numeric, so 1 comes before 2)
+    const campCmp = a.campus.localeCompare(b.campus);
+    if (campCmp) return campCmp;
+    const lvlCmp = _levelRank(a._level) - _levelRank(b._level);
+    if (lvlCmp) return lvlCmp;
+    const subjCmp = a.subject.localeCompare(b.subject);
+    if (subjCmp) return subjCmp;
+    return (parseInt(a.batchNo, 10) || 0) - (parseInt(b.batchNo, 10) || 0);
   });
 
   state._filteredRows = rows;
@@ -329,16 +362,11 @@ function renderBatchEnrollment(el, state) {
           <thead>
             <tr style="background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:3">
               <th style="padding:9px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--t3);width:44px;border-right:1px solid var(--border)">#</th>
-              ${vis('campus')          ? `<th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Campus</th>` : ''}
-              ${vis('subject')         ? `<th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Subject</th>` : ''}
-              ${vis('batchNo')         ? `<th style="padding:9px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--t3);width:52px">Batch</th>` : ''}
-              ${vis('teacher')         ? `<th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Teacher</th>` : ''}
-              ${vis('session')         ? `<th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--t3)">Session</th>` : ''}
-              ${vis('enrollmentCount') ? `<th style="padding:9px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--t3);min-width:140px">Enrollment Count</th>` : ''}
+              ${orderedVisibleCols().map(c => `<th style="padding:9px 12px;text-align:${COL_DEFS[c.key].align};font-size:11px;font-weight:600;color:var(--t3);${COL_DEFS[c.key].width?`width:${COL_DEFS[c.key].width};`:''}${COL_DEFS[c.key].minWidth?`min-width:${COL_DEFS[c.key].minWidth};`:''}">${COL_DEFS[c.key].label}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
-            ${!state.applied ? `<tr><td colspan="7" style="padding:60px;text-align:center">
+            ${!state.applied ? `<tr><td colspan="${orderedVisibleCols().length+1}" style="padding:60px;text-align:center">
               <div style="display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--t3)">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
                 <div style="font-size:13.5px;font-weight:600;color:var(--t2)">Select filters and click Apply to load report</div>
@@ -347,16 +375,24 @@ function renderBatchEnrollment(el, state) {
                 <tr style="border-bottom:1px solid var(--border);transition:background .12s"
                     onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
                   <td style="padding:10px 12px;text-align:center;color:var(--t3);font-size:12px;border-right:1px solid var(--border)">${i+1}</td>
-                  ${vis('campus')          ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t1)">${r.campus}</td>` : ''}
-                  ${vis('subject')         ? `<td style="padding:10px 12px;font-size:12.5px;font-weight:700;color:var(--blue)">${r.subject}</td>` : ''}
-                  ${vis('batchNo')         ? `<td style="padding:10px 12px;text-align:center;font-size:13px;font-weight:700;color:var(--t1)">${r.batchNo}</td>` : ''}
-                  ${vis('teacher')         ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t2)">${r.teacher}</td>` : ''}
-                  ${vis('session')         ? `<td style="padding:10px 12px;font-size:12.5px;color:var(--t2);white-space:nowrap">${r.sessionPeriod||'—'}</td>` : ''}
-                  ${vis('enrollmentCount') ? `<td style="padding:10px 12px;text-align:center">
-                      <span style="display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:3px 10px;border-radius:12px;font-size:12.5px;font-weight:700;background:var(--blue-dim);color:var(--blue)">${r.enrollmentCount}</span>
-                    </td>` : ''}
-                </tr>`).join('') : `<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--t3);font-size:13px">No batches found for selected filters.</td></tr>`}
+                  ${orderedVisibleCols().map(c => `<td style="padding:10px 12px;text-align:${COL_DEFS[c.key].align};font-size:12.5px;${COL_DEFS[c.key].style||''}">${COL_DEFS[c.key].cell(r)}</td>`).join('')}
+                </tr>`).join('') : `<tr><td colspan="${orderedVisibleCols().length+1}" style="padding:40px;text-align:center;color:var(--t3);font-size:13px">No batches found for selected filters.</td></tr>`}
           </tbody>
+          ${state.applied && rows.length ? `
+          <tfoot>
+            <tr style="border-top:2px solid var(--border);background:var(--surface2)">
+              <td style="padding:9px 12px;border-right:1px solid var(--border)"></td>
+              ${orderedVisibleCols().map((c, idx) => {
+                const isFirst = idx === 0;
+                const isEnroll = c.key === 'enrollmentCount';
+                const content = isFirst ? 'Total' : isEnroll ? String(totalEnrolled) : '';
+                const style = isFirst
+                  ? 'font-weight:700;color:var(--t1)'
+                  : isEnroll ? 'font-weight:700;color:var(--t1)' : '';
+                return `<td style="padding:9px 12px;text-align:${COL_DEFS[c.key].align};font-size:12.5px;${style}">${content}</td>`;
+              }).join('')}
+            </tr>
+          </tfoot>` : ''}
         </table>
       </div>
     </div>`;
@@ -430,53 +466,85 @@ function renderBatchEnrollment(el, state) {
     if (state.applied) rerender();
   });
 
-  // ── Column panel ────────────────────────────────────────────
+  // ── Column panel (visibility + order — also drives exports) ───
   const colPanel = el.querySelector('#beColPanel');
   const colList  = el.querySelector('#beColList');
   const colsBtn  = el.querySelector('#beColsBtn');
 
   const renderColList = () => {
-    colList.innerHTML = ALL_COLS.map(c => `
-      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;
-                    font-size:12.5px;color:var(--t1);padding:3px 0;user-select:none">
-        <input type="checkbox" value="${c.key}"
-          style="width:14px;height:14px;cursor:pointer;accent-color:var(--blue)"
-          ${state.visibleCols.has(c.key) ? 'checked' : ''}>
-        ${c.label}
-      </label>`).join('');
+    const orderedAll = state.colOrder.map(k => ALL_COLS.find(c => c.key === k)).filter(Boolean);
+    colList.innerHTML = orderedAll.map((c, idx) => `
+      <div class="be-col-row" style="display:flex;align-items:center;gap:7px;padding:3px 0">
+        <div style="display:flex;flex-direction:column;gap:0">
+          <button class="be-col-mv" data-dir="up" data-key="${c.key}" ${idx===0?'disabled':''}
+            style="width:16px;height:13px;border:none;background:none;padding:0;line-height:1;font-size:9px;
+                   cursor:${idx===0?'default':'pointer'};color:${idx===0?'var(--t4)':'var(--t3)'}">▲</button>
+          <button class="be-col-mv" data-dir="down" data-key="${c.key}" ${idx===orderedAll.length-1?'disabled':''}
+            style="width:16px;height:13px;border:none;background:none;padding:0;line-height:1;font-size:9px;
+                   cursor:${idx===orderedAll.length-1?'default':'pointer'};color:${idx===orderedAll.length-1?'var(--t4)':'var(--t3)'}">▼</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;
+                      font-size:12.5px;color:var(--t1);flex:1;user-select:none">
+          <input type="checkbox" value="${c.key}"
+            style="width:14px;height:14px;cursor:pointer;accent-color:var(--blue)"
+            ${state.visibleCols.has(c.key) ? 'checked' : ''}>
+          ${c.label}
+        </label>
+      </div>`).join('');
+
     colList.querySelectorAll('input[type=checkbox]').forEach(cb => {
       cb.addEventListener('change', () => {
         if (cb.checked) state.visibleCols.add(cb.value);
         else            state.visibleCols.delete(cb.value);
+        state._colPanelOpen = true;
+        rerender();
+      });
+    });
+    colList.querySelectorAll('.be-col-mv').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key;
+        const dir = btn.dataset.dir;
+        const i = state.colOrder.indexOf(key);
+        const j = dir === 'up' ? i - 1 : i + 1;
+        if (j < 0 || j >= state.colOrder.length) return;
+        [state.colOrder[i], state.colOrder[j]] = [state.colOrder[j], state.colOrder[i]];
+        state._colPanelOpen = true;
         rerender();
       });
     });
   };
   renderColList();
+  if (state._colPanelOpen) colPanel.style.display = 'block';
 
   colsBtn?.addEventListener('click', e => {
     e.stopPropagation();
     const open = colPanel.style.display !== 'none';
+    state._colPanelOpen = !open;
     colPanel.style.display = open ? 'none' : 'block';
     if (!open) renderColList();
   });
 
   el.querySelector('#beColSelAll')?.addEventListener('click', () => {
     ALL_COLS.forEach(c => state.visibleCols.add(c.key));
+    state._colPanelOpen = true;
     rerender();
   });
   el.querySelector('#beColReset')?.addEventListener('click', () => {
     state.visibleCols = new Set(ALL_COLS.filter(c => c.def).map(c => c.key));
+    state.colOrder = ALL_COLS.map(c => c.key);
+    state._colPanelOpen = true;
     rerender();
   });
 
   document.addEventListener('click', e => {
     if (!e.target.closest('#beColPanel') && !e.target.closest('#beColsBtn')) {
       if (colPanel) colPanel.style.display = 'none';
+      state._colPanelOpen = false;
     }
   });
 
-  // ── Export helpers ─────────────────────────────────────────
+  // ── Export helpers — use the Column Viewer's current visibility
+  // and order directly. No separate column-picker pops up on export.
   const getExportData = (selectedKeys) => {
     const exportRows = state._filteredRows || [];
     const COL_MAP = {
@@ -487,165 +555,91 @@ function renderBatchEnrollment(el, state) {
       session:         r => r.sessionPeriod || '—',
       enrollmentCount: r => r.enrollmentCount,
     };
-    const activeCols = ALL_COLS.filter(c => selectedKeys.includes(c.key));
+    const activeCols = selectedKeys.map(k => ALL_COLS.find(c => c.key === k)).filter(Boolean);
     const headers    = activeCols.map(c => c.label);
     const dataRows   = exportRows.map(r => activeCols.map(c => String(COL_MAP[c.key](r) ?? '—')));
     return { headers, dataRows, exportRows };
   };
 
-  const showExportColModal = (type, onConfirm) => {
-    const defaultKeys = ALL_COLS.filter(c => state.visibleCols.has(c.key)).map(c => c.key);
-    let picked = new Set(defaultKeys);
-
-    const overlay = document.createElement('div');
-    overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center`;
-
-    overlay.innerHTML = `
-      <div style="background:var(--surface,#fff);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.22);
-                  padding:24px 24px 20px;min-width:320px;max-width:420px;width:90vw">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div style="font-size:15px;font-weight:700;color:var(--t1)">
-            ${type === 'csv' ? '📄' : '🖨️'} ${type.toUpperCase()} — Select Columns
-          </div>
-          <button id="beExpModalClose" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;
-            border:none;background:var(--surface2);border-radius:6px;cursor:pointer;color:var(--t3);font-size:16px">✕</button>
-        </div>
-
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button id="beExpSelAll" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
-            background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
-            ✔ Select All
-          </button>
-          <button id="beExpSelNone" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
-            background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
-            ✕ Deselect All
-          </button>
-        </div>
-
-        <div id="beExpColList" style="display:flex;flex-direction:column;gap:5px;margin-bottom:18px;
-          max-height:300px;overflow-y:auto;padding-right:4px">
-          ${ALL_COLS.map(c => `
-            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:7px 10px;
-                          border-radius:8px;border:1px solid var(--border);background:var(--surface2);
-                          font-size:13px;color:var(--t1);user-select:none;transition:background .1s"
-                   onmouseover="this.style.background='var(--blue-dim)'" onmouseout="this.style.background='var(--surface2)'">
-              <input type="checkbox" value="${c.key}" ${picked.has(c.key) ? 'checked' : ''}
-                     style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue);flex-shrink:0"/>
-              <span>${c.label}</span>
-            </label>`).join('')}
-        </div>
-
-        <div style="display:flex;gap:10px">
-          <button id="beExpModalCancel" style="flex:1;padding:9px 0;border-radius:8px;border:1px solid var(--border);
-            background:var(--surface2);color:var(--t2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
-            Cancel
-          </button>
-          <button id="beExpModalConfirm" style="flex:2;padding:9px 0;border-radius:8px;border:none;
-            background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
-            ${type === 'csv' ? '⬇ Export CSV' : '🖨 Export PDF'}
-          </button>
-        </div>
-      </div>`;
-
-    document.body.appendChild(overlay);
-
-    overlay.querySelectorAll('#beExpColList input[type=checkbox]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        cb.checked ? picked.add(cb.value) : picked.delete(cb.value);
-      });
-    });
-
-    const close = () => document.body.removeChild(overlay);
-    overlay.querySelector('#beExpModalClose').addEventListener('click', close);
-    overlay.querySelector('#beExpModalCancel').addEventListener('click', close);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-    overlay.querySelector('#beExpSelAll').addEventListener('click', () => {
-      picked = new Set(ALL_COLS.map(c => c.key));
-      overlay.querySelectorAll('#beExpColList input[type=checkbox]').forEach(cb => cb.checked = true);
-    });
-    overlay.querySelector('#beExpSelNone').addEventListener('click', () => {
-      picked.clear();
-      overlay.querySelectorAll('#beExpColList input[type=checkbox]').forEach(cb => cb.checked = false);
-    });
-
-    overlay.querySelector('#beExpModalConfirm').addEventListener('click', () => {
-      if (!picked.size) { alert('Please select at least one column!'); return; }
-      close();
-      onConfirm([...picked]);
-    });
-  };
-
   // ── CSV Export ───────────────────────────────────────────────
   el.querySelector('#beExportCSV')?.addEventListener('click', () => {
     if (!(state._filteredRows||[]).length) return;
-    showExportColModal('csv', (selectedKeys) => {
-      const { headers, dataRows, exportRows } = getExportData(selectedKeys);
-      const now     = new Date();
-      const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-      const csv = [
-        `Batch Enrollment Report — Generated: ${dateStr}`,
-        `Total Batches: ${exportRows.length}`,
-        `Total Enrolled: ${exportRows.reduce((s,r)=>s+r.enrollmentCount,0)}`,
-        '',
-        headers.join(','),
-        ...dataRows.map(row => row.map(cell => `"${cell.replace(/"/g,'""')}"`).join(','))
-      ].join('\n');
-      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url; a.download = `batch-enrollment-${dateStr.replace(/ /g,'-')}.csv`; a.click();
-      URL.revokeObjectURL(url);
-    });
+    const selectedKeys = state.colOrder.filter(k => state.visibleCols.has(k));
+    if (!selectedKeys.length) { alert('Please make at least one column visible in the Column Viewer first.'); return; }
+    const { headers, dataRows, exportRows } = getExportData(selectedKeys);
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const csv = [
+      `Batch Enrollment Report — Generated: ${dateStr}`,
+      `Total Batches: ${exportRows.length}`,
+      `Total Enrolled: ${exportRows.reduce((s,r)=>s+r.enrollmentCount,0)}`,
+      '',
+      headers.join(','),
+      ...dataRows.map(row => row.map(cell => `"${cell.replace(/"/g,'""')}"`).join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `batch-enrollment-${dateStr.replace(/ /g,'-')}.csv`; a.click();
+    URL.revokeObjectURL(url);
   });
 
   // ── PDF Export ───────────────────────────────────────────────
   el.querySelector('#beExportPDF')?.addEventListener('click', () => {
     if (!(state._filteredRows||[]).length) return;
-    showExportColModal('pdf', (selectedKeys) => {
-      const { headers, dataRows, exportRows } = getExportData(selectedKeys);
-      if (!exportRows.length) return;
-      const now     = new Date();
-      const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-      const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+    const selectedKeys = state.colOrder.filter(k => state.visibleCols.has(k));
+    if (!selectedKeys.length) { alert('Please make at least one column visible in the Column Viewer first.'); return; }
+    const { headers, dataRows, exportRows } = getExportData(selectedKeys);
+    if (!exportRows.length) return;
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
 
-      const thCells = headers.map(h =>
-        `<th style="background:#1e40af;color:#fff;font-size:10px;font-weight:700;
-                    text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;
-                    white-space:nowrap;text-align:left">${h}</th>`
-      ).join('');
+    const thCells = headers.map(h =>
+      `<th style="background:#1e40af;color:#fff;font-size:9.5px;font-weight:700;
+                  text-transform:uppercase;letter-spacing:.3px;padding:6px 8px;
+                  white-space:nowrap;text-align:left">${h}</th>`
+    ).join('');
 
-      const tdRows = dataRows.map((row, idx) =>
-        `<tr>${row.map((cell, ci) => {
-          const isFirst = ci === 0;
-          const bg = idx % 2 === 0 ? '#f8faff' : '#fff';
-          return `<td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;
-                              font-size:11px;color:#334155;background:${bg};
-                              ${isFirst ? 'font-weight:600;color:#1e293b;' : ''}">${cell}</td>`;
-        }).join('')}</tr>`
-      ).join('');
+    const enrollColIdx = selectedKeys.indexOf('enrollmentCount');
+    const totalEnrolledExp = exportRows.reduce((s,r)=>s+r.enrollmentCount,0);
 
-      const totalEnrolledExp = exportRows.reduce((s,r)=>s+r.enrollmentCount,0);
+    const tdRows = dataRows.map((row, idx) =>
+      `<tr>${row.map((cell, ci) => {
+        const isFirst = ci === 0;
+        const bg = idx % 2 === 0 ? '#f8faff' : '#fff';
+        return `<td style="padding:5px 8px;border-bottom:1px solid #e2e8f0;
+                            font-size:10px;color:#334155;background:${bg};
+                            ${isFirst ? 'font-weight:600;color:#1e293b;' : ''}">${cell}</td>`;
+      }).join('')}</tr>`
+    ).join('');
 
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+    const totalRow = `<tr>${selectedKeys.map((k, ci) => {
+      const isFirst = ci === 0;
+      const content = isFirst ? 'Total' : k === 'enrollmentCount' ? String(totalEnrolledExp) : '';
+      return `<td style="padding:6px 8px;border-top:1.5px solid #1e40af;font-size:10.5px;
+                          font-weight:700;color:#1e293b;background:#f1f5f9">${content}</td>`;
+    }).join('')}</tr>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
 <title>Batch Enrollment Report</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1e293b;background:#fff;padding:20px 24px}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:#fff;padding:16px 18px}
   .header{display:flex;justify-content:space-between;align-items:flex-start;
-          border-bottom:2.5px solid #2563eb;padding-bottom:12px;margin-bottom:14px}
-  .title{font-size:20px;font-weight:700;color:#1e40af}
-  .subtitle{font-size:11px;color:#64748b;margin-top:2px}
-  .meta{text-align:right;font-size:10.5px;color:#64748b;line-height:1.6}
-  .meta strong{color:#1e293b;font-size:11px}
-  .stat-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
-  .stat{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:6px 14px;text-align:center}
-  .stat-n{font-size:18px;font-weight:700;color:#2563eb}
-  .stat-l{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px}
+          border-bottom:2.5px solid #2563eb;padding-bottom:10px;margin-bottom:12px}
+  .title{font-size:17px;font-weight:700;color:#1e40af}
+  .subtitle{font-size:9.5px;color:#64748b;margin-top:2px}
+  .meta{text-align:right;font-size:9.5px;color:#64748b;line-height:1.6}
+  .meta strong{color:#1e293b;font-size:10px}
+  .stat-row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .stat{background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:5px 12px;text-align:center}
+  .stat-n{font-size:15px;font-weight:700;color:#2563eb}
+  .stat-l{font-size:8.5px;color:#64748b;text-transform:uppercase;letter-spacing:.4px}
   table{width:100%;border-collapse:collapse}
-  .footer{margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;
-          display:flex;justify-content:space-between;font-size:9.5px;color:#94a3b8}
-  @media print{body{padding:12px 14px}@page{size:A4 landscape;margin:10mm}.no-print{display:none}}
+  .footer{margin-top:12px;padding-top:8px;border-top:1px solid #e2e8f0;
+          display:flex;justify-content:space-between;font-size:8.5px;color:#94a3b8}
+  @media print{body{padding:10mm}@page{size:A4 portrait;margin:10mm}.no-print{display:none}}
 </style></head><body>
   <div class="header">
     <div>
@@ -660,7 +654,7 @@ function renderBatchEnrollment(el, state) {
   </div>
   <table>
     <thead><tr>${thCells}</tr></thead>
-    <tbody>${tdRows}</tbody>
+    <tbody>${tdRows}${totalRow}</tbody>
   </table>
   <div class="footer">
     <span>Batch Enrollment Report &nbsp;|&nbsp; ${dateStr} at ${timeStr}</span>
@@ -673,11 +667,10 @@ function renderBatchEnrollment(el, state) {
   </div>
 </body></html>`;
 
-      const w = window.open('', '_blank');
-      w.document.write(html);
-      w.document.close();
-      setTimeout(() => w.print(), 500);
-    });
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
   });
 }
 
@@ -691,7 +684,7 @@ export const BatchEnrollmentReport = {
       sort: 'batchAsc', search: '',
       campFilter: [], discFilter: [], levelFilter: [],
       subjFilter: [], sessionFilter: [], _filteredRows: [],
-      applied: false,
+      applied: false, visibleCols: null, colOrder: null, _colPanelOpen: false,
     };
     renderBatchEnrollment(container, this._state);
   }
