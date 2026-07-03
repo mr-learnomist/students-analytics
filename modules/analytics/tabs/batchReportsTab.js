@@ -4,8 +4,9 @@
 // Each card mounts one report from reports/batches/
 // ============================================================
 
-import { ConversionTracking }    from '../reports/batches/conversionTracking.js';
-import { BatchTimelineReport }  from '../reports/batches/batchTimelineReport.js';
+import { ConversionTracking }     from '../reports/batches/conversionTracking.js';
+import { BatchTimelineReport }   from '../reports/batches/batchTimelineReport.js';
+import { BatchEnrollmentReport } from '../reports/batches/batchEnrollmentReport.js';
 
 // Batch report card registry
 // Naya report add karna ho to yahan push karo — bas
@@ -27,10 +28,18 @@ const BATCH_REPORTS = [
     colorDim: 'var(--violet-dim)',
     module:   BatchTimelineReport,
   },
+  {
+    id:       'batchEnrollment',
+    title:    'Batch Enrollment',
+    subtitle: '',
+    icon:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    color:    'var(--green,#22c55e)',
+    colorDim: 'var(--green-dim,rgba(34,197,94,.12))',
+    module:   BatchEnrollmentReport,
+  },
   // Naye reports yahan add hote jayenge:
   // { id: 'batchStrength',    title: 'Batch Strength',    ... module: BatchStrength    },
   // { id: 'dropoutRate',      title: 'Dropout Rate',      ... module: DropoutRate      },
-  // { id: 'batchTimeline',    title: 'Batch Timeline',    ... module: BatchTimeline    },
 ];
 
 export const BatchReportsTab = {
