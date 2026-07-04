@@ -457,6 +457,59 @@ function _extractSubjectIdFromBatchName(batchName) {
   return match ? match.id : '';
 }
 
+// ── Import dry-run / validation ──────────────────────────────────
+// Checks the parsed sheet BEFORE anything is saved and separates issues
+// into blocking "errors" (Import stays disabled) vs non-blocking
+// "warnings" (Import is still allowed, admin is just informed).
+function _validateImportEntries({ entries, commonTotal, matchedStudentIds, existingEntryId }) {
+  const errors = [];
+  const warnings = [];
+
+  // Duplicate Student IDs within the same sheet
+  const seen = new Map();
+  entries.forEach(e => seen.set(e.idRaw, (seen.get(e.idRaw) || 0) + 1));
+  const duplicateIds = [...seen.entries()].filter(([, c]) => c > 1).map(([id]) => id);
+  if (duplicateIds.length) {
+    warnings.push(`${duplicateIds.length} Student ID appears more than once in the file — only the last row for each will be saved: ${duplicateIds.join(', ')}`);
+  }
+
+  // Invalid marks: not a number, negative, or exceeding the total
+  entries.forEach(({ idRaw, obtained, total }) => {
+    if (obtained == null) return; // handled as a separate "blank" warning below
+    const tm = (total != null && !isNaN(total)) ? total : commonTotal;
+    if (isNaN(obtained)) {
+      errors.push(`${idRaw}: marks value is not a number`);
+    } else if (Number(obtained) < 0) {
+      errors.push(`${idRaw}: negative marks (${obtained})`);
+    } else if (tm && Number(obtained) > Number(tm)) {
+      errors.push(`${idRaw}: marks (${obtained}) exceed total (${tm})`);
+    }
+  });
+
+  // Blank marks — not an error, but worth flagging (saved as Pending)
+  const blankCount = entries.filter(e => e.obtained == null).length;
+  if (blankCount) {
+    warnings.push(`${blankCount} row(s) have no marks value — they'll be saved as Pending, not Absent.`);
+  }
+
+  // No total marks anywhere → Pass/Fail can't be calculated reliably
+  if (!commonTotal && !entries.some(e => e.total != null && !isNaN(e.total))) {
+    warnings.push(`No total marks detected anywhere in the sheet — Pass/Fail status may not calculate correctly.`);
+  }
+
+  // Re-importing over existing results
+  if (existingEntryId && matchedStudentIds && matchedStudentIds.size) {
+    const already = _getResults().filter(r =>
+      r.scheduleEntryId === existingEntryId && matchedStudentIds.has(r.studentId)
+    ).length;
+    if (already) {
+      warnings.push(`${already} student(s) already have a result for this test — importing will overwrite/update their marks.`);
+    }
+  }
+
+  return { errors, warnings, duplicateIds };
+}
+
 // ── Main Panel export ─────────────────────────────────────────
 export const TestResultsPanel = {
 
@@ -2341,7 +2394,8 @@ export const TestResultsPanel = {
   // ── CSV Export (same style as FinalResultsPanel) ─────────────
   // ── Import results from Excel (.xls/.xlsx) ─────────────────────
   _openImportModal(container) {
-    let _parsed = null; // parsed sheet data, set once a file is loaded
+    let _parsed    = null;  // parsed sheet data, set once a file is loaded
+    let _canImport = false; // set by the dry-run preview after validation
 
     Modal.open({
       title: 'Import Test Results from Excel',
@@ -2350,14 +2404,22 @@ export const TestResultsPanel = {
         <div id="triModalInner">
           <div class="import-drop" id="triDropZone" style="cursor:pointer">
             <input type="file" id="triFileInput" accept=".xls,.xlsx" style="display:none"/>
-            <div style="font-size:13px;color:var(--t2);font-weight:600">Click to select or drop a .xls / .xlsx file</div>
+            <div id="triDropLabel" style="font-size:13px;color:var(--t2);font-weight:600">Click to select or drop a .xls / .xlsx file</div>
             <div style="font-size:11.5px;color:var(--t3);margin-top:4px">
               Campus, batch, test name &amp; date are read from the top of the sheet.<br/>
               Students already enrolled in the batch who are missing from the file
               will be marked <strong>Absent</strong>.
             </div>
           </div>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;
+                        color:var(--t2);font-weight:600;cursor:pointer">
+            <input type="checkbox" id="triDryRunCb"/>
+            Dry run only — validate the file but don't save anything
+          </label>
           <div id="triResult"></div>
+          <div id="triSuccessBanner" style="display:none;margin-top:12px;padding:10px 14px;
+                      background:var(--green-dim);border:1px solid var(--green);border-radius:8px;
+                      font-size:12.5px;color:var(--green);font-weight:600"></div>
         </div>
       `,
       actions: [
@@ -2368,19 +2430,35 @@ export const TestResultsPanel = {
           close:    false,
           disabled: true,
           id:       'triImportBtn',
-          handler:  () => {
-            if (!_parsed) return;
+          handler:  (modalEl) => {
+            if (!_parsed || !_canImport) return;
+            const dryRunCb = modalEl.querySelector('#triDryRunCb');
+            const isDryRun = dryRunCb?.checked;
+
+            if (isDryRun) {
+              Toast.success('Dry run complete — nothing was saved. Uncheck "Dry run" to import for real.');
+              return;
+            }
+
             this._runImport(_parsed, container);
-            Modal.close();
+            this._resetImportModalForNext(modalEl, { justImported: true });
           },
         },
       ],
       onOpen: (modalEl) => {
         const dropZone   = modalEl.querySelector('#triDropZone');
+        const dropLabel  = modalEl.querySelector('#triDropLabel');
         const fileInput  = modalEl.querySelector('#triFileInput');
         const resultEl   = modalEl.querySelector('#triResult');
+        const dryRunCb   = modalEl.querySelector('#triDryRunCb');
         const importBtn  = [...modalEl.querySelectorAll('button')]
-                            .find(b => b.textContent.trim() === 'Import');
+                            .find(b => b.textContent.trim().replace(/\s+/g, ' ').startsWith('Import') || b.id === 'triImportBtn');
+
+        const updateImportBtnLabel = () => {
+          if (!importBtn) return;
+          importBtn.textContent = dryRunCb?.checked ? 'Run Dry Run' : 'Import';
+        };
+        dryRunCb?.addEventListener('change', updateImportBtnLabel);
 
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -2395,6 +2473,8 @@ export const TestResultsPanel = {
         });
 
         const handleFile = async (file) => {
+          const successBanner = modalEl.querySelector('#triSuccessBanner');
+          if (successBanner) successBanner.style.display = 'none';
           resultEl.innerHTML = `<div style="font-size:12px;color:var(--t3);margin-top:10px">Reading ${file.name}…</div>`;
           try {
             const XLSX  = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
@@ -2404,20 +2484,59 @@ export const TestResultsPanel = {
             const rows  = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
 
             _parsed = _parseResultsSheet(rows);
-            this._renderImportPreview(resultEl, _parsed);
-            if (importBtn) importBtn.disabled = !_parsed.entries.length;
+            const { canImport } = this._renderImportPreview(resultEl, _parsed);
+            _canImport = canImport;
+            if (importBtn) importBtn.disabled = !canImport;
           } catch (err) {
-            _parsed = null;
+            _parsed    = null;
+            _canImport = false;
             if (importBtn) importBtn.disabled = true;
             resultEl.innerHTML = `<div style="font-size:12px;color:var(--red);margin-top:10px">
               Could not read that file: ${err.message || err}</div>`;
           }
         };
+
+        // Expose file re-selection helper for the auto-reset after a real import
+        modalEl._triHandleFile = handleFile;
       },
     });
   },
 
-  // ── Preview of parsed sheet + student match summary ─────────────
+  // After a real (non-dry-run) import completes, show a brief success state
+  // then automatically clear the drop zone / preview so the panel is ready
+  // for the next file — no need to close and reopen the modal for a batch
+  // of sequential imports (Test 1 sheet, then Test 2 sheet, then Mock…).
+  _resetImportModalForNext(modalEl, { justImported = false } = {}) {
+    const dropZone       = modalEl.querySelector('#triDropZone');
+    const dropLabel      = modalEl.querySelector('#triDropLabel');
+    const fileInput      = modalEl.querySelector('#triFileInput');
+    const resultEl       = modalEl.querySelector('#triResult');
+    const importBtn      = modalEl.querySelector('#triImportBtn');
+    const successBanner  = modalEl.querySelector('#triSuccessBanner');
+
+    if (justImported && successBanner) {
+      successBanner.style.display = 'block';
+      successBanner.textContent = '✓ Imported successfully — ready for the next file…';
+    }
+
+    // Lock the drop zone briefly so a second file can't be dropped mid-clear
+    if (dropZone) dropZone.style.pointerEvents = 'none';
+    if (dropZone) dropZone.style.opacity = '.6';
+    if (importBtn) importBtn.disabled = true;
+
+    setTimeout(() => {
+      if (fileInput) fileInput.value = '';
+      if (resultEl)  resultEl.innerHTML = '';
+      if (dropZone)  { dropZone.style.pointerEvents = ''; dropZone.style.opacity = ''; }
+      if (dropLabel) dropLabel.textContent = 'Click to select or drop a .xls / .xlsx file';
+      if (successBanner) successBanner.style.display = 'none';
+      if (importBtn) importBtn.disabled = true; // stays disabled until next file is validated
+    }, 3500);
+  },
+
+
+  // ── Preview of parsed sheet + student match summary (this IS the dry run) ──
+  // Returns { canImport } so the caller knows whether to enable the Import button.
   _renderImportPreview(el, parsed) {
     const { campusName, batchName, testName, testDate, entries } = parsed;
     const batch     = _matchBatchByName(batchName, campusName);
@@ -2426,30 +2545,60 @@ export const TestResultsPanel = {
 
     let matchedCount = 0, unmatched = [];
     let batchStudents = [];
+    const matchedStudentIds = new Set();
     if (batch) {
       batchStudents = _getEnrolledStudents(batch.id);
       entries.forEach(({ idRaw }) => {
-        if (_matchStudentByIdOrCNIC(idRaw, batchStudents)) matchedCount++;
+        const st = _matchStudentByIdOrCNIC(idRaw, batchStudents);
+        if (st) { matchedCount++; matchedStudentIds.add(st.id); }
         else unmatched.push(idRaw);
       });
     }
     const willBeAbsent = batch ? Math.max(batchStudents.length - matchedCount, 0) : 0;
 
     let dateNote = '';
+    let existingEntry = null;
     if (batch) {
-      const entries  = _buildCalendarEntries({ batchId: batch.id });
-      const existing = entries.find(e => _normTestKey(e.testName) === _normTestKey(testName));
-      if (existing && existing.date && existing.date !== testDate) {
+      const calEntries = _buildCalendarEntries({ batchId: batch.id });
+      existingEntry = calEntries.find(e => _normTestKey(e.testName) === _normTestKey(testName)) || null;
+      if (existingEntry && existingEntry.date && existingEntry.date !== testDate) {
         dateNote = `<div style="font-size:11.5px;color:var(--yellow);margin-top:8px">
-          Note: "${testName}" is scheduled for ${formatDate(existing.date)} in the Lecture Plan —
+          Note: "${testName}" is scheduled for ${formatDate(existingEntry.date)} in the Lecture Plan —
           results will still be attached to that test (actual date on the sheet: ${formatDate(testDate)}).
           The sheet's date will be shown as the "held on" date in Result Profile.
         </div>`;
       }
     }
 
+    const commonTotal = entries.find(e => e.total != null && !isNaN(e.total))?.total || '';
+    const { errors, warnings } = _validateImportEntries({
+      entries, commonTotal, matchedStudentIds,
+      existingEntryId: existingEntry?.id || null,
+    });
+
+    const missingBasics = !batch || !testName || !testDate || !entries.length;
+    const canImport = !missingBasics && errors.length === 0;
+
+    const errorsHTML = errors.length ? `
+      <div class="import-err-list" style="border-color:var(--red);background:var(--red-dim)">
+        <div style="font-weight:700;margin-bottom:4px;color:var(--red)">⚠ ${errors.length} error(s) — fix these before importing:</div>
+        <ul>${errors.map(m => `<li>${m}</li>`).join('')}</ul>
+      </div>` : '';
+
+    const warningsHTML = warnings.length ? `
+      <div class="import-err-list" style="border-color:var(--yellow);background:var(--yellow-dim,rgba(217,119,6,.08))">
+        <div style="font-weight:700;margin-bottom:4px;color:var(--yellow)">Notes — will still import:</div>
+        <ul>${warnings.map(m => `<li>${m}</li>`).join('')}</ul>
+      </div>` : '';
+
     el.innerHTML = `
-      <div class="import-preview" style="padding:12px 14px;margin-top:12px">
+      <div style="display:flex;align-items:center;gap:6px;margin-top:12px;margin-bottom:2px">
+        <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+                     color:var(--t3);background:var(--surface3);padding:2px 8px;border-radius:20px">
+          Dry Run Preview — nothing saved yet
+        </span>
+      </div>
+      <div class="import-preview" style="padding:12px 14px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12.5px">
           <div><span style="color:var(--t3)">Campus:</span> <strong>${campusName || '—'}</strong></div>
           <div><span style="color:var(--t3)">Batch:</span> <strong>${batchName || '—'}</strong>
@@ -2474,7 +2623,11 @@ export const TestResultsPanel = {
       ${!batch ? `<div class="import-err-list"><li style="list-style:none">
         No batch named "${batchName}" was found — check the batch name in the sheet, or create the batch first.
       </li></div>` : ''}
+      ${errorsHTML}
+      ${warningsHTML}
     `;
+
+    return { canImport };
   },
 
   // ── Perform the actual import once confirmed ────────────────────
