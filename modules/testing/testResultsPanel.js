@@ -52,6 +52,15 @@ function _defaultLabel(type) {
   return 'Test';
 }
 
+// Normalize a test name for MATCHING purposes only (never for display).
+// Collapses spaces/hyphens/underscores/case so "Test 1", "Test-1", "test_1"
+// etc. are all treated as the SAME test — a rescheduled exam must always
+// re-attach to its original LP-scheduled entry, regardless of the date it
+// was actually held on.
+function _normTestKey(s) {
+  return (s || '').trim().toLowerCase().replace(/[\s\-_]+/g, ' ');
+}
+
 /**
  * Build ALL calendar entries (LP-derived + manual schedules)
  * that match a given criteria object:
@@ -207,7 +216,7 @@ function _getResults() { return AppState.get(TR_KEY) || []; }
  * Key: { scheduleEntryId, studentId }
  */
 function _upsertMark({ scheduleEntryId, studentId, marks, absent, subjectId, totalMarks, passingMarks,
-                       isRetest, retestOf, retestDate, retestIndex }) {
+                       isRetest, retestOf, retestDate, retestIndex, actualDate }) {
   const all  = _getResults();
   const idx  = all.findIndex(r => r.scheduleEntryId === scheduleEntryId && r.studentId === studentId);
   const extra = {};
@@ -218,6 +227,9 @@ function _upsertMark({ scheduleEntryId, studentId, marks, absent, subjectId, tot
   if (retestOf     != null) extra.retestOf     = retestOf;     // parent entry id
   if (retestDate   != null) extra.retestDate   = retestDate;
   if (retestIndex  != null) extra.retestIndex  = retestIndex;  // 1, 2, 3…
+  // Real date the test was actually held (from an Excel import), which can
+  // differ from the entry's LP-planned date if the test was rescheduled.
+  if (actualDate   != null) extra.actualDate   = actualDate;
   if (idx >= 0) {
     all[idx] = { ...all[idx], marks, absent, ...extra, updatedAt: new Date().toISOString() };
   } else {
@@ -375,23 +387,23 @@ function _matchBatchByName(batchName, campusName) {
   return candidates[0] || null;
 }
 
-// Find an existing calendar/schedule entry for this batch+test+date, or create
+// Find an existing calendar/schedule entry for this batch+test, or create
 // a new manual schedule (via testingService.addSchedule) if none exists yet.
+//
+// IMPORTANT: matching is done by TEST NAME ONLY, never by date. Tests get
+// rescheduled all the time (LP plans "Test 1" for 18 Jun, it actually gets
+// held on 3 Jul) — the exam is still the same test, so results must always
+// attach to the SAME schedule entry (e.g. the LP-derived one) regardless of
+// which date it's actually held on. Matching by date used to cause a brand
+// new duplicate entry to be created on every reschedule, which made Result
+// Profile (and any other report keyed on the entry id) show "Pending/No
+// Data" against the real "Test 1" column while the actual marks silently
+// landed in an extra, mislabeled column.
 function _resolveOrCreateScheduleEntry(batchId, testName, testDate, subjectId) {
-  const norm    = s => (s || '').trim().toLowerCase();
   const entries = _buildCalendarEntries({ batchId });
+  const key     = _normTestKey(testName);
 
-  // 1) Best match: same test name AND same date (normal re-import case).
-  let existing = entries.find(e => norm(e.testName) === norm(testName) && e.date === testDate);
-
-  // 2) Fallback: match by test name only. The actual exam date in the
-  //    uploaded sheet can differ from the planned Lecture Plan date for
-  //    that test — it's still the same test, so attach results to the
-  //    existing entry (e.g. the LP-derived one) instead of creating a
-  //    duplicate that Result Profile / other reports won't recognize.
-  if (!existing) {
-    existing = entries.find(e => norm(e.testName) === norm(testName));
-  }
+  const existing = entries.find(e => _normTestKey(e.testName) === key);
   if (existing) return existing;
 
   const newId = addSchedule({
@@ -2298,13 +2310,13 @@ export const TestResultsPanel = {
 
     let dateNote = '';
     if (batch) {
-      const norm = s => (s || '').trim().toLowerCase();
-      const entries = _buildCalendarEntries({ batchId: batch.id });
-      const existing = entries.find(e => norm(e.testName) === norm(testName));
+      const entries  = _buildCalendarEntries({ batchId: batch.id });
+      const existing = entries.find(e => _normTestKey(e.testName) === _normTestKey(testName));
       if (existing && existing.date && existing.date !== testDate) {
         dateNote = `<div style="font-size:11.5px;color:var(--yellow);margin-top:8px">
           Note: "${testName}" is scheduled for ${formatDate(existing.date)} in the Lecture Plan —
           results will still be attached to that test (actual date on the sheet: ${formatDate(testDate)}).
+          The sheet's date will be shown as the "held on" date in Result Profile.
         </div>`;
       }
     }
@@ -2367,6 +2379,7 @@ export const TestResultsPanel = {
         subjectId:       scheduleEntry.subjectId || subjectId || '',
         totalMarks:      tm,
         passingMarks:    passingFor(tm),
+        actualDate:      testDate,
       });
     });
 
@@ -2382,6 +2395,7 @@ export const TestResultsPanel = {
         subjectId:       scheduleEntry.subjectId || subjectId || '',
         totalMarks:      commonTotal,
         passingMarks:    passingFor(commonTotal),
+        actualDate:      testDate,
       });
       absentCount++;
     });
