@@ -620,6 +620,22 @@ function _groupEntriesWithRetests(entries) {
   return groups;
 }
 
+/**
+ * If any result attached to this schedule entry carries an `actualDate`
+ * (the real date the test was held, recorded on import) that differs from
+ * the LP-planned date, return it. Otherwise null — meaning the test was
+ * held exactly as planned, or has no marks yet.
+ */
+function _resolveHeldDate(resultsMap, entryId, plannedDate) {
+  const bucket = resultsMap[entryId];
+  if (!bucket) return null;
+  for (const sid in bucket) {
+    const ad = bucket[sid] && bucket[sid].actualDate;
+    if (ad && ad !== plannedDate) return ad;
+  }
+  return null;
+}
+
 function _normType(t) {
   t = (t || '').toLowerCase();
   if (t === 'midterm') return 'midterm';
@@ -975,14 +991,6 @@ export const ResultProfile = {
       return;
     }
 
-    // Group entries: originals + their retests nested within each group
-    // testGroups: [{ groupLabel, isMock, original, retests: [] }]
-    const testGroups = _groupEntriesWithRetests(entries);
-
-    // For backward-compat with stats/export helpers keep a flat labelledCols
-    // (one entry per group = the original entry, relabelled)
-    const labelledCols = testGroups.map(g => ({ ...g.original, colLabel: g.groupLabel, isMock: g.isMock }));
-
     // Get all results map: scheduleEntryId → studentId → result record
     const allResults = _getResults();
     const resultsMap = {};
@@ -990,6 +998,22 @@ export const ResultProfile = {
       if (!resultsMap[r.scheduleEntryId]) resultsMap[r.scheduleEntryId] = {};
       resultsMap[r.scheduleEntryId][r.studentId] = r;
     });
+
+    // Group entries: originals + their retests nested within each group
+    // testGroups: [{ groupLabel, isMock, original, retests: [] }]
+    const testGroups = _groupEntriesWithRetests(entries);
+
+    // Attach "held on" date — if the test was rescheduled (actual exam date
+    // on an imported sheet differs from the LP-planned date), surface it
+    // alongside the planned date instead of hiding it.
+    testGroups.forEach(g => {
+      g.original.heldDate = _resolveHeldDate(resultsMap, g.original.id, g.original.date);
+      g.retests.forEach(r => { r.heldDate = _resolveHeldDate(resultsMap, r.id, r.date); });
+    });
+
+    // For backward-compat with stats/export helpers keep a flat labelledCols
+    // (one entry per group = the original entry, relabelled)
+    const labelledCols = testGroups.map(g => ({ ...g.original, colLabel: g.groupLabel, isMock: g.isMock }));
 
     // Collect students in this batch
     let students = [];
@@ -1366,6 +1390,7 @@ export const ResultProfile = {
             <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
               <span style="font-size:11.5px;font-weight:800">${g.groupLabel}</span>
               ${g.original.date ? `<span style="font-size:9.5px;font-weight:500;opacity:.7">${formatDate(g.original.date)}</span>` : ''}
+              ${g.original.heldDate ? `<span style="font-size:9px;font-weight:700;color:var(--yellow)" title="Actual date the test was held">Held: ${formatDate(g.original.heldDate)}</span>` : ''}
               <div style="width:100%;min-width:80px;margin-top:3px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;gap:4px">
                   <span style="font-size:9px;color:var(--t3);white-space:nowrap">✓${s.p} ✗${s.f}${s.ab ? ` ⊘${s.ab}` : ''}</span>
@@ -1464,7 +1489,7 @@ export const ResultProfile = {
             return [
               _showMarks  ? `<td style="white-space:nowrap;padding:8px 10px;vertical-align:middle;${leftBorder};${tdBg}">${isEmptyRetest ? '' : marksDisplay}</td>` : '',
               _showStatus ? `<td style="${!_showMarks && isFirst ? 'border-left:2px solid var(--border2);' : ''}padding:8px 10px;vertical-align:middle;${tdBg}">${isEmptyRetest ? '' : this._statusBadge(cell.status)}</td>` : '',
-              _showDate   ? `<td style="${!_showMarks && !_showStatus && isFirst ? 'border-left:2px solid var(--border2);' : ''}font-size:11.5px;color:var(--t1);white-space:nowrap;padding:8px 10px;vertical-align:middle;${tdBg}">${isEmptyRetest ? '' : (cell.entry.date ? formatDate(cell.entry.date) : '—')}</td>` : '',
+              _showDate   ? `<td style="${!_showMarks && !_showStatus && isFirst ? 'border-left:2px solid var(--border2);' : ''}font-size:11.5px;color:var(--t1);white-space:nowrap;padding:8px 10px;vertical-align:middle;${tdBg}">${isEmptyRetest ? '' : ((cell.entry.heldDate || cell.entry.date) ? formatDate(cell.entry.heldDate || cell.entry.date) : '—')}</td>` : '',
             ].join('');
           }).join('')
         ).join('')}
@@ -1482,6 +1507,7 @@ export const ResultProfile = {
               <div>
                 <div class="rp-test-stat-label${col.isMock ? ' is-mock' : ' is-test'}">${col.colLabel}</div>
                 ${col.date ? `<div class="rp-test-stat-date">${formatDate(col.date)}</div>` : ''}
+                ${col.heldDate ? `<div class="rp-test-stat-date" style="color:var(--yellow);font-weight:700">Held: ${formatDate(col.heldDate)}</div>` : ''}
               </div>
               <span style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;
                            background:${s.hlBg};color:${s.hlColor};
@@ -1850,7 +1876,8 @@ export const ResultProfile = {
           <div style="font-weight:700;font-size:11px;color:${nameColor}">${col.colLabel}</div>
           ${healthBadge}
         </div>
-        ${col.date ? `<div style="font-size:8.5px;color:#64748b;margin-bottom:4px">${formatDate(col.date)}</div>` : '<div style="margin-bottom:4px"></div>'}
+        ${col.date ? `<div style="font-size:8.5px;color:#64748b;margin-bottom:2px">${formatDate(col.date)}</div>` : ''}
+        ${col.heldDate ? `<div style="font-size:8px;color:#b45309;font-weight:700;margin-bottom:4px">Held: ${formatDate(col.heldDate)}</div>` : '<div style="margin-bottom:4px"></div>'}
         <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px">
           ${doneBadge}
           ${pills}
@@ -1877,7 +1904,7 @@ export const ResultProfile = {
                 font-size:9px;font-weight:700;padding:5px 8px;
                 border-left:2px solid ${col.isMock ? '#c4b5fd' : '#93c5fd'};
                 white-space:nowrap">
-        ${col.colLabel}${col.date ? `<br><span style="font-weight:500;font-size:8px;opacity:.8">${formatDate(col.date)}</span>` : ''}
+        ${col.colLabel}${col.date ? `<br><span style="font-weight:500;font-size:8px;opacity:.8">${formatDate(col.date)}</span>` : ''}${col.heldDate ? `<br><span style="font-weight:700;font-size:7.5px;color:#fde68a">Held: ${formatDate(col.heldDate)}</span>` : ''}
       </th>`;
     }).join('');
 
@@ -1905,7 +1932,7 @@ export const ResultProfile = {
             ? `<strong style="color:${sc[cell.status]||'#64748b'}">${cell.marks}${cell.totalMarks ? `<span style="font-weight:400;color:#94a3b8">/${cell.totalMarks}</span>` : ''}</strong><br><span style="font-size:8px;font-weight:700;color:${hlHex}">${hlIcon} ${hlLabel}</span>`
             : '—';
         const statusBadge = `<span style="color:${sc[cell.status]||'#64748b'};background:${bg};padding:1px 7px;border-radius:20px;font-size:8px;font-weight:700;white-space:nowrap">${cell.status==='pass'?'Pass':cell.status==='fail'?'Fail':cell.status==='absent'?'Absent':'Pending'}</span>`;
-        return `<td style="border-left:2px solid ${bc};background:${bg}">${marksCell}</td><td style="background:${bg}">${statusBadge}</td><td style="color:#64748b;white-space:nowrap">${col.date ? formatDate(col.date) : '—'}</td>`;
+        return `<td style="border-left:2px solid ${bc};background:${bg}">${marksCell}</td><td style="background:${bg}">${statusBadge}</td><td style="color:#64748b;white-space:nowrap">${(col.heldDate || col.date) ? formatDate(col.heldDate || col.date) : '—'}</td>`;
       }).join('');
       return `<tr class="${ri%2===0?'even':'odd'}">
         <td style="color:#94a3b8">${ri+1}</td>
