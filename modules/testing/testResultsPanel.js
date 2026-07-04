@@ -886,7 +886,15 @@ export const TestResultsPanel = {
       this._filterSession.includes(r.batch.sessionId) ||
       this._filterSession.includes(r.batch.sessionPeriod)
     );
-    if (this._filterSubject.length) rows = rows.filter(r => this._filterSubject.includes(r.entry.subjectId));
+    // Filter by the SAME resolved subject id the row displays (r.subject /
+    // r.subjectCode come from entry.subjectId || r.subjectId — see above).
+    // Filtering on r.entry.subjectId alone breaks whenever the schedule
+    // entry itself has no subject recorded (e.g. auto-created on import,
+    // or an LP row with a blank subject) even though the result record's
+    // OWN subjectId — and the visible "Subject" column — are correct.
+    if (this._filterSubject.length) rows = rows.filter(r =>
+      this._filterSubject.includes(r.entry.subjectId || r.subjectId)
+    );
     if (this._filterBatch.length)   rows = rows.filter(r => this._filterBatch.includes(r.entry.batchId));
     if (search) rows = rows.filter(r =>
       r.studentName.toLowerCase().includes(search) ||
