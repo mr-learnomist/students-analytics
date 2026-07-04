@@ -118,7 +118,11 @@ function _buildCalendarEntries({ campusId, sessionId, subjectId, batchId } = {})
   // ── 2. Manual schedules ────────────────────────────────────
   getSchedules().forEach(s => {
     if (batchId   && s.batchId   !== batchId)   return;
-    if (subjectId && s.subjectId !== subjectId)  return;
+    // Only reject on an explicit, known mismatch — a schedule with a blank
+    // subjectId (e.g. auto-created from an import where the subject
+    // couldn't be guessed from the batch name) must still show up once its
+    // batch is selected, instead of silently disappearing.
+    if (subjectId && s.subjectId && s.subjectId !== subjectId) return;
 
     const batch = AppState.findById('batches', s.batchId) || {};
     if (campusId  && batch.campusId  !== campusId)  return;
@@ -399,6 +403,18 @@ function _matchBatchByName(batchName, campusName) {
 // Profile (and any other report keyed on the entry id) show "Pending/No
 // Data" against the real "Test 1" column while the actual marks silently
 // landed in an extra, mislabeled column.
+// Infer a test's type from its name when there's no LP row to read it from
+// (e.g. no Lecture Plan exists yet for this subject, or the LP simply
+// doesn't have this particular test). Without this, every auto-created
+// entry defaulted to 'written', so an imported "Mock" would silently show
+// up mislabeled as a plain "Test N" column in Result Profile.
+function _inferTestType(testName) {
+  const t = (testName || '').trim().toLowerCase();
+  if (/^mock/.test(t))            return 'mock';
+  if (/^mid[\s-]?term/.test(t))   return 'midterm';
+  return 'written';
+}
+
 function _resolveOrCreateScheduleEntry(batchId, testName, testDate, subjectId) {
   const entries = _buildCalendarEntries({ batchId });
   const key     = _normTestKey(testName);
@@ -410,12 +426,12 @@ function _resolveOrCreateScheduleEntry(batchId, testName, testDate, subjectId) {
     batchId,
     testName,
     date:         testDate,
-    testType:     'written',
+    testType:     _inferTestType(testName),
     subjectId:    subjectId || '',
     totalMarks:   '',
     passingMarks: '',
   });
-  return { id: newId, batchId, testName, date: testDate, subjectId: subjectId || '' };
+  return { id: newId, batchId, testName, date: testDate, subjectId: subjectId || '', testType: _inferTestType(testName) };
 }
 
 // Get all currently-enrolled (non-dropped) students for a batch
