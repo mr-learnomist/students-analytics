@@ -462,6 +462,7 @@ export const TestResultsPanel = {
 
   _container: null,
   _editingId: null, // id of the result record currently being inline-edited
+  _selectedIds: null, // Set of result ids currently checked for bulk delete
 
   // Filter state (same pattern as FinalResultsPanel)
   _filterCampus:  [],
@@ -477,6 +478,7 @@ export const TestResultsPanel = {
     this._filterSubject = [];
     this._filterBatch   = [];
     this._editingId      = null;
+    this._selectedIds    = new Set();
 
     this._injectStyles();
     container.innerHTML = this._template();
@@ -913,6 +915,12 @@ export const TestResultsPanel = {
 
     const rows = this._getEnrichedRows(container);
 
+    // Drop any selected ids whose underlying record no longer exists
+    // (e.g. deleted elsewhere), so the bulk bar count stays accurate.
+    if (!this._selectedIds) this._selectedIds = new Set();
+    const _liveIds = new Set(_getResults().map(r => r.id));
+    this._selectedIds.forEach(id => { if (!_liveIds.has(id)) this._selectedIds.delete(id); });
+
     const countEl = container.querySelector('#trCount');
     if (countEl) countEl.textContent = `${rows.length} record${rows.length !== 1 ? 's' : ''}`;
 
@@ -996,11 +1004,36 @@ export const TestResultsPanel = {
         </div>
       </div>`;
 
-    area.innerHTML = statsStrip + `
+    const selectedCount   = this._selectedIds.size;
+    const allVisibleIds   = rows.map(r => r.id);
+    const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => this._selectedIds.has(id));
+
+    const bulkBarHTML = selectedCount > 0 ? `
+      <div class="tr-bulk-bar" style="display:flex;align-items:center;gap:12px;padding:9px 14px;
+                  background:var(--blue-dim);border:1px solid var(--blue);border-radius:10px;margin-bottom:10px">
+        <span style="font-size:12.5px;font-weight:700;color:var(--blue)">${selectedCount} selected</span>
+        <button id="trBulkDeleteBtn" class="fr-del-btn" style="display:flex;align-items:center;gap:5px;
+                    padding:6px 13px;border-radius:7px;border:1px solid var(--red);background:var(--red-dim);
+                    color:var(--red);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+          Delete Selected
+        </button>
+        <button id="trBulkClearBtn" style="background:none;border:none;color:var(--t3);font-size:12px;
+                    font-weight:600;cursor:pointer;font-family:inherit;text-decoration:underline">
+          Clear selection
+        </button>
+      </div>` : '';
+
+    area.innerHTML = statsStrip + bulkBarHTML + `
       <div style="overflow-x:auto;border:1px solid var(--border);border-top:none;
                   border-radius:0 0 12px 12px;overflow:hidden">
         <table class="fr-table" style="table-layout:fixed;width:100%">
           <colgroup>
+            <col style="width:34px"/>   <!-- Select -->
             <col style="width:38px"/>   <!-- # -->
             <col style="width:auto"/>   <!-- Student -->
             <col style="width:80px"/>   <!-- Campus -->
@@ -1015,6 +1048,10 @@ export const TestResultsPanel = {
           </colgroup>
           <thead>
             <tr>
+              <th style="text-align:center">
+                <input type="checkbox" id="trSelectAllCb" ${allVisibleSelected ? 'checked' : ''}
+                       title="Select all visible rows"/>
+              </th>
               <th>#</th>
               <th>Student</th>
               <th>Campus</th>
@@ -1033,6 +1070,68 @@ export const TestResultsPanel = {
           </tbody>
         </table>
       </div>`;
+
+    // Wire bulk-select checkboxes
+    const selectAllCb = area.querySelector('#trSelectAllCb');
+    if (selectAllCb) {
+      selectAllCb.addEventListener('change', () => {
+        if (selectAllCb.checked) rows.forEach(r => this._selectedIds.add(r.id));
+        else rows.forEach(r => this._selectedIds.delete(r.id));
+        this._renderTable(container);
+      });
+    }
+    area.querySelectorAll('.tr-row-select-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = cb.dataset.id;
+        if (cb.checked) this._selectedIds.add(id);
+        else this._selectedIds.delete(id);
+        this._renderTable(container);
+      });
+    });
+
+    // Wire bulk delete — confirm before removing everything selected
+    const bulkDeleteBtn = area.querySelector('#trBulkDeleteBtn');
+    if (bulkDeleteBtn) {
+      bulkDeleteBtn.addEventListener('click', () => {
+        const count = this._selectedIds.size;
+        if (!count) return;
+        Modal.open({
+          title: 'Delete Test Results',
+          size:  'sm',
+          body: `
+            <p style="font-size:13px;color:var(--t2);line-height:1.55;margin:0">
+              Are you sure you want to delete <strong style="color:var(--red)">${count}</strong>
+              selected test result${count !== 1 ? 's' : ''}? This cannot be undone.
+            </p>`,
+          actions: [
+            { label: 'Cancel', variant: 'ghost', close: true },
+            {
+              label:   `Delete ${count} Result${count !== 1 ? 's' : ''}`,
+              variant: 'primary',
+              close:   true,
+              handler: () => {
+                const idsToDelete = new Set(this._selectedIds);
+                let all = _getResults();
+                all = all.filter(r => !idsToDelete.has(r.id));
+                AppState.set(TR_KEY, all);
+                Toast.success(`${count} result${count !== 1 ? 's' : ''} deleted.`);
+                this._selectedIds.clear();
+                this._renderTable(container);
+              },
+            },
+          ],
+        });
+      });
+    }
+
+    // Wire clear-selection
+    const bulkClearBtn = area.querySelector('#trBulkClearBtn');
+    if (bulkClearBtn) {
+      bulkClearBtn.addEventListener('click', () => {
+        this._selectedIds.clear();
+        this._renderTable(container);
+      });
+    }
 
     // Wire delete buttons
     area.querySelectorAll('[data-action="delete-tr"]').forEach(btn => {
@@ -1158,6 +1257,10 @@ export const TestResultsPanel = {
 
     return `
       <tr class="tr-row">
+        <td style="text-align:center">
+          <input type="checkbox" class="tr-row-select-cb" data-id="${r.id}"
+                 ${this._selectedIds && this._selectedIds.has(r.id) ? 'checked' : ''}/>
+        </td>
         <td style="color:var(--t3);font-size:11.5px">${i + 1}</td>
         <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
             title="${r.studentName}">${r.studentName}</td>
