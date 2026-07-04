@@ -500,7 +500,12 @@ function _buildEntries({ subjectId, batchId } = {}) {
   // Manual schedules
   getSchedules().forEach(s => {
     if (batchId   && s.batchId   !== batchId)   return;
-    if (subjectId && s.subjectId !== subjectId)  return;
+    // Only reject on an explicit, known mismatch — don't hide a schedule
+    // just because it has no subjectId recorded (e.g. no LP exists for this
+    // subject yet, so the result was saved against an auto-created manual
+    // schedule with a blank subject). Once the batch is selected, that's
+    // already enough to know it belongs here.
+    if (subjectId && s.subjectId && s.subjectId !== subjectId) return;
     entries.push({
       id:           s.id,
       date:         s.date,
