@@ -812,7 +812,7 @@ export function mountAttendanceSheet(container, onBack) {
 
     if (_subjectId) {
       // Primary: direct subjectId field on batch
-      const hasDirectField = batches.some(b => b.subjectId !==);
+      const hasDirectField = batches.some(b => b.subjectId !== undefined);
       if (hasDirectField) {
         batches = batches.filter(b => b.subjectId === _subjectId);
       } else {
