@@ -190,16 +190,27 @@ function _bi_processCSV(csvText) {
     if (!level) { errors.push({ line, msg: `Level not found: "${row.levelName}"` }); return; }
 
     // ── startDate / endDate (needed before sessionPeriod derivation) ──
+    // endDate is OPTIONAL in bulk import:
+    //   • empty/blank   → batch end follows the Lecture Plan (endDateMode: 'lp')
+    //   • given & valid → manual end date (endDateMode: 'manual'), same as the
+    //                     single-add form's "Manual" radio option
     const startDate = row.startDate?.trim();
-    const endDate   = row.endDate?.trim();
+    const endDateRaw = row.endDate?.trim();
     if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       errors.push({ line, msg: `Invalid startDate: "${row.startDate}". Use YYYY-MM-DD format.` }); return;
     }
-    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-      errors.push({ line, msg: `Invalid endDate: "${row.endDate}". Use YYYY-MM-DD format.` }); return;
-    }
-    if (endDate < startDate) {
-      errors.push({ line, msg: `endDate (${endDate}) cannot be before startDate (${startDate}).` }); return;
+
+    let endDate = '';
+    let endDateMode = 'lp';
+    if (endDateRaw) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(endDateRaw)) {
+        errors.push({ line, msg: `Invalid endDate: "${row.endDate}". Use YYYY-MM-DD format, or leave blank for LP-based end.` }); return;
+      }
+      if (endDateRaw < startDate) {
+        errors.push({ line, msg: `endDate (${endDateRaw}) cannot be before startDate (${startDate}).` }); return;
+      }
+      endDate     = endDateRaw;
+      endDateMode = 'manual';
     }
 
     // ── sessionPeriod: normalize CSV value OR auto-detect from startDate ──
@@ -271,7 +282,7 @@ function _bi_processCSV(csvText) {
       startDate,
       endDate,
       maxStudents: row.totalSeats ? parseInt(row.totalSeats) : null,
-      endDateMode: 'manual',
+      endDateMode,
       status:      'active',
     });
 
@@ -2444,7 +2455,8 @@ export const BatchModule = {
               <div style="font-size:11px;color:var(--t3,#888);margin-top:8px;line-height:1.7">
                 • <b>campusAbbr</b>: short code defined in your system (e.g. Pr, Pt, St, F8)<br>
                 • <b>sessionPeriod</b>: Dec-25 or June-26<br>
-                • <b>startDate / endDate</b>: YYYY-MM-DD format<br>
+                • <b>startDate</b>: YYYY-MM-DD format (required)<br>
+                • <b>endDate</b>: YYYY-MM-DD format — <b>optional</b>. Leave blank → batch end follows the Lecture Plan (LP). Fill it in → manual end date.<br>
                 • <b>batchNo</b>: optional — agar chhorein toh auto assign hoga<br>
                 • <b>subjectCode, teacherName, totalSeats</b>: optional
               </div>
@@ -2511,8 +2523,9 @@ export const BatchModule = {
     // Template download
     overlay.querySelector('#biBulkDownloadTpl').addEventListener('click', () => {
       const header  = 'subjectCode,sessionPeriod,disciplineName,campusAbbr,levelName,teacherName,startDate,endDate,totalSeats,batchNo';
-      const example = 'FA1,Dec-25,Computer Science,Pr,Level 1,Ali Hassan,2025-07-01,2025-12-31,20,';
-      const blob = new Blob([header + '\n' + example], { type: 'text/csv' });
+      const example1 = 'FA1,Dec-25,Computer Science,Pr,Level 1,Ali Hassan,2025-07-01,2025-12-31,20,';
+      const example2 = 'FA1,Dec-25,Computer Science,Pr,Level 1,Ali Hassan,2025-07-01,,20,';
+      const blob = new Blob([header + '\n' + example1 + '\n' + example2], { type: 'text/csv' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'batch_import_template.csv';
@@ -2616,6 +2629,7 @@ export const BatchModule = {
                   <th style="padding:7px 10px;text-align:left;color:var(--t3,#888);font-weight:600">Campus</th>
                   <th style="padding:7px 10px;text-align:left;color:var(--t3,#888);font-weight:600">Level</th>
                   <th style="padding:7px 10px;text-align:left;color:var(--t3,#888);font-weight:600">Teacher</th>
+                  <th style="padding:7px 10px;text-align:left;color:var(--t3,#888);font-weight:600;white-space:nowrap">End</th>
                 </tr>
               </thead>
               <tbody>
@@ -2641,6 +2655,11 @@ export const BatchModule = {
                       <td style="padding:6px 10px;color:var(--t2,#555)">${short}</td>
                       <td style="padding:6px 10px;color:var(--t2,#555)">${lvlDisplay}</td>
                       <td style="padding:6px 10px;color:var(--t2,#555)">${b.teacherName || '—'}</td>
+                      <td style="padding:6px 10px">
+                        ${b.endDateMode === 'manual'
+                          ? `<span style="font-family:var(--font-mono);font-size:11px;color:var(--t2,#555)">${b.endDate}</span>`
+                          : `<span style="background:var(--violet-dim,#ede9fe);color:var(--violet,#7c3aed);font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:8px">LP</span>`}
+                      </td>
                     </tr>
                   `;
                 }).join('')}
