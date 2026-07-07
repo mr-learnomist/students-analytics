@@ -137,7 +137,7 @@ export const EnrolmentService = {
     return { success: true, enrolment };
   },
 
-  // Update status / feeStatus / notes (studentId & batchId are immutable)
+  // Update status / feeStatus / notes / batch info (studentId is immutable)
   update(id, data, updatedBy) {
     const existing = AppState.findById(KEY, id);
     if (!existing) return { success: false, message: 'Enrolment not found.' };
@@ -149,6 +149,18 @@ export const EnrolmentService = {
       feeStatus:     FEE_STATUSES.includes(data.feeStatus)      ? data.feeStatus : existing.feeStatus,
       notes:         data.notes !== undefined ? (data.notes || '').trim() : existing.notes,
       subjects:      Array.isArray(data.subjects) ? data.subjects : existing.subjects,
+
+      // ── Batch-related fields — previously dropped here, causing the
+      // "batch change ho jata hai but table purana batch hi dikhata hai" bug.
+      // enrolmentUI.js sends these on batch reassignment; they must be
+      // forwarded through the patch, falling back to existing values.
+      batchId:       data.batchId   !== undefined ? data.batchId   : existing.batchId,
+      batchName:     data.batchName !== undefined ? data.batchName : existing.batchName,
+      session:       data.session   !== undefined ? data.session   : existing.session,
+      startDate:     data.startDate !== undefined ? data.startDate : existing.startDate,
+      endDate:       data.endDate   !== undefined ? data.endDate   : existing.endDate,
+      teacher:       data.teacher   !== undefined ? data.teacher   : existing.teacher,
+
       updatedBy:     updatedBy  || null,
       updatedAt:     new Date().toISOString(),
     };
