@@ -16,7 +16,7 @@ const PRC_SUBJECTS = [
   { code: 'BEI', label: 'BEI (P3)' },
   { code: 'FA',  label: 'FA (P1)'  },
   { code: 'ECS', label: 'ECS'      },
-  { code: 'QAB', label: 'QAB'      },
+  { code: 'QAB', label: 'QAB (P2)' },
 ];
 
 const CAF_GROUP_A = [
@@ -323,9 +323,12 @@ export const PrcConversionTracking = {
         const batchRec = batches.find(b => b.id === batchId);
         if (!batchRec) return;
 
-        const batchName   = sub.batchName || batchRec.batchName || '';
-        const parts       = batchName.split('-');
-        const subjectCode = (parts[0] || '').toUpperCase();
+        const batchName    = sub.batchName || batchRec.batchName || '';
+        const parts        = batchName.split('-');
+        // Subject may be stored with a paper suffix, e.g. "BEI (P3)", "FA (P1)", "QAB (P2)".
+        // Strip the "(...)" part so it matches the plain code (BEI, FA, QAB, ...).
+        const rawSubject   = (parts[0] || '').trim();
+        const subjectCode  = rawSubject.split('(')[0].trim().toUpperCase();
         // Scope to CA-only subject codes used in this report (PRC + CAF Group A/B)
         if (!ALL_CODES.includes(subjectCode)) return;
 
