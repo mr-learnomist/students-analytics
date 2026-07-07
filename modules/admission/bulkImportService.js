@@ -270,6 +270,11 @@ const VALID_SUBJECT_STATUSES = [
   'active', 'dormant', 'left_campus', 'change_campus', 'left_study', 'exempt',
 ];
 
+// Normalizes a name for comparison: trims, lowercases, collapses whitespace.
+function _normalizeName(n) {
+  return (n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 // Returns { mode: 'info'|'batch'|'subject', valid, errors, warnings, batch }
 function _validateRow(row, batches, students) {
   const errors   = [];
@@ -297,6 +302,24 @@ function _validateRow(row, batches, students) {
   const existingForValidation = formattedForLookup
     ? students.find(s => s.cnic === formattedForLookup || s.uniqueId === formattedForLookup)
     : null;
+
+  // ── Guard: CNIC matches an existing student, but the name is different ──
+  // This happens with placeholder/dummy CNICs (e.g. "00000-0000000-0") that
+  // get reused across multiple real students in the CSV. Without this check,
+  // the row would silently be treated as "existing student" and the
+  // enrolment would be attached to the WRONG person (whose name would then
+  // show instead of the name typed in the CSV — looks like a "rename").
+  if (existingForValidation && row.studentName?.trim()) {
+    const existingNameNorm = _normalizeName(existingForValidation.studentName);
+    const rowNameNorm      = _normalizeName(row.studentName);
+    if (existingNameNorm && rowNameNorm && existingNameNorm !== rowNameNorm) {
+      errors.push(
+        'CNIC ' + formattedForLookup + ' is already registered to a different student ("' +
+        existingForValidation.studentName + '"). This looks like a duplicate/placeholder CNIC — ' +
+        'give "' + row.studentName.trim() + '" a unique CNIC before importing.'
+      );
+    }
+  }
 
   const isExistingStudentBatchRow = mode === 'batch' && !!existingForValidation;
 
