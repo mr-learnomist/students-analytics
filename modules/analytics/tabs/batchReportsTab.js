@@ -5,6 +5,7 @@
 // ============================================================
 
 import { ConversionTracking }     from '../reports/batches/conversionTracking.js';
+import { PrcConversionTracking }  from '../reports/batches/prcConversionTracking.js';
 import { BatchTimelineReport }   from '../reports/batches/batchTimelineReport.js';
 import { BatchEnrollmentReport } from '../reports/batches/batchEnrollmentReport.js';
 
@@ -19,6 +20,15 @@ const BATCH_REPORTS = [
     color:    'var(--blue)',
     colorDim: 'var(--blue-dim)',
     module:   ConversionTracking,
+  },
+  {
+    id:       'prcConversionTracking',
+    title:    'PRC Conversion Tracking',
+    subtitle: '',
+    icon:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    color:    'var(--violet,#8b5cf6)',
+    colorDim: 'var(--violet-dim,rgba(139,92,246,.12))',
+    module:   PrcConversionTracking,
   },
   {
     id:       'batchTimeline',
