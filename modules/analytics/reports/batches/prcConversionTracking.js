@@ -574,6 +574,7 @@ export const PrcConversionTracking = {
         <table class="pct-table">
           <thead>
             <tr>
+              <th rowspan="2" style="vertical-align:middle;width:40px;text-align:center">Sr#</th>
               <th rowspan="2" style="vertical-align:middle">Student Info</th>
               <th colspan="${PRC_SUBJECTS.length}" class="pct-th-group" style="background:var(--blue-dim);color:var(--blue)">PRC</th>
               <th colspan="${CAF_GROUP_A.length}" class="pct-th-group" style="background:rgba(139,92,246,.12);color:#8b5cf6">CAF — Group A</th>
@@ -586,14 +587,14 @@ export const PrcConversionTracking = {
             </tr>
           </thead>
           <tbody>
-            ${rows.map(r => this._rowHTML(r)).join('')}
+            ${rows.map((r, i) => this._rowHTML(r, i + 1)).join('')}
           </tbody>
         </table>
       </div>
     `;
   },
 
-  _rowHTML(r) {
+  _rowHTML(r, sr) {
     const subjCell = (code, sepFirst) => {
       const sub = r.subjects[code];
       const cls = sepFirst ? 'pct-col-sep' : '';
@@ -610,6 +611,7 @@ export const PrcConversionTracking = {
 
     return `
       <tr>
+        <td style="text-align:center;color:var(--t3);font-weight:600">${sr}</td>
         <td>
           <div class="pct-student-name">${r.studentName}</div>
           ${r.studentCode ? `<div class="pct-student-id">${r.studentCode} &nbsp;·&nbsp; ${r.campusName}</div>` : `<div class="pct-student-id">${r.campusName}</div>`}
@@ -630,7 +632,8 @@ export const PrcConversionTracking = {
 
     const groupHeaderRow = `
       <tr>
-        <th rowspan="2" style="background:#1e3a8a;min-width:150px;border-right:2px solid #fff;vertical-align:middle">Student Info</th>
+        <th rowspan="2" style="background:#1e3a8a;width:30px;text-align:center;vertical-align:middle">Sr#</th>
+        <th rowspan="2" style="background:#1e3a8a;min-width:150px;border-right:2px solid #fff;vertical-align:middle;text-align:left;padding-left:8px">Student Info</th>
         <th colspan="${PRC_SUBJECTS.length}" style="background:#1e40af;text-align:center">PRC</th>
         <th colspan="${CAF_GROUP_A.length}" style="background:#5b21b6;text-align:center">CAF — Group A</th>
         <th colspan="${CAF_GROUP_B.length}" style="background:#047857;text-align:center">CAF — Group B</th>
@@ -650,7 +653,8 @@ export const PrcConversionTracking = {
 
     const bodyRows = rows.map((r, idx) => `
       <tr style="background:${idx % 2 === 0 ? '#fff' : '#f8faff'}">
-        <td style="font-weight:600;color:#1e293b;border-right:2px solid #cbd5e1">${r.studentName}<br><span style="font-size:8.5px;font-weight:400;color:#64748b">${r.studentCode || ''} ${r.campusName ? '· ' + r.campusName : ''}</span></td>
+        <td style="text-align:center;color:#64748b;font-weight:600">${idx + 1}</td>
+        <td style="text-align:left;padding-left:8px;font-weight:600;color:#1e293b;border-right:2px solid #cbd5e1">${r.studentName}<br><span style="font-size:8.5px;font-weight:400;color:#64748b">${r.studentCode || ''} ${r.campusName ? '· ' + r.campusName : ''}</span></td>
         ${PRC_SUBJECTS.map(s => cell(r, s.code)).join('')}
         ${CAF_GROUP_A.map(s => cell(r, s.code)).join('')}
         ${CAF_GROUP_B.map(s => cell(r, s.code)).join('')}
