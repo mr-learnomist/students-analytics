@@ -171,11 +171,27 @@ function _openForm(existing = null, container) {
   if (isEdit  && !canEdit)   { Toast.error('You do not have permission.'); return; }
 
   let currentPicture = existing?.profilePicture || null;
+  const isActiveNow  = existing?.isActive !== false; // default true for new/undefined
 
   Modal.open({
     title: isEdit ? 'Edit Teacher' : 'Add New Teacher',
     size:  'lg',
-    body:  `<div id="teacherModalInner" style="padding:20px;">${renderTeacherForm(existing)}</div>`,
+    body:  `<div id="teacherModalInner" style="padding:20px;">
+      ${renderTeacherForm(existing)}
+      <div class="status-toggle-row">
+        <div>
+          <div class="status-toggle-title">Account Status</div>
+          <div class="status-toggle-sub">Inactive teachers cannot log in to their account.</div>
+        </div>
+        <button type="button"
+          id="teacherActiveToggleBtn"
+          data-active="${isActiveNow}"
+          class="status-toggle ${isActiveNow ? 'status-toggle--on' : 'status-toggle--off'}">
+          <span class="status-toggle-knob"></span>
+          <span class="status-toggle-label">${isActiveNow ? 'Active' : 'Inactive'}</span>
+        </button>
+      </div>
+    </div>`,
     actions: [
       { label: 'Cancel', variant: 'ghost', close: true },
       {
@@ -238,7 +254,11 @@ function _handleFormSubmit(modalEl, existing, profilePicture, container) {
     return;
   }
 
-  const data = { fullName, qualification, contactNumber, email, disciplines, campuses, profilePicture, teachingSubjects };
+  // Active / Inactive status
+  const activeBtn = body.querySelector('#teacherActiveToggleBtn');
+  const isActive  = activeBtn ? activeBtn.dataset.active === 'true' : true;
+
+  const data = { fullName, qualification, contactNumber, email, disciplines, campuses, profilePicture, teachingSubjects, isActive };
 
   // ── Collect campus schedules ──────────────────────────────
   const campusSchedules = {};
@@ -452,6 +472,18 @@ function _toggleActive(teacher, container) {
 
 // ── Form interaction wiring ───────────────────────────────────
 function _wireFormInteractions(modalEl, onPictureChange) {
+  // Active / Inactive status toggle
+  const activeBtn = modalEl.querySelector('#teacherActiveToggleBtn');
+  activeBtn?.addEventListener('click', () => {
+    const isOn  = activeBtn.dataset.active === 'true';
+    const next  = !isOn;
+    activeBtn.dataset.active = String(next);
+    activeBtn.classList.toggle('status-toggle--on', next);
+    activeBtn.classList.toggle('status-toggle--off', !next);
+    const label = activeBtn.querySelector('.status-toggle-label');
+    if (label) label.textContent = next ? 'Active' : 'Inactive';
+  });
+
   // Profile picture upload
   const picInput   = modalEl.querySelector('#teacherPicInput');
   const picPreview = modalEl.querySelector('#teacherPicPreview');
@@ -1321,6 +1353,38 @@ function _injectTeacherStyles() {
 .data-table-wrap, #teacher-table {
   overflow-y: auto;
   max-height: calc(100vh - 260px);
+}
+
+/* ── Active / Inactive status toggle (in Add/Edit form) ── */
+.status-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 18px; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface2);
+}
+.status-toggle-title { font-weight: 600; font-size: 13px; color: var(--t1); }
+.status-toggle-sub   { font-size: 11.5px; color: var(--t3); margin-top: 2px; }
+.status-toggle {
+  display: flex; align-items: center; gap: 8px;
+  border: none; cursor: pointer; padding: 6px 12px 6px 6px;
+  border-radius: 20px; background: var(--surface3);
+  transition: background .15s; flex-shrink: 0;
+}
+.status-toggle-knob {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--t3); transition: background .15s, transform .15s;
+}
+.status-toggle--on {
+  background: rgba(16,185,129,0.15);
+}
+.status-toggle--on .status-toggle-knob { background: #10b981; }
+.status-toggle--off {
+  background: rgba(220,38,38,0.1);
+}
+.status-toggle--off .status-toggle-knob { background: #dc2626; }
+.status-toggle-label {
+  font-size: 12.5px; font-weight: 700; color: var(--t1);
+  min-width: 46px; text-align: left;
 }
 
 /* ── Inactive badge overlay ── */
