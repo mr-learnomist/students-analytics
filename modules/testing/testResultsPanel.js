@@ -719,6 +719,7 @@ export const TestResultsPanel = {
         label: `${s.subjectCode || ''} — ${s.subjectName || ''}`.trim().replace(/^—\s*/, ''),
       })),
       stateKey:    '_filterSubject',
+      searchable:  true,
     });
 
     // Batch
@@ -730,6 +731,7 @@ export const TestResultsPanel = {
       placeholder: 'All Batches',
       options:     batches.map(b => ({ value: b.id, label: b.batchName || b.id })),
       stateKey:    '_filterBatch',
+      searchable:  true,
     });
 
     // Close dropdowns on outside click
@@ -742,22 +744,52 @@ export const TestResultsPanel = {
     });
   },
 
-  _buildMultiSelect(container, { wrapperId, triggerId, labelId, dropdownId, placeholder, options, stateKey }) {
+  _buildMultiSelect(container, { wrapperId, triggerId, labelId, dropdownId, placeholder, options, stateKey, searchable = false }) {
     const trigger  = container.querySelector(`#${triggerId}`);
     const dropdown = container.querySelector(`#${dropdownId}`);
     const labelEl  = container.querySelector(`#${labelId}`);
 
     if (!trigger || !dropdown) return;
 
-    if (!options.length) {
-      dropdown.innerHTML = `<div class="tr-ms-empty">No options</div>`;
-    } else {
-      dropdown.innerHTML = options.map(o => `
+    // Renders the checkbox list for a given (possibly filtered) set of options,
+    // preserving any already-checked values from state.
+    const renderOptions = (list) => {
+      if (!list.length) return `<div class="tr-ms-empty">No matches</div>`;
+      const checkedVals = this[stateKey] || [];
+      return list.map(o => `
         <label class="tr-ms-option">
-          <input type="checkbox" value="${o.value}" class="tr-ms-cb" data-state="${stateKey}"/>
+          <input type="checkbox" value="${o.value}" class="tr-ms-cb" data-state="${stateKey}"
+                 ${checkedVals.includes(o.value) ? 'checked' : ''}/>
           ${o.label}
         </label>
       `).join('');
+    };
+
+    if (!options.length) {
+      dropdown.innerHTML = `<div class="tr-ms-empty">No options</div>`;
+    } else if (searchable) {
+      dropdown.innerHTML = `
+        <div class="tr-ms-search-wrap">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" class="tr-ms-search" placeholder="Search…"/>
+        </div>
+        <div class="tr-ms-options">${renderOptions(options)}</div>
+      `;
+
+      const searchInput = dropdown.querySelector('.tr-ms-search');
+      const optionsEl   = dropdown.querySelector('.tr-ms-options');
+
+      // Don't let typing in the search box toggle/close the dropdown
+      searchInput.addEventListener('click', e => e.stopPropagation());
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim().toLowerCase();
+        const filtered = q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
+        optionsEl.innerHTML = renderOptions(filtered);
+      });
+    } else {
+      dropdown.innerHTML = `<div class="tr-ms-options">${renderOptions(options)}</div>`;
     }
 
     // Toggle dropdown
@@ -765,10 +797,21 @@ export const TestResultsPanel = {
       e.stopPropagation();
       const isOpen = dropdown.classList.contains('open');
       container.querySelectorAll('.tr-ms-dropdown.open').forEach(d => d.classList.remove('open'));
-      if (!isOpen) dropdown.classList.add('open');
+      if (!isOpen) {
+        dropdown.classList.add('open');
+        if (searchable) {
+          const searchInput = dropdown.querySelector('.tr-ms-search');
+          const optionsEl   = dropdown.querySelector('.tr-ms-options');
+          if (searchInput) {
+            searchInput.value = '';
+            if (optionsEl) optionsEl.innerHTML = renderOptions(options);
+            setTimeout(() => searchInput.focus(), 0);
+          }
+        }
+      }
     });
 
-    // Checkbox change
+    // Checkbox change (delegated — works for dynamically re-rendered/filtered options too)
     dropdown.addEventListener('change', e => {
       if (!e.target.classList.contains('tr-ms-cb')) return;
       const vals = [...dropdown.querySelectorAll('.tr-ms-cb:checked')].map(cb => cb.value);
@@ -2916,12 +2959,26 @@ export const TestResultsPanel = {
       .tr-ms-caret { flex-shrink:0; color:var(--t4); }
       .tr-ms-dropdown {
         display:none; position:absolute; top:calc(100% + 4px); left:0;
-        min-width:180px; max-height:240px; overflow-y:auto;
+        min-width:190px; max-height:280px;
         background:var(--surface); border:1px solid var(--border2);
         border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.14);
-        z-index:999; padding:4px;
+        z-index:999; padding:4px; overflow:hidden;
       }
-      .tr-ms-dropdown.open { display:block; }
+      .tr-ms-dropdown.open { display:flex; flex-direction:column; }
+      .tr-ms-search-wrap {
+        display:flex; align-items:center; gap:6px;
+        padding:6px 8px; margin-bottom:4px; flex-shrink:0;
+        border:1px solid var(--border2); border-radius:7px;
+        background:var(--surface2); color:var(--t4);
+      }
+      .tr-ms-search-wrap svg { flex-shrink:0; }
+      .tr-ms-search {
+        border:none; background:transparent; outline:none;
+        font-size:12.5px; color:var(--t1); width:100%;
+        font-family:var(--font-body);
+      }
+      .tr-ms-search::placeholder { color:var(--t4); }
+      .tr-ms-options { overflow-y:auto; }
       .tr-ms-option {
         display:flex; align-items:center; gap:8px;
         padding:7px 10px; border-radius:7px;
