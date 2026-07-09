@@ -1050,8 +1050,17 @@ export const HolidayWatcher = {
 
     // ── Repack rows respecting rowsPerDay capacity ────────────────
     // Walk forward from firstAffected.date, filling each valid slot:
-    //   - Lecture/Other: up to rowsPerDay per day
-    //   - Test/Mock/Midterm/Revision: one per day (block row)
+    //   - Lecture/Other/master-LP Revision: up to rowsPerDay per day
+    //   - Test/Mock/Midterm: one per day (block row)
+    //   - Auto-generated "Weekly Revision" rows: one per day (block row)
+    //     (same distinction used by reschedule() — identified by id prefix
+    //     'rev-' or by type==='Revision' AND topic==='Weekly Revision'.
+    //     Any OTHER Revision-type row came from the master LP itself and
+    //     must be packed exactly like a normal Lecture/Other row.)
+    const isWeeklyRevRow = r =>
+      (r.id && r.id.startsWith('rev-')) ||
+      ((r.type || '').toLowerCase() === 'revision' && (r.topic || '').trim() === 'Weekly Revision');
+
     let cur        = pld(firstAffected.date);
     while (isBlocked(cur)) cur = addD(cur, 1);
 
@@ -1061,7 +1070,7 @@ export const HolidayWatcher = {
     for (const r of toRepack) {
       const rowType = (r.type || 'Lecture').toLowerCase();
       const isBlock = rowType === 'test'     || rowType === 'midterm' ||
-                      rowType === 'mock'     || rowType === 'revision';
+                      rowType === 'mock'     || isWeeklyRevRow(r);
 
       if (isBlock) {
         // Block row takes whole day — advance if today already has rows
