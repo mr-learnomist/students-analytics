@@ -1366,31 +1366,37 @@ export const TestResultSummary = {
     // ── Build unified column set ─────────────────────────────
     // Union of ALL batches' test groups by groupLabel — batches may have
     // a different number of tests (e.g. one batch has Test 1-2, another
-    // has Test 1-3). Sort: "Test N" numerically first, then Mocks.
+    // has Test 1-3). Order: Tests before Mocks; within each, chronological
+    // by actual date — NOT by the number parsed out of the label — so a
+    // manually-scheduled test (e.g. "Test 15") that actually happens before
+    // the LP's own Test 1/2/3 shows up in its real position instead of
+    // being pushed to the far right just because of its name.
     const _groupSortKey = (g) => {
-      if (g.isMock) {
-        const m = /^Mock\s*(\d+)?$/i.exec(g.groupLabel);
-        return [1, m && m[1] ? parseInt(m[1], 10) : 0];
-      }
-      const m = /^Test\s*(\d+)$/i.exec(g.groupLabel);
-      return [0, m ? parseInt(m[1], 10) : 0];
+      const m = /(\d+)/.exec(g.groupLabel);
+      return m ? parseInt(m[1], 10) : 0;
     };
-    const _unifiedMap = new Map(); // groupLabel → group shape { groupLabel, isMock, retests:[] }
+    const _unifiedMap = new Map(); // groupLabel → group shape { groupLabel, isMock, retests:[], date }
     visibleBatches.forEach(batch => {
       const bd = batchDataMap[batch.id];
       bd.testGroups.forEach(g => {
+        const gDate = g.original?.date || '';
         if (!_unifiedMap.has(g.groupLabel)) {
-          _unifiedMap.set(g.groupLabel, { groupLabel: g.groupLabel, isMock: g.isMock, retests: g.retests });
+          _unifiedMap.set(g.groupLabel, { groupLabel: g.groupLabel, isMock: g.isMock, retests: g.retests, date: gDate });
         } else {
-          // Keep the longest retests list across batches (for "+N retest" badge)
           const existing = _unifiedMap.get(g.groupLabel);
+          // Keep the longest retests list across batches (for "+N retest" badge)
           if ((g.retests?.length || 0) > (existing.retests?.length || 0)) existing.retests = g.retests;
+          // Keep the earliest date across batches sharing this label
+          if (gDate && (!existing.date || gDate < existing.date)) existing.date = gDate;
         }
       });
     });
     const unifiedGroups = Array.from(_unifiedMap.values()).sort((a, b) => {
-      const ka = _groupSortKey(a), kb = _groupSortKey(b);
-      return ka[0] - kb[0] || ka[1] - kb[1];
+      if (a.isMock !== b.isMock) return a.isMock ? 1 : -1; // Tests before Mocks
+      if (a.date && b.date && a.date !== b.date) return a.date.localeCompare(b.date);
+      if (a.date && !b.date) return -1;
+      if (!a.date && b.date) return 1;
+      return _groupSortKey(a) - _groupSortKey(b); // fallback when dates are missing
     });
 
     if (!unifiedGroups.length) {
