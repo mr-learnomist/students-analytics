@@ -2384,6 +2384,13 @@ function _openViewModal(batchId, container) {
   }).join('');
 
   const hourOpts = [0.5,1,1.5,2,2.5,3].map(h => `<option value="${h}">${h}h</option>`).join('');
+  // reHpd must default to this batch's CURRENT hours/day, not the browser's
+  // first <option> (0.5h) — otherwise an un-touched dropdown silently
+  // reschedules everything at 1 row/day instead of the real capacity.
+  const curHoursPerDay = lpa.hoursPerDay || 1.5;
+  const reHourOpts = [0.5,1,1.5,2,2.5,3].map(h =>
+    `<option value="${h}" ${h === curHoursPerDay ? 'selected' : ''}>${h}h</option>`
+  ).join('');
   const typeOpts = ['All','Lecture','Revision','Test','Midterm','Mock'].map(t => `<option value="${t}">${t}</option>`).join('');
 
   let _mid;
@@ -2442,7 +2449,7 @@ function _openViewModal(batchId, container) {
               </div>
               <div style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:4px 10px">
                 <span style="font-size:11px;color:var(--t3)">Hrs/day</span>
-                <select id="reHpd" style="background:none;border:none;font-size:12px;color:var(--t1);outline:none;padding:0">${hourOpts}</select>
+                <select id="reHpd" style="background:none;border:none;font-size:12px;color:var(--t1);outline:none;padding:0">${reHourOpts}</select>
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
