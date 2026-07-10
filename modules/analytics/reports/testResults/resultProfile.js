@@ -601,19 +601,35 @@ function _rpGetRetestEntries() {
  * Each group: { groupLabel, isMock, original (entry), retests (entry[]) }
  * Retests are identified by entry.isRetest === true and entry.retestOf === original.id.
  * Non-retest entries become group originals; retests are nested under their parent.
+ *
+ * Labelling:
+ *  - LP-derived rows (id prefixed 'lp__') are auto-numbered in chronological
+ *    order: Test 1 / Test 2 / Mock 1 / Mock 2 …
+ *  - Manually scheduled tests (created directly in the Testing module and NOT
+ *    part of the batch's assigned Lecture Plan) are NOT folded into that same
+ *    counter — they keep their own given name (e.g. "Test 15") so they show
+ *    up as their own distinct column, positioned by date like everything
+ *    else, instead of overwriting/renaming an unrelated LP test slot.
  */
 function _groupEntriesWithRetests(entries) {
   const originals = entries.filter(e => !e.isRetest);
   const retests   = entries.filter(e =>  e.isRetest);
 
-  // Label originals: Test 1 / Test 2 / Mock 1 / Mock 2 …
+  const isFromLP     = e => (e.id || '').startsWith('lp__');
+  const lpMockCount  = originals.filter(o => isFromLP(o) && o.testType === 'mock').length;
+
   let testIdx = 0, mockIdx = 0;
   const groups = originals.map(orig => {
     const isMock = orig.testType === 'mock';
-    if (isMock) mockIdx++; else testIdx++;
-    const groupLabel = isMock
-      ? (originals.filter(o => o.testType === 'mock').length === 1 ? 'Mock' : `Mock ${mockIdx}`)
-      : `Test ${testIdx}`;
+    let groupLabel;
+
+    if (isFromLP(orig)) {
+      if (isMock) { mockIdx++; groupLabel = lpMockCount === 1 ? 'Mock' : `Mock ${mockIdx}`; }
+      else        { testIdx++; groupLabel = `Test ${testIdx}`; }
+    } else {
+      // Manually scheduled via Testing module — keep its real name as-is
+      groupLabel = orig.testName || (isMock ? 'Mock' : 'Test');
+    }
 
     // Collect retests for this original, sorted by retestIndex
     const myRetests = retests
