@@ -254,6 +254,8 @@ function renderBatchTimeline(el, state) {
       teacher:  teacher ? (teacher.fullName||teacher.name||`${teacher.firstName||''} ${teacher.lastName||''}`.trim()) : '—',
       startDate: dated[0]?.date||null,
       endDate:   dated[dated.length-1]?.date||null,
+      status:   (dated[dated.length-1]?.date && new Date(dated[dated.length-1].date+'T00:00:00') < today)
+                  ? 'complete' : 'inprogress',
       completion: pct(lpa.rows||[]),
       rows:      lpa.rows||[],
       hrs,
@@ -267,6 +269,7 @@ function renderBatchTimeline(el, state) {
   if (state.levelFilter.length)   rows = rows.filter(r => state.levelFilter.includes(r.levelId));
   if (state.subjFilter.length)    rows = rows.filter(r => state.subjFilter.includes(r.subjectId));
   if (state.sessionFilter.length) rows = rows.filter(r => state.sessionFilter.includes(r.sessionPeriod));
+  if (state.statusFilter.length)  rows = rows.filter(r => state.statusFilter.includes(r.status));
   const q = (state.search||'').toLowerCase();
   if (q) rows = rows.filter(r => [r.campus,r.subject,r.batchName,r.teacher,r.sessionPeriod].join(' ').toLowerCase().includes(q));
   rows.sort((a,b) => {
@@ -286,7 +289,8 @@ function renderBatchTimeline(el, state) {
   const levelItems   = levels.filter(l => assigned.some(b => (subjects.find(s=>s.id===b.subjectId)?.levelId||b.levelId)===l.id)).map(l => ({ val:l.id, label:l.levelName||l.name||l.id }));
   const subjItems    = subjects.filter(s => assigned.some(b => b.subjectId===s.id)).map(s => ({ val:s.id, label:`${s.subjectCode} — ${s.subjectName}` }));
   const sessionItems = uniqueSessions.map(s => ({ val:s, label:s }));
-  const anyFilter    = state.campFilter.length||state.discFilter.length||state.levelFilter.length||state.subjFilter.length||state.sessionFilter.length||state.search;
+  const statusItems  = [{ val:'inprogress', label:'In Progress' }, { val:'complete', label:'Complete' }];
+  const anyFilter    = state.campFilter.length||state.discFilter.length||state.levelFilter.length||state.subjFilter.length||state.sessionFilter.length||state.statusFilter.length||state.search;
 
   const remarksMap = getRemarks();
 
@@ -308,6 +312,7 @@ function renderBatchTimeline(el, state) {
         <div class="tl-mf" id="btLevelFilter"></div>
         <div class="tl-mf" id="btSubjFilter"></div>
         <div class="tl-mf" id="btSessFilter"></div>
+        <div class="tl-mf" id="btStatusFilter"></div>
 
         <button id="btApplyBtn" style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 16px;
           border-radius:8px;border:none;background:var(--blue);color:#fff;
@@ -331,12 +336,32 @@ function renderBatchTimeline(el, state) {
         </div>
         <span style="font-size:12px;color:var(--t3);flex-shrink:0;white-space:nowrap">${rows.length} batch${rows.length!==1?'es':''}</span>
         <!-- Columns toggle -->
-        <button class="bt-export-btn" id="btColsBtn" title="Choose Columns">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-          </svg>
-        </button>
+        <div style="position:relative;display:inline-flex">
+          <button class="bt-export-btn" id="btColsBtn" title="Choose Columns">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+          </button>
+          <!-- Column selector panel -->
+          <div id="btColPanel" style="display:none;position:absolute;right:0;top:calc(100% + 6px);
+            z-index:999;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+            box-shadow:0 8px 24px rgba(0,0,0,.14);padding:14px 16px;min-width:220px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+                        color:var(--t3);margin-bottom:10px">Visible Columns</div>
+            <div id="btColList" style="display:flex;flex-direction:column;gap:6px"></div>
+            <div style="margin-top:12px;display:flex;gap:6px">
+              <button id="btColSelAll" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+                background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
+                All
+              </button>
+              <button id="btColReset" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
+                background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
         <!-- CSV export -->
         <button class="bt-export-btn" id="btExportCSV" title="Export CSV">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -353,24 +378,6 @@ function renderBatchTimeline(el, state) {
             <line x1="9" y1="15" x2="15" y2="15"/>
           </svg>
         </button>
-        <!-- Column selector panel -->
-        <div id="btColPanel" style="display:none;position:absolute;right:0;top:calc(100% + 6px);
-          z-index:999;background:var(--surface);border:1px solid var(--border);border-radius:12px;
-          box-shadow:0 8px 24px rgba(0,0,0,.14);padding:14px 16px;min-width:220px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-                      color:var(--t3);margin-bottom:10px">Visible Columns</div>
-          <div id="btColList" style="display:flex;flex-direction:column;gap:6px"></div>
-          <div style="margin-top:12px;display:flex;gap:6px">
-            <button id="btColSelAll" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
-              background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
-              All
-            </button>
-            <button id="btColReset" style="flex:1;padding:5px 0;border-radius:6px;border:1px solid var(--border);
-              background:var(--surface2);color:var(--t2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">
-              Reset
-            </button>
-          </div>
-        </div>
       </div>
 
       <!-- Table -->
@@ -458,12 +465,14 @@ function renderBatchTimeline(el, state) {
   const levelWrap = el.querySelector('#btLevelFilter');
   const subjWrap  = el.querySelector('#btSubjFilter');
   const sessWrap  = el.querySelector('#btSessFilter');
+  const statusWrap = el.querySelector('#btStatusFilter');
 
   _initMultiFilter(campWrap,  'All Campuses',    campItems,    vals => { state.campFilter    = vals; });
   _initMultiFilter(discWrap,  'All Disciplines', discItems,    vals => { state.discFilter    = vals; });
   _initMultiFilter(levelWrap, 'All Levels',      levelItems,   vals => { state.levelFilter   = vals; });
   _initMultiFilter(subjWrap,  'All Subjects',    subjItems,    vals => { state.subjFilter    = vals; });
   _initMultiFilter(sessWrap,  'All Sessions',    sessionItems, vals => { state.sessionFilter = vals; });
+  _initMultiFilter(statusWrap,'All Status',      statusItems,  vals => { state.statusFilter  = vals; });
 
   // Restore selected values
   const restoreMF = (wrap, vals) => {
@@ -483,6 +492,7 @@ function renderBatchTimeline(el, state) {
   restoreMF(levelWrap, state.levelFilter);
   restoreMF(subjWrap,  state.subjFilter);
   restoreMF(sessWrap,  state.sessionFilter);
+  restoreMF(statusWrap, state.statusFilter);
 
   // Apply button
   el.querySelector('#btApplyBtn')?.addEventListener('click', () => {
@@ -493,7 +503,7 @@ function renderBatchTimeline(el, state) {
   // Clear all
   el.querySelector('#btClearAll')?.addEventListener('click', () => {
     state.campFilter = []; state.discFilter = []; state.levelFilter = [];
-    state.subjFilter = []; state.sessionFilter = []; state.search = '';
+    state.subjFilter = []; state.sessionFilter = []; state.statusFilter = []; state.search = '';
     state.applied = false;
     rerender();
   });
@@ -814,7 +824,7 @@ export const BatchTimelineReport = {
     this._state = {
       sort: 'oldest', search: '',
       campFilter: [], discFilter: [], levelFilter: [],
-      subjFilter: [], sessionFilter: [], _filteredRows: [],
+      subjFilter: [], sessionFilter: [], statusFilter: [], _filteredRows: [],
       applied: false,
     };
     renderBatchTimeline(container, this._state);
