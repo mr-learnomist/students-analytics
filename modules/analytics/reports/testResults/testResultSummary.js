@@ -187,7 +187,12 @@ function _buildEntries({ subjectId, batchId } = {}) {
   }
   getSchedules().forEach(s => {
     if (batchId   && s.batchId   !== batchId)   return;
-    if (subjectId && s.subjectId !== subjectId)  return;
+    // Only reject on an explicit, known mismatch — don't hide a schedule
+    // just because it has no subjectId recorded (e.g. no LP exists for this
+    // subject yet, so the result was saved against an auto-created manual
+    // schedule with a blank subject). Once the batch is selected, that's
+    // already enough to know it belongs here.
+    if (subjectId && s.subjectId && s.subjectId !== subjectId) return;
     entries.push({
       id:           s.id,
       date:         s.date,
@@ -229,16 +234,32 @@ function _getRetestEntries() {
 }
 
 // ── Group entries with their retests ───────────────────────
+// Labelling:
+//  - LP-derived rows (id prefixed 'lp__') are auto-numbered in chronological
+//    order: Test 1 / Test 2 / Mock 1 / Mock 2 …
+//  - Manually scheduled tests (created directly in the Testing module and NOT
+//    part of the batch's assigned Lecture Plan) are NOT folded into that same
+//    counter — they keep their own given name (e.g. "Test 15") so they show
+//    up as their own distinct column instead of overwriting/colliding with
+//    an unrelated LP test slot.
 function _groupEntriesWithRetests(entries, retests) {
   const originals = entries.filter(e => !e.isRetest);
+  const isFromLP  = e => (e.id || '').startsWith('lp__');
+  const totalMocks = originals.filter(o => isFromLP(o) && o.testType === 'mock').length;
+
   let testIdx = 0, mockIdx = 0;
-  const totalMocks = originals.filter(o => o.testType === 'mock').length;
   return originals.map(orig => {
     const isMock = orig.testType === 'mock';
-    if (isMock) mockIdx++; else testIdx++;
-    const groupLabel = isMock
-      ? (totalMocks === 1 ? 'Mock' : `Mock ${mockIdx}`)
-      : `Test ${testIdx}`;
+    let groupLabel;
+
+    if (isFromLP(orig)) {
+      if (isMock) { mockIdx++; groupLabel = totalMocks === 1 ? 'Mock' : `Mock ${mockIdx}`; }
+      else        { testIdx++; groupLabel = `Test ${testIdx}`; }
+    } else {
+      // Manually scheduled via Testing module — keep its real name as-is
+      groupLabel = orig.testName || (isMock ? 'Mock' : 'Test');
+    }
+
     const myRetests = (retests || [])
       .filter(r => r.retestOf === orig.id)
       .sort((a, b) => (a.retestIndex || 0) - (b.retestIndex || 0));
