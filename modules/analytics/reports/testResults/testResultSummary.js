@@ -242,18 +242,31 @@ function _getRetestEntries() {
 //    counter — they keep their own given name (e.g. "Test 15") so they show
 //    up as their own distinct column instead of overwriting/colliding with
 //    an unrelated LP test slot.
-function _groupEntriesWithRetests(entries, retests) {
+//
+// IMPORTANT: groups also carry a `key`, separate from the display
+// `groupLabel`. Matching/unioning across batches must always use `key`,
+// never `groupLabel` — a manually-typed test name (e.g. "Test 15") can
+// accidentally read identically to an LP-auto-numbered label if that batch's
+// LP also happens to reach its own 15th test. Using plain text label as the
+// identity would silently merge those two DIFFERENT tests into one column
+// (whichever is found first wins, the other's marks vanish). Prefixing the
+// key with 'lp:' vs 'manual:' keeps them permanently distinct even when the
+// text they display is the same.
+function _groupEntriesWithRetests(entries, retests, opts = {}) {
+  const { forceMockNumbering = false } = opts;
   const originals = entries.filter(e => !e.isRetest);
   const isFromLP  = e => (e.id || '').startsWith('lp__');
-  const totalMocks = originals.filter(o => isFromLP(o) && o.testType === 'mock').length;
+  const totalMocks  = originals.filter(o => isFromLP(o) && o.testType === 'mock').length;
+  const numberMocks = forceMockNumbering || totalMocks > 1;
 
   let testIdx = 0, mockIdx = 0;
   return originals.map(orig => {
     const isMock = orig.testType === 'mock';
+    const fromLP = isFromLP(orig);
     let groupLabel;
 
-    if (isFromLP(orig)) {
-      if (isMock) { mockIdx++; groupLabel = totalMocks === 1 ? 'Mock' : `Mock ${mockIdx}`; }
+    if (fromLP) {
+      if (isMock) { mockIdx++; groupLabel = numberMocks ? `Mock ${mockIdx}` : 'Mock'; }
       else        { testIdx++; groupLabel = `Test ${testIdx}`; }
     } else {
       // Manually scheduled via Testing module — keep its real name as-is
@@ -263,7 +276,8 @@ function _groupEntriesWithRetests(entries, retests) {
     const myRetests = (retests || [])
       .filter(r => r.retestOf === orig.id)
       .sort((a, b) => (a.retestIndex || 0) - (b.retestIndex || 0));
-    return { groupLabel, isMock, original: orig, retests: myRetests };
+    const key = (fromLP ? 'lp:' : 'manual:') + groupLabel;
+    return { key, groupLabel, isMock, original: orig, retests: myRetests };
   });
 }
 
@@ -1266,12 +1280,26 @@ export const TestResultSummary = {
     // batches and union them.
     const batchDataMap = {}; // batchId → { batch, entries, testGroups, testGroupStats }
 
+    // Pre-pass: gather each batch's raw entries, and detect whether ANY
+    // batch has more than one LP-scheduled mock. If so, every batch's
+    // mocks get numbered ("Mock 1", "Mock 2"...) — even a batch with just
+    // one mock — so mock columns line up consistently across the whole
+    // unified table instead of splitting into separate "Mock" / "Mock 1" columns.
+    const _rawByBatch = {};
+    let _anyMultiMock = false;
     allBatches.forEach(batch => {
       const batchSubjectId = f.subject || batch.subjectId || '';
       const entries = _buildEntries({ subjectId: batchSubjectId, batchId: batch.id });
       const retests = _getRetestEntries().filter(r => r.batchId === batch.id || entries.some(e => e.id === r.retestOf));
       const allEntries = [...entries, ...retests].sort((a, b) => (a.date||'').localeCompare(b.date||''));
-      const testGroups = _groupEntriesWithRetests(allEntries, retests);
+      const lpMockCount = entries.filter(e => (e.id||'').startsWith('lp__') && e.testType === 'mock').length;
+      if (lpMockCount > 1) _anyMultiMock = true;
+      _rawByBatch[batch.id] = { allEntries, retests };
+    });
+
+    allBatches.forEach(batch => {
+      const { allEntries, retests } = _rawByBatch[batch.id];
+      const testGroups = _groupEntriesWithRetests(allEntries, retests, { forceMockNumbering: _anyMultiMock });
 
       // Enrolled students for this batch
       const enrols   = _getEnrolments().filter(e => e.batchId === batch.id);
@@ -1364,29 +1392,31 @@ export const TestResultSummary = {
     }
 
     // ── Build unified column set ─────────────────────────────
-    // Union of ALL batches' test groups by groupLabel — batches may have
-    // a different number of tests (e.g. one batch has Test 1-2, another
-    // has Test 1-3). Order: Tests before Mocks; within each, chronological
-    // by actual date — NOT by the number parsed out of the label — so a
-    // manually-scheduled test (e.g. "Test 15") that actually happens before
-    // the LP's own Test 1/2/3 shows up in its real position instead of
-    // being pushed to the far right just because of its name.
+    // Union of ALL batches' test groups by identity KEY (not the display
+    // label — see _groupEntriesWithRetests comment above for why: an
+    // LP-numbered "Test 15" and a manually-named "Test 15" must never merge).
+    // Batches may have a different number of tests (e.g. one batch has
+    // Test 1-2, another has Test 1-3). Order: Tests before Mocks; within
+    // each, chronological by actual date — NOT by the number parsed out of
+    // the label — so a manually-scheduled test (e.g. "Test 15") that
+    // actually happens before the LP's own Test 1/2/3 shows up in its real
+    // position instead of being pushed to the far right just because of its name.
     const _groupSortKey = (g) => {
       const m = /(\d+)/.exec(g.groupLabel);
       return m ? parseInt(m[1], 10) : 0;
     };
-    const _unifiedMap = new Map(); // groupLabel → group shape { groupLabel, isMock, retests:[], date }
+    const _unifiedMap = new Map(); // key → group shape { key, groupLabel, isMock, retests:[], date }
     visibleBatches.forEach(batch => {
       const bd = batchDataMap[batch.id];
       bd.testGroups.forEach(g => {
         const gDate = g.original?.date || '';
-        if (!_unifiedMap.has(g.groupLabel)) {
-          _unifiedMap.set(g.groupLabel, { groupLabel: g.groupLabel, isMock: g.isMock, retests: g.retests, date: gDate });
+        if (!_unifiedMap.has(g.key)) {
+          _unifiedMap.set(g.key, { key: g.key, groupLabel: g.groupLabel, isMock: g.isMock, retests: g.retests, date: gDate });
         } else {
-          const existing = _unifiedMap.get(g.groupLabel);
+          const existing = _unifiedMap.get(g.key);
           // Keep the longest retests list across batches (for "+N retest" badge)
           if ((g.retests?.length || 0) > (existing.retests?.length || 0)) existing.retests = g.retests;
-          // Keep the earliest date across batches sharing this label
+          // Keep the earliest date across batches sharing this key
           if (gDate && (!existing.date || gDate < existing.date)) existing.date = gDate;
         }
       });
@@ -1467,7 +1497,7 @@ export const TestResultSummary = {
 
       const dataCells = unifiedGroups.map((ug, gi) => {
         // Find matching group in this batch by label
-        const bgd = bd.testGroups.find(g => g.groupLabel === ug.groupLabel);
+        const bgd = bd.testGroups.find(g => g.key === ug.key);
         const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
         const isMock   = ug.isMock;
         const sepClass = isMock ? 'trs-td-mock-sep' : 'trs-td-test-sep';
@@ -1786,7 +1816,7 @@ export const TestResultSummary = {
       const session      = batch.sessionPeriod || '—';
 
       unifiedGroups.forEach(ug => {
-        const bgd = bd.testGroups.find(g => g.groupLabel === ug.groupLabel);
+        const bgd = bd.testGroups.find(g => g.key === ug.key);
         const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
 
         const row = {
@@ -1923,7 +1953,7 @@ export const TestResultSummary = {
     }).join('');
 
     const _buildCellsForGroup = (bd, ug) => {
-      const bgd = bd?.testGroups.find(g => g.groupLabel === ug.groupLabel);
+      const bgd = bd?.testGroups.find(g => g.key === ug.key);
       const s   = bgd ? bd.groupStats[bd.testGroups.indexOf(bgd)] : null;
       const bc  = ug.isMock ? '#c4b5fd' : '#93c5fd';
       if (!visibleCols.length) {
