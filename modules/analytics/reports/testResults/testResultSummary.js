@@ -1288,7 +1288,16 @@ export const TestResultSummary = {
     const _rawByBatch = {};
     let _anyMultiMock = false;
     allBatches.forEach(batch => {
-      const batchSubjectId = f.subject || batch.subjectId || '';
+      // f.subject comes from a multi-select filter, so it's an array (e.g.
+      // ['qab-id']) — NOT a plain string. Passing it straight through to
+      // _buildEntries() as `subjectId` broke every `s.subjectId !== subjectId`
+      // check in there: comparing a string to an array is always true, so
+      // ANY manually-scheduled test that had a subjectId recorded (like a
+      // test typed straight into the Testing module) was silently excluded
+      // the moment a Subject filter was active. LP rows mostly have no
+      // subjectId per-row, so they were unaffected — which is why only the
+      // manual "Test 15" appeared to vanish while LP tests kept working.
+      const batchSubjectId = (Array.isArray(f.subject) ? f.subject[0] : f.subject) || batch.subjectId || '';
       const entries = _buildEntries({ subjectId: batchSubjectId, batchId: batch.id });
       const retests = _getRetestEntries().filter(r => r.batchId === batch.id || entries.some(e => e.id === r.retestOf));
       const allEntries = [...entries, ...retests].sort((a, b) => (a.date||'').localeCompare(b.date||''));
