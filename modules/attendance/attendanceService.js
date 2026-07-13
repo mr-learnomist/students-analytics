@@ -510,4 +510,44 @@ export const AttendanceService = {
     a.click();
     URL.revokeObjectURL(url);
   },
+
+  /**
+   * Gather everything needed to build a "sample" attendance template
+   * for ONE specific batch — active students, all class dates (via LP
+   * or the fallback generator), and any already-marked statuses.
+   * Pure data — no DOM/CSV work here, so the Import/Export UI (or any
+   * other caller) can format it however it needs (CSV, Excel, PDF...).
+   *
+   * @param {string} batchId
+   * @returns {{ batch: Object, students: Object[], classDates: string[], attMap: Object }|null}
+   *          null if the batch itself doesn't exist.
+   */
+  getBatchSampleData(batchId) {
+    const batch = AppState.findById('batches', batchId);
+    if (!batch) return null;
+
+    // Active enrolled students (same source of truth as Daily Attendance)
+    const enrolments = (AppState.get('enrolments') || [])
+      .filter(e => e.batchId === batchId && e.status === 'active');
+    const students = enrolments
+      .map(e => AppState.findById('students', e.studentId))
+      .filter(Boolean)
+      .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+
+    // Class dates — lecture-plan rows first, fallback generator otherwise
+    const lpaMap = AppState.get('lpAssignments') || {};
+    const lpa    = lpaMap[batchId];
+    const classDates = (lpa?.rows?.length)
+      ? [...new Set(lpa.rows.map(r => r.date).filter(Boolean))].sort()
+      : (AttendanceDateGenerator.generate(batchId) || []);
+
+    // Already-marked statuses, same shape as the daily-sheet's attMap
+    const attMap = {};
+    this.getRecordsForBatch(batchId).forEach(r => {
+      if (!attMap[r.studentId]) attMap[r.studentId] = {};
+      attMap[r.studentId][r.date] = r.status;
+    });
+
+    return { batch, students, classDates, attMap };
+  },
 };
