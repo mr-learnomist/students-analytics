@@ -6,6 +6,7 @@
 import { AppState }              from '../../../utils/state.js';
 import { Auth }                  from '../../../utils/auth.js';
 import { mountAttendanceSheet }  from '../reports/attendance/attendanceSheet.js';
+import { mountBatchwiseDetailAttendance } from '../reports/attendance/batchwiseDetailAttendance.js';
 
 // ── Report registry ───────────────────────────────────────────
 // Naya report add karna ho: yahan ek entry add karo aur
@@ -19,6 +20,17 @@ const REPORTS = [
              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
            </svg>`,
     render: mountAttendanceSheet,
+  },
+  {
+    id:          'batchwiseDetailAttendance',
+    label:       'Batchwise Detail Attendance',
+    description: 'Full date-wise sheet for a batch, filled with attendance already marked in Daily Attendance.',
+    icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+             <rect x="3" y="4" width="18" height="18" rx="2"/>
+             <path d="M16 2v4M8 2v4M3 10h18"/>
+             <path d="M7 15h2M11 15h2M15 15h2M7 18h2M11 18h2"/>
+           </svg>`,
+    render: mountBatchwiseDetailAttendance,
   },
   // Future reports — uncomment and implement when ready:
   // { id: 'absenteeReport', label: 'Absentee Report', description: '...', icon: '...', render: _renderAbsenteeReport },
