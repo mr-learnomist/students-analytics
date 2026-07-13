@@ -3476,27 +3476,8 @@ function _handleImportFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      const text = e.target.result.replace(/^\uFEFF/, '');
-      const lines = text.split(/\r?\n/);
-      // Proper quoted-CSV parser
-      const parsed = lines.map(line => {
-        if (!line.trim()) return [];
-        const cells = [];
-        let cur = '', inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i];
-          if (ch === '"') {
-            if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-            else inQ = !inQ;
-          } else if (ch === ',' && !inQ) {
-            cells.push(cur.trim()); cur = '';
-          } else {
-            cur += ch;
-          }
-        }
-        cells.push(cur.trim());
-        return cells;
-      });
+      const text   = e.target.result.replace(/^\uFEFF/, '');
+      const parsed = _parseCSVText(text);
       _parseAndPreviewImport(parsed);
     } catch(err) {
       Toast.error('Could not read file: ' + err.message);
@@ -3504,6 +3485,44 @@ function _handleImportFile(file) {
     }
   };
   reader.readAsText(file, 'utf-8');
+}
+
+// Full-text CSV parser (RFC-4180 style). Splitting on \r?\n *before*
+// parsing quotes breaks any quoted cell that itself contains a
+// newline — e.g. our exported date headers ("Tue 16-Jun\n2026-06-16")
+// — which silently corrupted every import. This walks the raw text
+// once, character by character, and only treats \n as a row break
+// when it's outside an open quote.
+function _parseCSVText(text) {
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQ = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === ',') {
+      row.push(cur.trim()); cur = '';
+    } else if (ch === '\r') {
+      // skip — \n (or end of quoted field) handles the row break
+    } else if (ch === '\n') {
+      row.push(cur.trim()); cur = '';
+      rows.push(row); row = [];
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.length || row.length) { row.push(cur.trim()); rows.push(row); }
+  return rows;
 }
 
 function _parseAndPreviewImport(lines) {
