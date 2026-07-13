@@ -3541,8 +3541,16 @@ function _parseAndPreviewImport(lines) {
   const errors  = [];
 
   for (const row of lines) {
+    // Skip genuinely blank rows (e.g. the blank separator line every export
+    // writes between the "Fill:" note and the header) WITHOUT wiping the
+    // active batch context — a blank line is just spacing, not a section
+    // break. Switching to a new batch is already handled below, the moment
+    // a fresh "BATCH:" row is encountered. Previously this branch reset
+    // currentBatch/classDates on ANY row whose first cell was empty —
+    // which included that blank separator row — so the header row right
+    // after it always got skipped (currentBatch was null) and every
+    // student row along with it, making every export unimportable.
     if (!row || !row.length || !row[0]) {
-      currentBatch = null; classDates = []; inStudents = false;
       continue;
     }
     const cell0 = row[0];
