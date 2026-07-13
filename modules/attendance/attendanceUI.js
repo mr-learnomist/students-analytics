@@ -2970,6 +2970,36 @@ function _buildCSV(rows) {
   return rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
 }
 
+// ── Helper: load an external script once (e.g. SheetJS/XLSX from CDN) ──
+function _loadScript(src, cb, errCb) {
+  const existing = document.querySelector(`script[src="${src}"]`);
+  if (existing) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = src;
+  s.onload  = cb;
+  s.onerror = errCb;
+  document.head.appendChild(s);
+}
+const _XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+function _withXLSX(cb, errCb) {
+  if (window.XLSX) { cb(window.XLSX); return; }
+  _loadScript(_XLSX_SRC, () => cb(window.XLSX), errCb || (() => Toast.error('Could not load Excel library.')));
+}
+
+// ── Helper: sanitize a batch name into a valid, unique Excel sheet name ──
+// Sheet names: max 31 chars, no : \ / ? * [ ], can't repeat within a workbook.
+function _safeSheetName(name, used) {
+  let base = String(name || 'Batch').replace(/[:\\/?*\[\]]/g, '-').trim().slice(0, 31) || 'Batch';
+  let out = base;
+  let n = 2;
+  while (used.has(out)) {
+    const suffix = ` (${n++})`;
+    out = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(out);
+  return out;
+}
+
 // ── Helper: trigger browser download ─────────────────────────
 function _downloadCSV(csv, filename) {
   const bom  = '\uFEFF';
@@ -2997,7 +3027,7 @@ function _renderImportExport() {
       <div>
         <h2 style="font-size:18px;font-weight:800;color:var(--t1);margin-bottom:4px">Import / Export Attendance</h2>
         <p style="font-size:13px;color:var(--t3)">
-          Export a CSV template per batch → fill offline → import back.
+          Export one Excel workbook (one sheet per batch) → fill offline → import that same file back.
           <strong>Already-marked records are never overwritten.</strong>
         </p>
       </div>
@@ -3014,7 +3044,7 @@ function _renderImportExport() {
           </div>
           <div>
             <div style="font-size:14px;font-weight:700;color:var(--t1)">Export Attendance Template</div>
-            <div style="font-size:12px;color:var(--t3)">One CSV per batch — student list + all class dates with current status</div>
+            <div style="font-size:12px;color:var(--t3)">One Excel workbook, every batch on its own tab — student list + all class dates with current status</div>
           </div>
         </div>
 
@@ -3051,7 +3081,7 @@ function _renderImportExport() {
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Download CSV per Batch
+            Download Workbook (all batches)
           </button>
           <span id="exBatchCount" style="font-size:12px;color:var(--t3)"></span>
         </div>
@@ -3120,7 +3150,7 @@ function _renderImportExport() {
           </div>
           <div>
             <div style="font-size:14px;font-weight:700;color:var(--t1)">Import Attendance</div>
-            <div style="font-size:12px;color:var(--t3)">Upload filled CSV — already-marked records will be skipped</div>
+            <div style="font-size:12px;color:var(--t3)">Upload the filled workbook (or a single CSV) — already-marked records will be skipped</div>
           </div>
         </div>
 
@@ -3131,8 +3161,8 @@ function _renderImportExport() {
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
-          <div style="font-size:13.5px;font-weight:600;color:var(--t2);margin-bottom:4px">Drop CSV file here</div>
-          <div style="font-size:12px;color:var(--t3)">or click to browse · .csv files</div>
+          <div style="font-size:13.5px;font-weight:600;color:var(--t2);margin-bottom:4px">Drop the Excel workbook here</div>
+          <div style="font-size:12px;color:var(--t3)">or click to browse · .xlsx (all batches) or .csv (single batch)</div>
           <input id="importFileInput" type="file" accept=".csv,.xlsx" style="display:none"/>
         </div>
 
@@ -3143,10 +3173,10 @@ function _renderImportExport() {
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:18px">
         <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Step-by-Step Guide</div>
         <ol style="padding-left:18px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--t2)">
-          <li>Select <strong>Campus</strong>, <strong>Discipline</strong> and <strong>Date Range</strong>, then click <strong>Download CSV per Batch</strong> — or pick one batch under "download a sample for one specific batch" if you only need a single file</li>
-          <li>Open each CSV in Excel / Google Sheets — student list already filled in</li>
+          <li>Select <strong>Campus</strong>, <strong>Discipline</strong> and <strong>Date Range</strong>, then click <strong>Download Workbook (all batches)</strong> — one .xlsx file, every batch on its own tab. Or pick one batch under "download a sample for one specific batch" if you only need a single CSV.</li>
+          <li>Open the workbook in Excel / Google Sheets — student list already filled in on each tab</li>
           <li>Type <strong style="color:var(--green)">P</strong>, <strong style="color:var(--red)">A</strong>, or <strong style="color:#d97706">L</strong> in each date cell (leave blank to skip)</li>
-          <li>Save as CSV and upload it back using the import section above</li>
+          <li>Save the file and upload the <strong>same workbook</strong> back using the import section above — every tab is read and matched automatically</li>
           <li>Review the preview — only <em>new</em> records will be saved</li>
         </ol>
       </div>
@@ -3326,7 +3356,7 @@ function _getDateRange() {
   return { from: '2020-01-01', to: toISODate(today) };
 }
 
-// ── Export: one CSV per batch ─────────────────────────────────
+// ── Export: one .xlsx workbook, one sheet per batch ────────────
 function _exportExcel() {
   const camp = _root.querySelector('#exCamp')?.value || '';
   const disc = _root.querySelector('#exDisc')?.value || '';
@@ -3339,74 +3369,84 @@ function _exportExcel() {
 
   if (!allBatches.length) { Toast.error('No batches found for selected filters.'); return; }
 
-  let exported = 0;
+  _withXLSX((XLSX) => {
+    const wb   = XLSX.utils.book_new();
+    const used = new Set();
+    let sheetsAdded = 0;
 
-  allBatches.forEach((batch, bIdx) => {
-    // ── students via enrolments (FIXED — was using batchId on student) ──
-    const students = _getBatchStudents(batch.id);
-    if (!students.length) return;
+    allBatches.forEach(batch => {
+      // ── students via enrolments (FIXED — was using batchId on student) ──
+      const students = _getBatchStudents(batch.id);
+      if (!students.length) return;
 
-    const classDates = _getBatchClassDates(batch, from, to);
-    if (!classDates.length) return;
+      const classDates = _getBatchClassDates(batch, from, to);
+      if (!classDates.length) return;
 
-    const attMap    = _getAttMap(batch.id);
-    const discObj   = AppState.findById('disciplines', batch.disciplineId);
-    const campusObj = AppState.findById('campuses',    batch.campusId);
-    const teacher   = AppState.findById('teachers',    batch.teacherId);
+      const attMap    = _getAttMap(batch.id);
+      const discObj   = AppState.findById('disciplines', batch.disciplineId);
+      const campusObj = AppState.findById('campuses',    batch.campusId);
+      const teacher   = AppState.findById('teachers',    batch.teacherId);
 
-    const rows = [];
+      const rows = [];
 
-    // Info row
-    rows.push([
-      `BATCH: ${batch.batchName}`,
-      `ID: ${batch.id}`,
-      `Discipline: ${discObj?.abbreviation || ''}`,
-      `Campus: ${campusObj?.campusName || ''}`,
-      `Teacher: ${teacher?.fullName || ''}`,
-      `From: ${_fmtDate(from)}`,
-      `To: ${_fmtDate(to)}`,
-      `Exported: ${new Date().toLocaleDateString('en-GB')}`,
-    ]);
-    rows.push(['Fill: P = Present   |   A = Absent   |   L = Leave   |   Leave blank = no change']);
-    rows.push([]);
+      // Info row
+      rows.push([
+        `BATCH: ${batch.batchName}`,
+        `ID: ${batch.id}`,
+        `Discipline: ${discObj?.abbreviation || ''}`,
+        `Campus: ${campusObj?.campusName || ''}`,
+        `Teacher: ${teacher?.fullName || ''}`,
+        `From: ${_fmtDate(from)}`,
+        `To: ${_fmtDate(to)}`,
+        `Exported: ${new Date().toLocaleDateString('en-GB')}`,
+      ]);
+      rows.push(['Fill: P = Present   |   A = Absent   |   L = Leave   |   Leave blank = no change']);
+      rows.push([]);
 
-    // Column headers — "Mon 11-Mar\n2026-03-11" so import can extract ISO date
-    rows.push([
-      '#',
-      'Student Name',
-      'Reg No / ID',
-      ...classDates.map(d => `${_fmtDateCol(d)}\n${d}`),
-      'Total P', 'Total A', 'Leave', 'Attendance %',
-    ]);
+      // Column headers — "Mon 11-Mar\n2026-03-11" so import can extract ISO date
+      rows.push([
+        '#',
+        'Student Name',
+        'Reg No / ID',
+        ...classDates.map(d => `${_fmtDateCol(d)}\n${d}`),
+        'Total P', 'Total A', 'Leave', 'Attendance %',
+      ]);
 
-    // Student rows
-    students.forEach((stu, idx) => {
-      const sid = stu.registrationNo || stu.admissionNo || stu.studentId || stu.cnic || stu.id;
-      let p = 0, a = 0, l = 0;
-      const statusCells = classDates.map(d => {
-        const st = (attMap[stu.id] || {})[d] || '';
-        if (st === 'P') p++;
-        else if (st === 'A') a++;
-        else if (st === 'L') l++;
-        return st;
+      // Student rows
+      students.forEach((stu, idx) => {
+        const sid = stu.registrationNo || stu.admissionNo || stu.studentId || stu.cnic || stu.id;
+        let p = 0, a = 0, l = 0;
+        const statusCells = classDates.map(d => {
+          const st = (attMap[stu.id] || {})[d] || '';
+          if (st === 'P') p++;
+          else if (st === 'A') a++;
+          else if (st === 'L') l++;
+          return st;
+        });
+        const total = p + a + l;
+        const pct   = total > 0 ? `${Math.round((p / total) * 100)}%` : '—';
+        rows.push([idx + 1, stu.studentName || '—', sid, ...statusCells, p, a, l, pct]);
       });
-      const total = p + a + l;
-      const pct   = total > 0 ? `${Math.round((p / total) * 100)}%` : '—';
-      rows.push([idx + 1, stu.studentName || '—', sid, ...statusCells, p, a, l, pct]);
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 4 }, { wch: 22 }, { wch: 14 },
+        ...classDates.map(() => ({ wch: 11 })),
+        { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, _safeSheetName(batch.batchName, used));
+      sheetsAdded++;
     });
 
-    setTimeout(() => {
-      _downloadCSV(_buildCSV(rows), `attendance_${batch.batchName.replace(/\s+/g,'_')}_${from}_to_${to}.csv`);
-    }, bIdx * 400);
+    if (!sheetsAdded) {
+      Toast.error('No batches with students and class dates found in this range.');
+      return;
+    }
 
-    exported++;
+    const fname = `attendance_${_fmtDate(from)}_to_${_fmtDate(to)}.xlsx`.replace(/\s+/g, '_');
+    XLSX.writeFile(wb, fname);
+    Toast.success(`Workbook downloaded — ${sheetsAdded} batch sheet${sheetsAdded !== 1 ? 's' : ''} in one file.`);
   });
-
-  if (exported === 0) {
-    Toast.error('No batches with students and class dates found in this range.');
-  } else {
-    Toast.success(`Exporting ${exported} batch file${exported > 1 ? 's' : ''}… downloads will appear one by one`);
-  }
 }
 
 // ── Export: sample/template CSV for ONE specific batch ─────────
@@ -3467,24 +3507,54 @@ function _exportSingleBatchSample(batchId) {
   Toast.success(`Sample downloaded for ${batch.batchName}`);
 }
 
-// ── Import: parse CSV exported above ─────────────────────────
+// ── Import: parse CSV or Excel workbook exported above ────────
 function _handleImportFile(file) {
   if (!file.name.match(/\.(csv|xlsx)$/i)) {
-    Toast.error('Please upload a .csv file');
+    Toast.error('Please upload a .csv or .xlsx file');
     return;
   }
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const text   = e.target.result.replace(/^\uFEFF/, '');
-      const parsed = _parseCSVText(text);
-      _parseAndPreviewImport(parsed);
-    } catch(err) {
-      Toast.error('Could not read file: ' + err.message);
-      console.error(err);
-    }
-  };
-  reader.readAsText(file, 'utf-8');
+
+  const isXlsx = /\.xlsx$/i.test(file.name);
+
+  if (!isXlsx) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const text   = e.target.result.replace(/^\uFEFF/, '');
+        const parsed = _parseCSVText(text);
+        _parseAndPreviewImport(parsed);
+      } catch(err) {
+        Toast.error('Could not read file: ' + err.message);
+        console.error(err);
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+    return;
+  }
+
+  // .xlsx workbook — one sheet per batch. Read every sheet as an
+  // array-of-arrays (same row shape _parseCSVText produces) and feed
+  // them all through the same state-machine parser in one pass — each
+  // sheet starts with its own "BATCH:" row, which already resets the
+  // active batch/date context, so sheets never bleed into each other.
+  _withXLSX((XLSX) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const allRows = [];
+        wb.SheetNames.forEach(name => {
+          const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '', raw: false });
+          sheetRows.forEach(r => allRows.push(r.map(c => String(c ?? '').trim())));
+        });
+        _parseAndPreviewImport(allRows);
+      } catch (err) {
+        Toast.error('Could not read workbook: ' + err.message);
+        console.error(err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 // Full-text CSV parser (RFC-4180 style). Splitting on \r?\n *before*
