@@ -51,6 +51,22 @@ async function _apiUpsert(records) {
   }
 }
 
+// Delete a single attendance record from the backend (used when a
+// student's mark is "unchecked" — the record should no longer exist at
+// all, not just be blank). Requires the backend to support
+// DELETE /api/attendance?id=<recordId>.
+async function _apiDelete(recordId) {
+  try {
+    const res = await fetch(`${_API_BASE}?id=${encodeURIComponent(recordId)}`, {
+      method:  'DELETE',
+      headers: { 'x-api-key': _API_KEY() },
+    });
+    if (!res.ok) console.error('[AttendanceService] API delete failed:', res.status);
+  } catch (e) {
+    console.error('[AttendanceService] API delete error:', e.message);
+  }
+}
+
 export async function fetchAndSyncBatchAttendance(batchId) {
   try {
     const res = await fetch(`${_API_BASE}?batchId=${batchId}`, {
@@ -369,6 +385,33 @@ export const AttendanceService = {
     _apiUpsert([record]);
 
     return { success: true, record };
+  },
+
+  /**
+   * Uncheck / clear a student's attendance for a given date.
+   * After this call the student has NO record for that date — not P,
+   * not A, not L. Used when a teacher clicks an already-active status
+   * again to "uncheck" it.
+   * @param {string} batchId
+   * @param {string} studentId
+   * @param {string} date   YYYY-MM-DD
+   * @returns {{ success: boolean, message?: string }}
+   */
+  clearAttendance(batchId, studentId, date) {
+    if (!batchId || !studentId || !date)
+      return { success: false, message: 'Batch, student and date are required.' };
+
+    const all      = AppState.get(RECORDS_KEY) || [];
+    const existing = all.find(r => r.batchId === batchId && r.studentId === studentId && r.date === date);
+
+    if (!existing) return { success: true }; // already unmarked — nothing to do
+
+    AppState.remove(RECORDS_KEY, existing.id);
+
+    // ✅ Remove from MongoDB too, so it stays unmarked after reload/sync
+    _apiDelete(existing.id);
+
+    return { success: true };
   },
 
   /**
