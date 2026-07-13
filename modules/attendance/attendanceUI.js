@@ -1911,11 +1911,19 @@ function _loadDailySheet(batch) {
     const stu    = students.find(s => s.id === sid);
     if (!stu) return;
 
-    AttendanceService.markAttendance(batch.id, sid, _dailyDate, status, markedBy);
+    // Clicking the already-active status → uncheck it (no P/A/L at all)
+    const curRec    = AttendanceService.getRecordsForDate(batch.id, _dailyDate)[sid];
+    const isUnclick = curRec?.status === status;
+
+    if (isUnclick) {
+      AttendanceService.clearAttendance(batch.id, sid, _dailyDate);
+    } else {
+      AttendanceService.markAttendance(batch.id, sid, _dailyDate, status, markedBy);
+    }
     _enableSave();
 
-    // First student → apply to all unmarked
-    if (students.length && students[0].id === sid) {
+    // First student → apply to all unmarked (only when marking, not when unchecking)
+    if (!isUnclick && students.length && students[0].id === sid) {
       const records = AppState.get('attendanceRecords') || [];
       students.forEach(s => {
         if (s.id === sid) return;
@@ -1966,7 +1974,8 @@ function _buildDailyRow(stu, idx, existing, canMark) {
                  A: { color:'var(--red)',   label:'A', title:'Absent'  },
                  L: { color:'var(--t2)',    label:'L', title:'Leave'   },
                }[s];
-               return `<button data-s="${s}" title="${cfg.title}" style="
+               const tip = active ? `${cfg.title} (click again to unmark)` : cfg.title;
+               return `<button data-s="${s}" title="${tip}" style="
                  width:32px;height:32px;border-radius:6px;
                  font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;
                  transition:all .12s;
