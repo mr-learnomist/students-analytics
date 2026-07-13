@@ -3055,6 +3055,42 @@ function _renderImportExport() {
             `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:${color};background:${bg};padding:3px 10px;border-radius:6px;font-weight:600">${label}</span>`
           ).join('')}
         </div>
+
+        <!-- Single-batch sample download -->
+        <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--border2)">
+          <div style="font-size:12.5px;font-weight:700;color:var(--t1);margin-bottom:8px">
+            Or download a sample for one specific batch
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:1;min-width:220px">
+              <label style="font-size:10.5px;font-weight:700;color:var(--t3);display:block;margin-bottom:4px;text-transform:uppercase">Batch</label>
+              <select id="exSingleBatch" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--t1);font-size:12.5px;padding:7px 10px;outline:none;font-family:inherit">
+                <option value="">Select a batch…</option>
+                ${disciplines.map(d => {
+                  const batchesInDisc = (AppState.get('batches') || [])
+                    .filter(b => b.disciplineId === d.id)
+                    .sort((a, b) => (a.batchName || '').localeCompare(b.batchName || ''));
+                  if (!batchesInDisc.length) return '';
+                  return `<optgroup label="${d.abbreviation}">
+                    ${batchesInDisc.map(b => `<option value="${b.id}">${b.batchName}</option>`).join('')}
+                  </optgroup>`;
+                }).join('')}
+              </select>
+            </div>
+            <button id="exportSingleBatchBtn" style="display:inline-flex;align-items:center;gap:8px;
+              padding:9px 18px;background:var(--green);color:#fff;border:none;border-radius:8px;
+              font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download Sample
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:6px">
+            Includes all class dates for the selected batch — not limited by the filters above.
+          </div>
+        </div>
       </div>
 
       <!-- IMPORT CARD -->
@@ -3092,7 +3128,7 @@ function _renderImportExport() {
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:18px">
         <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Step-by-Step Guide</div>
         <ol style="padding-left:18px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--t2)">
-          <li>Select <strong>Campus</strong>, <strong>Discipline</strong> and <strong>Date Range</strong>, then click <strong>Download CSV per Batch</strong></li>
+          <li>Select <strong>Campus</strong>, <strong>Discipline</strong> and <strong>Date Range</strong>, then click <strong>Download CSV per Batch</strong> — or pick one batch under "download a sample for one specific batch" if you only need a single file</li>
           <li>Open each CSV in Excel / Google Sheets — student list already filled in</li>
           <li>Type <strong style="color:var(--green)">P</strong>, <strong style="color:var(--red)">A</strong>, or <strong style="color:#d97706">L</strong> in each date cell (leave blank to skip)</li>
           <li>Save as CSV and upload it back using the import section above</li>
@@ -3126,6 +3162,12 @@ function _attachImportExportEvents() {
   updateCount();
 
   _root.querySelector('#exportExcelBtn')?.addEventListener('click', _exportExcel);
+
+  _root.querySelector('#exportSingleBatchBtn')?.addEventListener('click', () => {
+    const batchId = _root.querySelector('#exSingleBatch')?.value || '';
+    if (!batchId) { Toast.error('Please select a batch first.'); return; }
+    _exportSingleBatchSample(batchId);
+  });
 
   const dropZone  = _root.querySelector('#dropZone');
   const fileInput = _root.querySelector('#importFileInput');
@@ -3251,6 +3293,64 @@ function _exportExcel() {
   } else {
     Toast.success(`Exporting ${exported} batch file${exported > 1 ? 's' : ''}… downloads will appear one by one`);
   }
+}
+
+// ── Export: sample/template CSV for ONE specific batch ─────────
+function _exportSingleBatchSample(batchId) {
+  const data = AttendanceService.getBatchSampleData(batchId);
+  if (!data) { Toast.error('Batch not found.'); return; }
+
+  const { batch, students, classDates, attMap } = data;
+  if (!students.length) { Toast.error('This batch has no active enrolled students.'); return; }
+  if (!classDates.length) { Toast.error('No class dates found for this batch.'); return; }
+
+  const discObj   = AppState.findById('disciplines', batch.disciplineId);
+  const campusObj = AppState.findById('campuses',    batch.campusId);
+  const teacher   = AppState.findById('teachers',    batch.teacherId);
+
+  const rows = [];
+
+  // Info row
+  rows.push([
+    `BATCH: ${batch.batchName}`,
+    `ID: ${batch.id}`,
+    `Discipline: ${discObj?.abbreviation || ''}`,
+    `Campus: ${campusObj?.campusName || ''}`,
+    `Teacher: ${teacher?.fullName || ''}`,
+    `From: ${_fmtDate(classDates[0])}`,
+    `To: ${_fmtDate(classDates[classDates.length - 1])}`,
+    `Exported: ${new Date().toLocaleDateString('en-GB')}`,
+  ]);
+  rows.push(['Fill: P = Present   |   A = Absent   |   L = Leave   |   Leave blank = no change']);
+  rows.push([]);
+
+  // Column headers
+  rows.push([
+    '#',
+    'Student Name',
+    'Reg No / ID',
+    ...classDates.map(d => `${_fmtDateCol(d)}\n${d}`),
+    'Total P', 'Total A', 'Leave', 'Attendance %',
+  ]);
+
+  // Student rows
+  students.forEach((stu, idx) => {
+    const sid = stu.registrationNo || stu.admissionNo || stu.studentId || stu.cnic || stu.id;
+    let p = 0, a = 0, l = 0;
+    const statusCells = classDates.map(d => {
+      const st = (attMap[stu.id] || {})[d] || '';
+      if (st === 'P') p++;
+      else if (st === 'A') a++;
+      else if (st === 'L') l++;
+      return st;
+    });
+    const total = p + a + l;
+    const pct   = total > 0 ? `${Math.round((p / total) * 100)}%` : '—';
+    rows.push([idx + 1, stu.studentName || '—', sid, ...statusCells, p, a, l, pct]);
+  });
+
+  _downloadCSV(_buildCSV(rows), `attendance_sample_${batch.batchName.replace(/\s+/g,'_')}.csv`);
+  Toast.success(`Sample downloaded for ${batch.batchName}`);
 }
 
 // ── Import: parse CSV exported above ─────────────────────────
