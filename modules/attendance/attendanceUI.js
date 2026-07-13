@@ -163,6 +163,17 @@ function _injectStyles() {
   background:var(--yellow-dim); color:var(--yellow);
 }
 
+/* ── Searchable batch combobox (Import/Export → single batch sample) ── */
+.exsb-group {
+  padding:6px 12px 3px; font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--t4); background:var(--surface2);
+}
+.exsb-item {
+  padding:8px 12px; font-size:12.5px; color:var(--t1); cursor:pointer; transition:background .12s;
+}
+.exsb-item:hover, .exsb-item.exsb-active { background:var(--blue-dim); color:var(--blue); }
+.exsb-empty { padding:14px 12px; font-size:12px; color:var(--t3); text-align:center; }
+
 /* ── Main area ────────────────────────────────────────────── */
 .att2-main {
   display:flex; flex-direction:column; overflow:hidden;
@@ -3062,20 +3073,23 @@ function _renderImportExport() {
             Or download a sample for one specific batch
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-            <div style="flex:1;min-width:220px">
+            <div style="flex:1;min-width:220px;position:relative">
               <label style="font-size:10.5px;font-weight:700;color:var(--t3);display:block;margin-bottom:4px;text-transform:uppercase">Batch</label>
-              <select id="exSingleBatch" style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--t1);font-size:12.5px;padding:7px 10px;outline:none;font-family:inherit">
-                <option value="">Select a batch…</option>
-                ${disciplines.map(d => {
-                  const batchesInDisc = (AppState.get('batches') || [])
-                    .filter(b => b.disciplineId === d.id)
-                    .sort((a, b) => (a.batchName || '').localeCompare(b.batchName || ''));
-                  if (!batchesInDisc.length) return '';
-                  return `<optgroup label="${d.abbreviation}">
-                    ${batchesInDisc.map(b => `<option value="${b.id}">${b.batchName}</option>`).join('')}
-                  </optgroup>`;
-                }).join('')}
-              </select>
+              <div style="position:relative">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                     style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--t4);pointer-events:none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="exSingleBatchSearch" type="text" autocomplete="off" placeholder="Type to search a batch…"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;
+                         color:var(--t1);font-size:12.5px;padding:7px 10px 7px 28px;outline:none;font-family:inherit;
+                         box-sizing:border-box"/>
+              </div>
+              <input id="exSingleBatch" type="hidden" value=""/>
+              <div id="exSingleBatchList" style="display:none;position:absolute;top:100%;left:0;right:0;
+                   margin-top:4px;max-height:240px;overflow-y:auto;background:var(--surface);
+                   border:1px solid var(--border2);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);
+                   z-index:30"></div>
             </div>
             <button id="exportSingleBatchBtn" style="display:inline-flex;align-items:center;gap:8px;
               padding:9px 18px;background:var(--green);color:#fff;border:none;border-radius:8px;
@@ -3092,6 +3106,7 @@ function _renderImportExport() {
           </div>
         </div>
       </div>
+
 
       <!-- IMPORT CARD -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px">
@@ -3163,9 +3178,11 @@ function _attachImportExportEvents() {
 
   _root.querySelector('#exportExcelBtn')?.addEventListener('click', _exportExcel);
 
+  _wireSingleBatchSearch();
+
   _root.querySelector('#exportSingleBatchBtn')?.addEventListener('click', () => {
     const batchId = _root.querySelector('#exSingleBatch')?.value || '';
-    if (!batchId) { Toast.error('Please select a batch first.'); return; }
+    if (!batchId) { Toast.error('Please search and select a batch first.'); return; }
     _exportSingleBatchSample(batchId);
   });
 
@@ -3192,6 +3209,103 @@ function _attachImportExportEvents() {
   fileInput?.addEventListener('change', e => {
     const file = e.target.files?.[0];
     if (file) _handleImportFile(file);
+  });
+}
+
+// ── Searchable "pick one batch" combobox for the single-batch sample ──
+function _wireSingleBatchSearch() {
+  const input  = _root.querySelector('#exSingleBatchSearch');
+  const hidden = _root.querySelector('#exSingleBatch');
+  const list   = _root.querySelector('#exSingleBatchList');
+  if (!input || !hidden || !list) return;
+
+  const disciplines = AppState.get('disciplines') || [];
+  const allBatches  = (AppState.get('batches') || [])
+    .slice()
+    .sort((a, b) => (a.batchName || '').localeCompare(b.batchName || ''));
+
+  const discAbbr = id => disciplines.find(d => d.id === id)?.abbreviation || '';
+
+  let activeIdx = -1; // for keyboard navigation
+
+  const _matches = q => !q ? allBatches : allBatches.filter(b =>
+    (b.batchName  || '').toLowerCase().includes(q) ||
+    discAbbr(b.disciplineId).toLowerCase().includes(q)
+  );
+
+  const _renderOptions = q => {
+    const results = _matches(q.trim().toLowerCase());
+    activeIdx = -1;
+
+    if (!results.length) {
+      list.innerHTML = `<div class="exsb-empty">No batch matches "${q}"</div>`;
+      return;
+    }
+
+    // Group filtered results by discipline for readability
+    const byDisc = {};
+    results.forEach(b => {
+      const key = discAbbr(b.disciplineId) || '—';
+      (byDisc[key] = byDisc[key] || []).push(b);
+    });
+
+    list.innerHTML = Object.keys(byDisc).sort().map(discKey => `
+      <div class="exsb-group">${discKey}</div>
+      ${byDisc[discKey].map(b => `
+        <div class="exsb-item" data-batch-id="${b.id}">${b.batchName}</div>
+      `).join('')}
+    `).join('');
+  };
+
+  const _open  = () => { _renderOptions(input.value); list.style.display = 'block'; };
+  const _close = () => { list.style.display = 'none'; };
+
+  const _select = (batchId, batchName) => {
+    hidden.value = batchId;
+    input.value  = batchName;
+    _close();
+  };
+
+  input.addEventListener('focus', _open);
+  input.addEventListener('input', () => {
+    hidden.value = ''; // typing invalidates the previous selection until re-picked
+    _renderOptions(input.value);
+    list.style.display = 'block';
+  });
+
+  input.addEventListener('keydown', e => {
+    const items = [...list.querySelectorAll('.exsb-item')];
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = items[activeIdx] || items[0];
+      if (pick) _select(pick.dataset.batchId, pick.textContent);
+      return;
+    } else if (e.key === 'Escape') {
+      _close();
+      return;
+    } else {
+      return;
+    }
+    items.forEach((it, i) => it.classList.toggle('exsb-active', i === activeIdx));
+    items[activeIdx]?.scrollIntoView({ block: 'nearest' });
+  });
+
+  list.addEventListener('mousedown', e => {
+    const item = e.target.closest('.exsb-item');
+    if (!item) return;
+    e.preventDefault(); // keep focus so click registers before blur closes the list
+    _select(item.dataset.batchId, item.textContent);
+  });
+
+  document.addEventListener('click', e => {
+    if (e.target !== input && !list.contains(e.target)) _close();
   });
 }
 
