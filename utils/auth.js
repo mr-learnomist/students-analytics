@@ -59,6 +59,7 @@ const ROLE_PERMISSIONS = {
 
   teacher: [
     'dashboard',
+    'teacherPortal',   // ← "My Batches" shell page — teacher-only
     'students', 'students:create', 'students:edit',
     'attendance', 'attendance:create', 'attendance:edit',
     'tests', 'tests:create', 'tests:edit',
@@ -240,6 +241,29 @@ export const Auth = {
   restoreSession() {
     const session = _sessionStore.get(SESSION_KEY);
     if (session) {
+      // ── Teacher sessions live in `teachers`, not `users` ─────────
+      // ✅ FIX 3: teachers login via TeacherService (email + loginPassword)
+      // and never get a `users` record. The old code below always looked
+      // them up in `users`, found nothing, and force-logged them out on
+      // every single restoreSession() call (i.e. every page refresh).
+      if (session.isTeacher) {
+        const teachers    = AppState.get('teachers') || [];
+        const liveTeacher = teachers.find(t => t.id === session.userId);
+
+        if (!liveTeacher || liveTeacher.isActive === false) {
+          _sessionStore.remove(SESSION_KEY);
+          AppState.set('currentUser', null);
+          return null;
+        }
+
+        session.name      = liveTeacher.fullName;
+        session.campusId  = liveTeacher.campuses?.[0] || null;
+        session.campusIds = Array.isArray(liveTeacher.campuses) ? liveTeacher.campuses : [];
+        _sessionStore.set(SESSION_KEY, session);
+        AppState.set('currentUser', session);
+        return session;
+      }
+
       const users = AppState.get('users') || [];
       const liveUser = users.find(u => u.id === session.userId || u.username === session.username);
 
@@ -318,6 +342,22 @@ export const Auth = {
     const user = this.getCurrentUser();
     if (!user) return false;
 
+    // ── Teacher sessions: validate against `teachers`, not `users` ──
+    // ✅ FIX 4: same root cause as restoreSession() above — without this,
+    // can() force-logged out every teacher on their very first permission
+    // check (any users.length > 0, which is basically always true).
+    if (user.isTeacher) {
+      const teachers    = AppState.get('teachers') || [];
+      const liveTeacher = teachers.find(t => t.id === user.userId);
+      if (!liveTeacher || liveTeacher.isActive === false) {
+        _sessionStore.remove(SESSION_KEY);
+        AppState.set('currentUser', null);
+        return false;
+      }
+      const perms = ROLE_PERMISSIONS['teacher'] || [];
+      return perms.includes(permission) || perms.includes('all');
+    }
+
     // ── Deleted user check — agar user ab exist nahi karta ──────
     const users = AppState.get('users') || [];
     if (users.length > 0) {
@@ -365,6 +405,7 @@ export const Auth = {
   // All available permissions grouped for checkbox UI
   ALL_PERMISSIONS: [
     { group: 'Dashboard',      perms: ['dashboard'] },
+    { group: 'Teacher Portal', perms: ['teacherPortal'] },
     { group: 'Analytics',      perms: ['analytics'] },
     { group: 'Admissions',     perms: ['admissions', 'admissions:create', 'admissions:edit', 'admissions:delete'] },
     { group: 'Students',       perms: ['students', 'students:create', 'students:edit', 'students:delete'] },
