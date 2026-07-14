@@ -105,6 +105,12 @@ function _renderCards(body, rows, container) {
       if (t) _resetPassword(t);
     });
   });
+  body.querySelectorAll('[data-teacher-view-creds]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = rows.find(r => r.id === btn.dataset.teacherViewCreds);
+      if (t) _viewCredentials(t);
+    });
+  });
   body.querySelectorAll('[data-teacher-toggle]').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = rows.find(r => r.id === btn.dataset.teacherToggle);
@@ -120,6 +126,12 @@ function _renderTable(body, rows, container) {
   const canEdit   = Auth.can('teachers:edit');
   const canDelete = Auth.can('teachers:delete');
   const actions   = [];
+
+  if (canEdit) actions.push({
+    label: 'View Login',
+    icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    handler: (row) => _viewCredentials(row),
+  });
 
   if (canEdit) actions.push({
     label: 'Edit',
@@ -380,6 +392,66 @@ function _showCredentials(teacher, plainPassword) {
       </div>
     `,
     actions: [{ label: 'Done, Credentials Shared', variant: 'primary', close: true }],
+    onOpen: (modalEl) => {
+      modalEl.querySelectorAll('.cred-copy').forEach(btn => {
+        btn.addEventListener('click', () => {
+          navigator.clipboard?.writeText(btn.dataset.copy)
+            .then(() => Toast.success('Copied!'))
+            .catch(() => Toast.info('Copy: ' + btn.dataset.copy));
+        });
+      });
+    },
+  });
+}
+
+// ── View existing credentials (any time, not just at creation) ──
+// The password IS saved on the teacher record (teacher.loginPassword) —
+// it was just never shown anywhere after the initial "add" popup.
+// This reuses the same modal so it always looks up the LIVE password.
+function _viewCredentials(teacher) {
+  if (!Auth.can('teachers:edit')) { Toast.error('You do not have permission.'); return; }
+
+  const creds = TeacherService.getCredentials(teacher.id);
+  if (!creds) { Toast.error('Could not find this teacher.'); return; }
+
+  Modal.open({
+    title: '🔑 Login Credentials',
+    size:  'sm',
+    body: `
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--blue-dim);border:1px solid rgba(79,133,247,0.2);border-radius:var(--r-sm)">
+          ${_avatarHTML(teacher.profilePicture, teacher.fullName, 40)}
+          <div>
+            <div style="font-weight:700;color:var(--t1)">${teacher.fullName}</div>
+            <div style="font-size:12px;color:var(--t3)">${teacher.qualification || ''}</div>
+          </div>
+        </div>
+        <p style="font-size:12.5px;color:var(--t3);line-height:1.6">
+          This is their current login. If you reset the password later, come back here to see the new one.
+        </p>
+        <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div class="cred-row">
+            <span class="cred-label">Login Email</span>
+            <span class="cred-val" style="font-family:var(--font-mono)">${creds.email}</span>
+            <button class="cred-copy" data-copy="${creds.email}" title="Copy">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Password</span>
+            <span class="cred-val" style="font-family:var(--font-mono);font-size:15px;font-weight:700;letter-spacing:2px;color:var(--blue)">${creds.password}</span>
+            <button class="cred-copy" data-copy="${creds.password}" title="Copy">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Role</span>
+            <span class="badge badge--green">Teacher</span>
+          </div>
+        </div>
+      </div>
+    `,
+    actions: [{ label: 'Close', variant: 'primary', close: true }],
     onOpen: (modalEl) => {
       modalEl.querySelectorAll('.cred-copy').forEach(btn => {
         btn.addEventListener('click', () => {
