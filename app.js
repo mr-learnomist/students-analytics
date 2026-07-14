@@ -17,6 +17,7 @@ import { SubjectsModule }    from './modules/subjects.js';
 import { BatchModule }       from './modules/batch.js';
 import { UsersModule }       from './modules/users.js';
 import { TeacherUI }         from './modules/teacher/teacherUI.js';
+import { TeacherPortalModule } from './modules/teacher/teacherPortalUI.js';
 import { StudentModule }     from './modules/student/studentUI.js';
 import { AttendanceModule }  from './modules/attendance/attendanceUI.js';
 import { HolidaysModule }    from './modules/holidays.js';
@@ -275,7 +276,7 @@ function showApp(user) {
   window.history.replaceState({}, '', window.location.pathname);
 
   try {
-    Router.navigate('dashboard');
+    Router.navigate(user.role === 'teacher' ? 'teacherPortal' : 'dashboard');
   } catch (navErr) {
     console.error('[Router] Navigation failed:', navErr);
     showLogin();
@@ -299,6 +300,7 @@ function updateBadges() {
 function registerRoutes() {
   Router
     .register('dashboard',  { permission: 'dashboard',  title: 'Dashboard',   mount: null })
+    .register('teacherPortal', { permission: 'teacherPortal', title: 'My Batches', mount: (el) => TeacherPortalModule.mount(el.querySelector('#teacherPortalMount')) })
     .register('batches',    { permission: 'batches',    title: 'Batches',     mount: (el) => BatchModule.mount(el.querySelector('#batchMount')) })
     .register('admin',      { permission: 'admin',      title: 'Admin Panel', mount: () => initAdminTabs() })
     .register('students',   { permission: 'students',   title: 'Students',    mount: (el) => StudentModule.mount(el.querySelector('#studentMount')) })
