@@ -87,6 +87,15 @@ export function renderTeacherCard(teacher) {
             ${isInactive ? '▶ Activate' : '⏸ Deactivate'}
           </button>
 
+          <!-- View login credentials -->
+          <button class="tc-btn tc-btn--view"
+                  data-teacher-view-creds="${teacher.id}"
+                  title="View Login Credentials">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+
           <!-- Reset password -->
           <button class="tc-btn tc-btn--reset"
                   data-teacher-reset="${teacher.id}"
