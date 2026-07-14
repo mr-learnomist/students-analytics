@@ -12,6 +12,7 @@ import { AppState }     from '../../utils/state.js';
 import { Auth }          from '../../utils/auth.js';
 import { Toast }         from '../../utils/helpers.js';
 import { _avatarHTML }   from './teacherUI.js';
+import LecturePlanStorage from '../../utils/lecturePlanStorage.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -290,8 +291,35 @@ export const TeacherPortalModule = {
     // teachers/admins could be marking the same batch concurrently.
     try { await fetchAndSyncBatchAttendance(batch.id); } catch (e) { /* best-effort */ }
 
+    // ✅ Also refresh Lecture Plan data. AppState only loads
+    // lpAssignments/lpRows/lecturePlans ONCE at app boot — if a plan
+    // gets created/updated by an admin AFTER the teacher's tab was
+    // already open, their local copy goes stale and isClassDay below
+    // would wrongly say "no class today". Re-fetch it here every time
+    // the teacher opens the attendance screen.
+    try {
+      const fresh = await LecturePlanStorage.loadLectureData();
+      if (fresh) {
+        if (Array.isArray(fresh.lecturePlans)) AppState._silentSet('lecturePlans', fresh.lecturePlans);
+        if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
+        if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
+      }
+    } catch (e) { /* best-effort — fall back to whatever's already cached */ }
+
     const today      = toISODate(new Date());
-    const isClassDay = AttendanceDateGenerator.isClassDay(batch.id, today);
+
+    // ── Class-day check — must match the admin Attendance module's
+    // logic exactly: Lecture Plan rows take priority; the schedule
+    // generator (batchSchedules) is only a fallback when no LP exists.
+    const lpaMap = AppState.get('lpAssignments') || {};
+    const lpa    = lpaMap[batch.id];
+    let isClassDay;
+    if (lpa?.rows?.length) {
+      isClassDay = lpa.rows.some(r => r.date === today);
+    } else {
+      isClassDay = AttendanceDateGenerator.isClassDay(batch.id, today);
+    }
+
     const disc       = AppState.findById('disciplines', batch.disciplineId);
     const campus     = AppState.findById('campuses', batch.campusId);
 
