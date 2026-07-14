@@ -7,7 +7,7 @@
 import { AppState }       from '../../utils/state.js';
 import { Modal, Table, injectUIStyles } from '../../utils/ui.js';
 import { Toast }          from '../../utils/helpers.js';
-import { Auth }           from '../../utils/auth.js';
+import { Auth, generatePassword } from '../../utils/auth.js';
 import { TeacherService } from '../../utils/teacherService.js';
 import { renderTeacherForm } from './teacherForm.js';
 import { renderTeacherCard } from './teacherCard.js';
@@ -437,13 +437,37 @@ function _viewCredentials(teacher) {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
           </div>
-          <div class="cred-row">
+
+          <!-- Password: view mode -->
+          <div class="cred-row" id="credPassView">
             <span class="cred-label">Password</span>
-            <span class="cred-val" style="font-family:var(--font-mono);font-size:15px;font-weight:700;letter-spacing:2px;color:var(--blue)">${creds.password}</span>
+            <span class="cred-val" id="credPassVal" style="font-family:var(--font-mono);font-size:15px;font-weight:700;letter-spacing:2px;color:var(--blue)">${creds.password}</span>
             <button class="cred-copy" data-copy="${creds.password}" title="Copy">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
+            <button class="cred-copy" id="credChangeBtn" title="Change Password">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
           </div>
+
+          <!-- Password: edit mode (hidden by default) -->
+          <div id="credPassEdit" style="display:none;flex-direction:column;gap:8px">
+            <span class="cred-label">New Password</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="credPassInput" type="text" value="${creds.password}"
+                     style="flex:1;height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--border2);
+                            background:var(--surface);color:var(--t1);font-family:var(--font-mono);font-size:13px;letter-spacing:1px"/>
+              <button class="cred-copy" id="credGenBtn" title="Generate random password">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+            </div>
+            <span id="credPassErr" style="font-size:11.5px;color:var(--red);display:none">Password must be at least 6 characters.</span>
+            <div style="display:flex;gap:8px;margin-top:2px">
+              <button class="btn btn--primary" id="credSaveBtn" style="height:32px;padding:0 14px;font-size:12.5px">Save Password</button>
+              <button class="btn" id="credCancelBtn" style="height:32px;padding:0 14px;font-size:12.5px">Cancel</button>
+            </div>
+          </div>
+
           <div class="cred-row">
             <span class="cred-label">Role</span>
             <span class="badge badge--green">Teacher</span>
@@ -453,12 +477,57 @@ function _viewCredentials(teacher) {
     `,
     actions: [{ label: 'Close', variant: 'primary', close: true }],
     onOpen: (modalEl) => {
-      modalEl.querySelectorAll('.cred-copy').forEach(btn => {
+      modalEl.querySelectorAll('.cred-copy[data-copy]').forEach(btn => {
         btn.addEventListener('click', () => {
           navigator.clipboard?.writeText(btn.dataset.copy)
             .then(() => Toast.success('Copied!'))
             .catch(() => Toast.info('Copy: ' + btn.dataset.copy));
         });
+      });
+
+      const viewRow   = modalEl.querySelector('#credPassView');
+      const editRow   = modalEl.querySelector('#credPassEdit');
+      const input     = modalEl.querySelector('#credPassInput');
+      const errEl     = modalEl.querySelector('#credPassErr');
+
+      modalEl.querySelector('#credChangeBtn')?.addEventListener('click', () => {
+        input.value = '';
+        errEl.style.display = 'none';
+        viewRow.style.display = 'none';
+        editRow.style.display = 'flex';
+        input.focus();
+      });
+
+      modalEl.querySelector('#credCancelBtn')?.addEventListener('click', () => {
+        editRow.style.display = 'none';
+        viewRow.style.display = 'flex';
+      });
+
+      modalEl.querySelector('#credGenBtn')?.addEventListener('click', () => {
+        input.value = generatePassword();
+        errEl.style.display = 'none';
+      });
+
+      modalEl.querySelector('#credSaveBtn')?.addEventListener('click', () => {
+        const newPass = input.value.trim();
+        if (newPass.length < 6) { errEl.style.display = 'block'; return; }
+
+        AppState.update('teachers', teacher.id, {
+          loginPassword: newPass,
+          updatedAt: new Date().toISOString(),
+        });
+
+        Toast.success('Password updated. Share the new password with the teacher.');
+
+        // Refresh the view row with the new password
+        const passValEl = modalEl.querySelector('#credPassVal');
+        passValEl.textContent = newPass;
+        // Update the copy button's payload too
+        const copyBtns = modalEl.querySelectorAll('#credPassView .cred-copy[data-copy]');
+        copyBtns.forEach(b => { b.dataset.copy = newPass; });
+
+        editRow.style.display = 'none';
+        viewRow.style.display = 'flex';
       });
     },
   });
