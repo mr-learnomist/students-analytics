@@ -57,18 +57,20 @@ const ROLE_PERMISSIONS = {
     'fee', 'fee:create', 'fee:edit', 'fee:payment',
   ],
 
+  // ── Teacher — isolated portal only. No access to the admin/staff
+  // navigation (Dashboard, Admissions, Students, Attendance, Tests,
+  // Batches, Lecture Plans, etc). Just 'teacherPortal' controls the
+  // nav item + route. The :create/:edit action perms are kept so
+  // future in-portal features (e.g. marking attendance for their own
+  // batches, built inside teacherPortalUI.js) can check Auth.can()
+  // without needing the full admin page permission.
   teacher: [
-    'dashboard',
-    'teacherPortal',   // ← "My Batches" shell page — teacher-only
-    'students', 'students:create', 'students:edit',
-    'attendance', 'attendance:create', 'attendance:edit',
-    'tests', 'tests:create', 'tests:edit',
-    'revision', 'revision:create', 'revision:edit',
-    'batches',
-    'disciplines', 'levels', 'subjects', 'campuses', 'institutes',
-    'teachers',
-    'lecturePlan', 'lecturePlan:create', 'lecturePlan:edit',
-    'admissions',  // read-only
+    'teacherPortal',
+    'students:create', 'students:edit',
+    'attendance:create', 'attendance:edit',
+    'tests:create', 'tests:edit',
+    'revision:create', 'revision:edit',
+    'lecturePlan:create', 'lecturePlan:edit',
   ],
 
   viewer: [
