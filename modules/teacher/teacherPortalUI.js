@@ -227,8 +227,27 @@ export const TeacherPortalModule = {
     const searchEl = el.querySelector('#tpSearch');
     const tabsEl   = el.querySelector('#tpFilterTabs');
 
-    // Batches without an explicit status are treated as active.
-    const _status = (b) => (b.status || 'active').toLowerCase();
+    // A batch is "closed" once its closing date has passed, "active"
+    // otherwise. The closing date is either the manual endDate, or —
+    // when the batch follows the Lecture Plan (endDateMode:'lp' or
+    // unset) — the last dated row of its LP assignment, same logic
+    // used in the admin Batches table.
+    const today = toISODate(new Date());
+    const lpaMap = AppState.get('lpAssignments') || {};
+
+    const _effectiveEndDate = (b) => {
+      if (b.endDateMode === 'lp' || !b.endDateMode) {
+        const datedRows = (lpaMap[b.id]?.rows || []).filter(r => r.date);
+        return datedRows.length ? datedRows[datedRows.length - 1].date : null;
+      }
+      return b.endDate || null;
+    };
+
+    // No known closing date (no manual date, no LP assigned) → treat as active.
+    const _status = (b) => {
+      const end = _effectiveEndDate(b);
+      return end && end < today ? 'closed' : 'active';
+    };
 
     let currentFilter = 'active'; // default: show active batches only
 
