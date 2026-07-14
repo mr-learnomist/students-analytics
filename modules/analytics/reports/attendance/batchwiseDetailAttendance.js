@@ -367,12 +367,22 @@ function _bulkApplyXlsxStyles(XLSX, ws, meta, rowCount) {
 function _bulkExportWorkbook(batches) {
   if (!batches.length) { Toast.error('No active batches matched the selected filters.'); return; }
 
+  // ── Order sheets by starting date, earliest first ──
+  // Prefer the batch's own startDate; if missing, fall back to its
+  // earliest actual working/class date so it still sorts sensibly.
+  const _batchStartKey = (b) => {
+    if (b.startDate) return b.startDate;
+    const dates = _workingDates(b.id, b);
+    return dates[0] || '9999-99-99'; // unknown start — push to the end
+  };
+  const sortedBatches = [...batches].sort((a, b) => _batchStartKey(a).localeCompare(_batchStartKey(b)));
+
   _withXLSX((XLSX) => {
     const wb   = XLSX.utils.book_new();
     const used = new Set();
     let added  = 0;
 
-    batches.forEach(batch => {
+    sortedBatches.forEach(batch => {
       const data = _bulkGatherBatchData(batch.id);
       if (!data) return; // no active students or no class dates
       const { rows, merges, colWidths, meta } = _bulkBuildAoa(data);
