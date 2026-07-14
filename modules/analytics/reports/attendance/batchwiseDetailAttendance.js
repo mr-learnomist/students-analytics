@@ -12,6 +12,7 @@
 // ============================================================
 
 import { AppState }              from '../../../../utils/state.js';
+import { Toast }                 from '../../../../utils/helpers.js';
 import { getAssignmentForBatch } from '../../../lecturePlan/lecturePlanService.js';
 
 // ── Constants ────────────────────────────────────────────────
@@ -76,6 +77,343 @@ function _workingDates(batchId, batch) {
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
+}
+
+// ── Is a batch currently active? (defensive — schema may vary) ──
+function _isBatchActive(b) {
+  if (!b) return false;
+  if (typeof b.isActive === 'boolean') return b.isActive;
+  if (b.status) return String(b.status).toLowerCase() === 'active';
+  if (b.endDate) {
+    const today = new Date().toISOString().slice(0, 10);
+    return b.endDate >= today;
+  }
+  return true; // no status/end-date info available — treat as active
+}
+
+// ── Shared: load an external script once (SheetJS / jsPDF / JSZip) ──
+function _loadScript(src, cb, errCb) {
+  const existing = document.querySelector(`script[src="${src}"]`);
+  if (existing) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = src;
+  s.onload  = cb;
+  s.onerror = errCb;
+  document.head.appendChild(s);
+}
+const _XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+function _withXLSX(cb, errCb) {
+  if (window.XLSX) { cb(window.XLSX); return; }
+  _loadScript(_XLSX_SRC, () => cb(window.XLSX), errCb || (() => Toast.error('Could not load Excel library.')));
+}
+
+// ── Sanitize a batch name into a valid, unique Excel sheet name ──
+function _safeSheetName(name, used) {
+  let base = String(name || 'Batch').replace(/[:\\/?*\[\]]/g, '-').trim().slice(0, 31) || 'Batch';
+  let out = base;
+  let n = 2;
+  while (used.has(out)) {
+    const suffix = ` (${n++})`;
+    out = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(out);
+  return out;
+}
+
+// ── Gather everything needed to render/export one batch's full sheet ──
+// (all working dates — no month filter — used by the bulk exporters)
+function _bulkGatherBatchData(batchId) {
+  const batch = AppState.findById('batches', batchId);
+  if (!batch) return null;
+
+  const disc    = AppState.findById('disciplines', batch.disciplineId);
+  const campus  = AppState.findById('campuses',    batch.campusId);
+  const teacher = batch.teacherId ? AppState.findById('teachers', batch.teacherId) : null;
+  const teacherName = (() => {
+    if (teacher) {
+      return [teacher.firstName, teacher.lastName].filter(Boolean).join(' ').trim()
+          || teacher.teacherName || teacher.fullName || teacher.name || '';
+    }
+    return batch.teacherName || batch.teacher || '';
+  })();
+
+  const enrolments = _get('enrolments').filter(e => e.batchId === batchId && e.status === 'active');
+  const students = enrolments
+    .map(e => AppState.findById('students', e.studentId))
+    .filter(Boolean)
+    .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+  if (!students.length) return null;
+
+  const dates = _workingDates(batchId, batch);
+  if (!dates.length) return null;
+
+  const batchRecs = _get('attendanceRecords').filter(r => r.batchId === batchId);
+  const recMap = {};
+  batchRecs.forEach(r => { recMap[`${r.studentId}_${r.date}`] = r.status; });
+
+  const byMonth = {};
+  dates.forEach(d => { const mk = d.slice(0, 7); (byMonth[mk] = byMonth[mk] || []).push(d); });
+
+  // Column prefs — same persisted prefs the on-screen sheet/CSV/PDF use
+  const AS_COL_KEY   = 'as_col_prefs';
+  const _DEF_HIDDEN  = ['fatherName', 'email'];
+  let colPrefs = { hidden: [..._DEF_HIDDEN] };
+  try { const r = AppState.get(AS_COL_KEY); if (r && Array.isArray(r.hidden)) colPrefs = r; } catch(e){}
+  const showMap = {};
+  ['studentId','cnic','fatherName','studentPhone','guardianPhone','email'].forEach(k => {
+    showMap[k] = !colPrefs.hidden.includes(k);
+  });
+  const visibleInfo = _asNormalizeOrder(colPrefs.order).filter(k => showMap[k]);
+  const showP   = !colPrefs.hidden.includes('present');
+  const showA   = !colPrefs.hidden.includes('absent');
+  const showL   = !colPrefs.hidden.includes('leave');
+  const showPct = !colPrefs.hidden.includes('percent');
+
+  return { batch, disc, campus, teacherName, students, dates, byMonth, recMap, visibleInfo, showP, showA, showL, showPct };
+}
+
+// ── Build array-of-arrays + merges for one batch's Excel sheet ──
+// Mirrors the on-screen layout: month header row (merged) + date/day row
+// + student rows, same student-info columns and P/A/L/% summary.
+function _bulkBuildAoa(data) {
+  const { batch, disc, campus, teacherName, students, dates, byMonth, recMap, visibleInfo, showP, showA, showL, showPct } = data;
+  const monthKeys = Object.keys(byMonth).sort();
+  const now = new Date();
+
+  const rows = [];
+  const merges = [];
+
+  // ── Meta rows ──
+  rows.push([`Batch: ${batch.batchName || ''}`, `Discipline: ${disc?.abbreviation || ''}`,
+              `Campus: ${campus?.campusName || ''}`, `Teacher: ${teacherName || ''}`,
+              `Generated: ${now.toLocaleDateString('en-GB')} ${now.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})}`]);
+  rows.push([]);
+
+  const infoHeaders = visibleInfo.map(k => AS_INFO_META[k].label);
+  const baseColCount = 2 + infoHeaders.length; // # + Student Name + info cols
+  const summaryHeaders = [
+    ...(showP ? ['P'] : []), ...(showA ? ['A'] : []),
+    ...(showL ? ['L'] : []), ...(showPct ? ['%'] : []),
+  ];
+
+  // ── Row: month header (merged across each month's date columns) ──
+  const monthRow = new Array(baseColCount).fill('');
+  let colCursor = baseColCount;
+  monthKeys.forEach(mk => {
+    const span = byMonth[mk].length;
+    const [y, m] = mk.split('-');
+    monthRow.push(`${MON_FULL[parseInt(m)-1]} ${y}`);
+    for (let i = 1; i < span; i++) monthRow.push('');
+    if (span > 1) {
+      merges.push({ s: { r: rows.length, c: colCursor }, e: { r: rows.length, c: colCursor + span - 1 } });
+    }
+    colCursor += span;
+  });
+  if (summaryHeaders.length > 1) {
+    monthRow.push('Total');
+    for (let i = 1; i < summaryHeaders.length; i++) monthRow.push('');
+    merges.push({ s: { r: rows.length, c: colCursor }, e: { r: rows.length, c: colCursor + summaryHeaders.length - 1 } });
+  } else if (summaryHeaders.length === 1) {
+    monthRow.push('');
+  }
+  rows.push(monthRow);
+
+  // ── Row: date/day sub-header ──
+  const dateHeaderRow = [
+    '#', 'Student Name', ...infoHeaders,
+    ...dates.map(d => { const dt = new Date(d + 'T00:00:00'); return `${DAY_SHORT[dt.getDay()]} ${dt.getDate()}/${dt.getMonth()+1}`; }),
+    ...summaryHeaders,
+  ];
+  rows.push(dateHeaderRow);
+
+  // ── Student rows ──
+  students.forEach((stu, idx) => {
+    let p = 0, a = 0, l = 0;
+    const cells = dates.map(d => {
+      const s = recMap[`${stu.id}_${d}`] || '';
+      if (s === 'P') p++; else if (s === 'A') a++; else if (s === 'L') l++;
+      return s;
+    });
+    const total = p + a + l;
+    const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
+    const infoVals = visibleInfo.map(k => AS_INFO_META[k].value(stu) || '');
+    const summaryVals = [
+      ...(showP ? [total > 0 ? p : ''] : []), ...(showA ? [total > 0 ? a : ''] : []),
+      ...(showL ? [total > 0 ? l : ''] : []), ...(showPct ? [pct] : []),
+    ];
+    rows.push([idx + 1, stu.studentName || '—', ...infoVals, ...cells, ...summaryVals]);
+  });
+
+  const colWidths = [
+    { wch: 4 }, { wch: 22 },
+    ...visibleInfo.map(() => ({ wch: 14 })),
+    ...dates.map(() => ({ wch: 8 })),
+    ...summaryHeaders.map(() => ({ wch: 6 })),
+  ];
+
+  return { rows, merges, colWidths };
+}
+
+// ── Bulk Export: one .xlsx workbook, one sheet per matched batch ──
+function _bulkExportWorkbook(batches) {
+  if (!batches.length) { Toast.error('No active batches matched the selected filters.'); return; }
+
+  _withXLSX((XLSX) => {
+    const wb   = XLSX.utils.book_new();
+    const used = new Set();
+    let added  = 0;
+
+    batches.forEach(batch => {
+      const data = _bulkGatherBatchData(batch.id);
+      if (!data) return; // no active students or no class dates
+      const { rows, merges, colWidths } = _bulkBuildAoa(data);
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols']   = colWidths;
+      if (merges.length) ws['!merges'] = merges;
+      XLSX.utils.book_append_sheet(wb, ws, _safeSheetName(batch.batchName, used));
+      added++;
+    });
+
+    if (!added) { Toast.error('None of the matched batches have active students and class dates.'); return; }
+
+    const dateTag = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).replace(/ /g, '-');
+    XLSX.writeFile(wb, `Attendance-Bulk-${dateTag}.xlsx`);
+    Toast.success(`Workbook downloaded — ${added} batch sheet${added !== 1 ? 's' : ''} in one file.`);
+  });
+}
+
+// ── Bulk Export: one PDF per matched batch, zipped ──
+function _bulkExportPDFZip(batches) {
+  if (!batches.length) { Toast.error('No active batches matched the selected filters.'); return; }
+
+  const _buildPDF = (batch, jsPDF, autoTable) => {
+    const data = _bulkGatherBatchData(batch.id);
+    if (!data) return null;
+    const { disc, campus, teacherName, students, byMonth, recMap, visibleInfo, showP, showA, showL, showPct } = data;
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const PW  = doc.internal.pageSize.getWidth();
+    const PH  = doc.internal.pageSize.getHeight();
+    const ML  = 24, MR = 24;
+
+    const now     = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+
+    const monthKeys = Object.keys(byMonth).sort();
+    const dataColStart = 2 + visibleInfo.length;
+
+    monthKeys.forEach((mk, mIdx) => {
+      const mDates = byMonth[mk];
+      const [y, m] = mk.split('-');
+      const mLabel = MON_FULL[parseInt(m) - 1] + ' ' + y;
+
+      if (mIdx > 0) doc.addPage();
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30, 64, 175);
+      doc.text(`Batchwise Detail Attendance — ${batch.batchName || ''}`, ML, 26);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 116, 139);
+      doc.text(
+        `${disc?.abbreviation || ''}${campus ? ' · ' + campus.campusName : ''} · ${students.length} student${students.length !== 1 ? 's' : ''} · ${mLabel}${teacherName ? ' · ' + teacherName : ''}`,
+        ML, 38
+      );
+      doc.setDrawColor(37, 99, 235); doc.setLineWidth(1.2);
+      doc.line(ML, 44, PW - MR, 44);
+
+      const infoHeads = visibleInfo.map(k => AS_INFO_META[k].short);
+      const head = [[
+        '#', 'Student Name', ...infoHeads,
+        ...mDates.map(d => { const dt = new Date(d + 'T00:00:00'); return `${DAY_SHORT[dt.getDay()]} ${dt.getDate()}`; }),
+        ...(showP ? ['P'] : []), ...(showA ? ['A'] : []), ...(showL ? ['L'] : []), ...(showPct ? ['%'] : []),
+      ]];
+
+      const body = students.map((stu, idx) => {
+        let p = 0, a = 0, l = 0;
+        const cells = mDates.map(d => {
+          const s = recMap[`${stu.id}_${d}`] || '';
+          if (s === 'P') p++; else if (s === 'A') a++; else if (s === 'L') l++;
+          return s;
+        });
+        const total = p + a + l;
+        const pct   = total > 0 ? Math.round((p / total) * 100) + '%' : '';
+        const infoVals = visibleInfo.map(k => AS_INFO_META[k].value(stu) || '—');
+        return [
+          idx + 1, stu.studentName || '—', ...infoVals, ...cells,
+          ...(showP ? [total > 0 ? p : ''] : []), ...(showA ? [total > 0 ? a : ''] : []),
+          ...(showL ? [total > 0 ? l : ''] : []), ...(showPct ? [pct] : []),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 50,
+        margin: { left: ML, right: MR },
+        head, body,
+        styles: { fontSize: 6.5, cellPadding: 1.5, lineColor: [0, 0, 0], lineWidth: 0.3 },
+        headStyles: { fillColor: [219, 234, 254], textColor: [30, 64, 175], fontStyle: 'bold', halign: 'center' },
+        columnStyles: { 0: { halign: 'center', cellWidth: 16 }, 1: { cellWidth: 72, halign: 'left' } },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        didParseCell: (d) => {
+          if (d.section !== 'body') return;
+          const dataColEnd = dataColStart + mDates.length;
+          if (d.column.index >= dataColStart && d.column.index < dataColEnd) {
+            const v = d.cell.raw;
+            if (v === 'P') d.cell.styles.textColor = [22, 163, 74];
+            else if (v === 'A') d.cell.styles.textColor = [220, 38, 38];
+            else if (v === 'L') d.cell.styles.textColor = [217, 119, 6];
+            d.cell.styles.halign = 'center'; d.cell.styles.fontStyle = 'bold';
+          }
+        },
+        didDrawPage: (d) => {
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+          doc.text(`${batch.batchName || ''} — Attendance Export`, ML, PH - 10);
+          doc.text(`Generated ${dateStr} ${timeStr}   |   Page ${d.pageNumber}`, PW - MR, PH - 10, { align: 'right' });
+        },
+      });
+    });
+
+    if (!monthKeys.length) return null;
+    return doc.output('arraybuffer');
+  };
+
+  const doExport = (jsPDF, autoTable, JSZip) => {
+    const zip = new JSZip();
+    let added = 0;
+
+    batches.forEach(batch => {
+      const buf = _buildPDF(batch, jsPDF, autoTable);
+      if (!buf) return;
+      const safeName = (batch.batchName || 'Batch').replace(/[\\\/\?\*\[\]:]/g, '_').slice(0, 80);
+      zip.file(`${safeName}.pdf`, buf);
+      added++;
+    });
+
+    if (!added) { Toast.error('None of the matched batches have active students and class dates.'); return; }
+
+    const dateTag = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).replace(/ /g, '-');
+    zip.generateAsync({ type: 'blob' }).then(blob => {
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement('a'), { href: url, download: `Attendance-PDF-Bulk-${dateTag}.zip` }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      Toast.success(`ZIP downloaded — ${added} PDF file${added !== 1 ? 's' : ''}.`);
+    });
+  };
+
+  const JSPDF_SRC     = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  const AUTOTABLE_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+  const JSZIP_SRC     = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+  const err = () => Toast.error('Could not load PDF library. Check your internet connection.');
+  const run = () => {
+    const jsPDF     = window.jspdf?.jsPDF || window.jsPDF;
+    const autoTable = window.jspdf?.autoTable || ((doc, opts) => doc.autoTable(opts));
+    doExport(jsPDF, autoTable, window.JSZip);
+  };
+  if (window.jspdf?.jsPDF && window.JSZip) { run(); return; }
+  _loadScript(JSPDF_SRC, () => {
+    _loadScript(AUTOTABLE_SRC, () => {
+      if (window.JSZip) { run(); return; }
+      _loadScript(JSZIP_SRC, run, err);
+    }, err);
+  }, err);
 }
 
 // ── Styles (injected once) ────────────────────────────────────
@@ -387,6 +725,37 @@ function _injectAsStyles() {
   background:none; border:none; padding:0; cursor:pointer; font-family:inherit;
 }
 .as-cdd-footer-btn:hover { opacity:.75; }
+
+/* ── Bulk Export card ── */
+.as-bulk-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden; width: 100%; box-sizing: border-box;
+}
+.as-bulk-head {
+  display:flex; align-items:center; gap:10px; padding:11px 16px;
+  border-bottom:1px solid var(--border);
+}
+.as-bulk-title { font-size:13px; font-weight:700; color:var(--t1); flex:1; }
+.as-bulk-sub   { font-size:11.5px; color:var(--t3); margin-top:1px; }
+.as-bulk-body  { padding:14px 16px; display:flex; flex-direction:column; gap:12px; }
+.as-bulk-row   { display:flex; gap:10px; flex-wrap:wrap; }
+.as-bulk-cell  { flex:1 1 160px; min-width:150px; }
+.as-bulk-footer{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding-top:10px; border-top:1px dashed var(--border2);
+}
+.as-bulk-count { font-size:12.5px; color:var(--t2); font-weight:600; }
+.as-bulk-count b { color:var(--blue); }
+.as-bulk-btn {
+  display:inline-flex; align-items:center; gap:7px;
+  height:32px; padding:0 14px; border-radius:8px; border:none;
+  font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit;
+  transition:opacity .15s;
+}
+.as-bulk-btn:hover { opacity:.88; }
+.as-bulk-btn:disabled { opacity:.4; cursor:not-allowed; }
+.as-bulk-btn.xlsx { background:var(--green); color:#fff; }
+.as-bulk-btn.pdf  { background:#dc2626; color:#fff; }
 `;
   document.head.appendChild(st);
 }
@@ -538,6 +907,67 @@ export function mountBatchwiseDetailAttendance(container, onBack) {
             <div class="as-chip-row" id="asAppliedChips"></div>
           </div>
 
+        </div>
+      </div>
+
+      <!-- Bulk Export card -->
+      <div class="as-bulk-card" id="asBulkCard">
+        <div class="as-bulk-head">
+          <div>
+            <div class="as-bulk-title">Bulk Export — Multiple Batches</div>
+            <div class="as-bulk-sub">Campus → Discipline → Session (multi) → Level — exports every matching <strong>active</strong> batch, all its class dates</div>
+          </div>
+        </div>
+        <div class="as-bulk-body">
+          <div class="as-bulk-row">
+            <div class="as-bulk-cell">
+              <div class="as-fcell-label">Campus</div>
+              <select id="asBulkCampus" class="as-filter-sel">
+                <option value="">All Campuses</option>
+              </select>
+            </div>
+            <div class="as-bulk-cell">
+              <div class="as-fcell-label">Discipline</div>
+              <select id="asBulkDisc" class="as-filter-sel">
+                <option value="">All</option>
+              </select>
+            </div>
+            <div class="as-bulk-cell">
+              <div class="as-fcell-label">Session</div>
+              <div class="as-cdd" id="asBulkSessionDd">
+                <button type="button" class="as-cdd-trigger" id="asBulkSessionTrigger">
+                  <span class="as-cdd-val placeholder" id="asBulkSessionVal">All Sessions</span>
+                  <svg class="as-cdd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="as-cdd-panel" id="asBulkSessionPanel">
+                  <div class="as-cdd-list" id="asBulkSessionList"></div>
+                  <div class="as-cdd-footer">
+                    <button type="button" class="as-cdd-footer-btn" id="asBulkSessionAll">All</button>
+                    <button type="button" class="as-cdd-footer-btn" id="asBulkSessionNone">None</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="as-bulk-cell">
+              <div class="as-fcell-label">Level</div>
+              <select id="asBulkLevel" class="as-filter-sel">
+                <option value="">All Levels</option>
+              </select>
+            </div>
+          </div>
+          <div class="as-bulk-footer">
+            <span class="as-bulk-count" id="asBulkCount"><b>0</b> active batches matched</span>
+            <button class="as-bulk-btn xlsx" id="asBulkXlsxBtn" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>Download Workbook (.xlsx)
+            </button>
+            <button class="as-bulk-btn pdf" id="asBulkPdfBtn" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>Download PDFs (.zip, one per batch)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -961,6 +1391,114 @@ export function mountBatchwiseDetailAttendance(container, onBack) {
     container.querySelector('#asFilterArrow').classList.remove('open');
     _renderSheet(container.querySelector('#asOutput'), _batchId, [..._selMonths].sort());
   });
+
+  // ═══════════════════════════════════════════════════════════
+  // BULK EXPORT — Campus → Discipline → Session (multi) → Level
+  // ═══════════════════════════════════════════════════════════
+  let _bCampusId  = '';
+  let _bDiscId    = '';
+  let _bSessions  = new Set();
+  let _bLevelId   = '';
+
+  const bCampSel  = container.querySelector('#asBulkCampus');
+  const bDiscSel  = container.querySelector('#asBulkDisc');
+  const bLevelSel = container.querySelector('#asBulkLevel');
+  const bXlsxBtn  = container.querySelector('#asBulkXlsxBtn');
+  const bPdfBtn   = container.querySelector('#asBulkPdfBtn');
+  const bCountEl  = container.querySelector('#asBulkCount');
+
+  _get('campuses').forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.campusName;
+    bCampSel.appendChild(o);
+  });
+  _get('disciplines').forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id; o.textContent = d.abbreviation || d.name || d.fullName || '';
+    bDiscSel.appendChild(o);
+  });
+
+  const _bSessionDd = _makeCdd({
+    triggerId: 'asBulkSessionTrigger', panelId: 'asBulkSessionPanel',
+    searchId: null, listId: 'asBulkSessionList', valId: 'asBulkSessionVal',
+    mode: 'multi', placeholder: 'All Sessions',
+    onClose: (set) => { _bSessions = set; _bRefreshMatch(); }
+  });
+  container.querySelector('#asBulkSessionAll')?.addEventListener('click', () => { _bSessionDd.selectAll(); _bSessions = _bSessionDd.getValue(); _bRefreshMatch(); });
+  container.querySelector('#asBulkSessionNone')?.addEventListener('click', () => { _bSessionDd.selectNone(); _bSessions = _bSessionDd.getValue(); _bRefreshMatch(); });
+
+  function _bRefreshSessionOpts() {
+    let batches = _get('batches');
+    if (_bCampusId) batches = batches.filter(b => b.campusId === _bCampusId);
+    if (_bDiscId)   batches = batches.filter(b => b.disciplineId === _bDiscId);
+    const sessions = [...new Set(batches.map(b => b.sessionPeriod).filter(Boolean))].sort().reverse();
+    const prevSel = _bSessionDd.getValue();
+    _bSessionDd.setOpts(sessions.map(s => ({ value: s, label: s })));
+    _bSessions = new Set([...prevSel].filter(s => sessions.includes(s)));
+    _bSessionDd.setValue(_bSessions);
+  }
+
+  function _bRefreshLevelOpts() {
+    const prev = bLevelSel.value;
+    bLevelSel.innerHTML = '<option value="">All Levels</option>';
+    const levels = (_get('levels') || []).filter(l => !_bDiscId || l.disciplineId === _bDiscId);
+    levels.forEach(l => {
+      const o = document.createElement('option');
+      o.value = l.id; o.textContent = l.levelName || l.name || l.abbreviation || '';
+      bLevelSel.appendChild(o);
+    });
+    bLevelSel.value = levels.some(l => l.id === prev) ? prev : '';
+    _bLevelId = bLevelSel.value;
+  }
+
+  function _bMatchedBatches() {
+    let batches = _get('batches').filter(_isBatchActive);
+    if (_bCampusId) batches = batches.filter(b => b.campusId === _bCampusId);
+    if (_bDiscId)   batches = batches.filter(b => b.disciplineId === _bDiscId);
+    if (_bSessions.size) batches = batches.filter(b => _bSessions.has(b.sessionPeriod));
+    if (_bLevelId) {
+      const subjects = (_get('subjects') || []).filter(s => s.levelId === _bLevelId);
+      const subjIds  = new Set(subjects.map(s => s.id));
+      const hasDirectField = batches.some(b => b.subjectId !== undefined);
+      if (hasDirectField) {
+        batches = batches.filter(b => subjIds.has(b.subjectId));
+      } else {
+        const codes = subjects.map(s => (s.subjectCode || '').toLowerCase()).filter(Boolean);
+        batches = batches.filter(b => codes.some(code => (b.batchName || '').toLowerCase().includes(code)));
+      }
+    }
+    return batches;
+  }
+
+  function _bRefreshMatch() {
+    const matched = _bMatchedBatches();
+    bCountEl.innerHTML = `<b>${matched.length}</b> active batch${matched.length !== 1 ? 'es' : ''} matched`;
+    bXlsxBtn.disabled = !matched.length;
+    bPdfBtn.disabled  = !matched.length;
+  }
+
+  bCampSel.addEventListener('change', () => {
+    _bCampusId = bCampSel.value;
+    _bRefreshSessionOpts();
+    _bRefreshMatch();
+  });
+  bDiscSel.addEventListener('change', () => {
+    _bDiscId = bDiscSel.value;
+    _bRefreshSessionOpts();
+    _bRefreshLevelOpts();
+    _bRefreshMatch();
+  });
+  bLevelSel.addEventListener('change', () => {
+    _bLevelId = bLevelSel.value;
+    _bRefreshMatch();
+  });
+
+  _bRefreshSessionOpts();
+  _bRefreshLevelOpts();
+  _bRefreshMatch();
+
+  bXlsxBtn.addEventListener('click', () => _bulkExportWorkbook(_bMatchedBatches()));
+  bPdfBtn.addEventListener('click',  () => _bulkExportPDFZip(_bMatchedBatches()));
 }
 
 // ═══════════════════════════════════════════════════════════════
