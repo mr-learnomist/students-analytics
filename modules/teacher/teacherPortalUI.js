@@ -1,17 +1,23 @@
 // ============================================================
-// modules/teacher/teacherPortalUI.js — Teacher Portal (shell)
+// modules/teacher/teacherPortalUI.js — Teacher Portal
 // Route: teacherPortal — mounted only for role === 'teacher'
 //
-// Shows the logged-in teacher's own assigned batches.
-// This is a SHELL: batch cards + a "Mark Attendance" entry point.
-// The actual attendance-marking screen is intentionally left as
-// an extension point (see _openMarkAttendance below) so it can
-// be filled in separately without touching the list/layout code.
+// Shows the logged-in teacher's own assigned batches. Clicking
+// "Mark Attendance" on a batch opens a TODAY-ONLY attendance
+// sheet for that batch's active students (no date picker, no
+// history — just today, same P/A/L marking used elsewhere).
 // ============================================================
 
-import { AppState }  from '../../utils/state.js';
-import { Auth }       from '../../utils/auth.js';
-import { _avatarHTML } from './teacherUI.js';
+import { AppState }     from '../../utils/state.js';
+import { Auth }          from '../../utils/auth.js';
+import { Toast }         from '../../utils/helpers.js';
+import { _avatarHTML }   from './teacherUI.js';
+import {
+  AttendanceService,
+  AttendanceDateGenerator,
+  fetchAndSyncBatchAttendance,
+  toISODate,
+} from '../attendance/attendanceService.js';
 
 let _styleInjected = false;
 
@@ -75,9 +81,65 @@ function _injectStyles() {
   padding:48px 20px; text-align:center; color:var(--t3); font-size:13px;
   border:1px dashed var(--border2); border-radius:var(--r-lg, 12px);
 }
+
+/* ── Attendance (today) view ── */
+.tp-att-head { display:flex; flex-direction:column; gap:10px; }
+.tp-back-btn {
+  align-self:flex-start; display:inline-flex; align-items:center; gap:6px;
+  height:30px; padding:0 12px; border-radius:8px; border:1px solid var(--border2);
+  background:var(--surface2); color:var(--t2); font-size:12px; font-weight:600;
+  cursor:pointer; font-family:inherit;
+}
+.tp-back-btn:hover { color:var(--t1); border-color:var(--blue); }
+.tp-att-bar {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:14px 18px; border:1px solid var(--border); border-radius:var(--r-lg, 12px);
+  background:var(--surface);
+}
+.tp-att-batch { font-size:15px; font-weight:800; color:var(--t1); }
+.tp-att-sub   { font-size:12px; color:var(--t3); margin-top:2px; }
+.tp-att-date  { margin-left:auto; text-align:right; font-size:13px; font-weight:700; color:var(--blue); }
+.tp-att-statbar {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:12px 18px; border:1px solid var(--border); border-radius:var(--r-lg, 12px);
+  background:var(--surface);
+}
+.tp-pill {
+  font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:20px;
+}
+.tp-pill.p { color:var(--green); background:color-mix(in srgb, var(--green) 12%, transparent); }
+.tp-pill.a { color:var(--red);   background:color-mix(in srgb, var(--red) 12%, transparent); }
+.tp-pill.l { color:var(--t2);    background:var(--surface2); }
+.tp-att-actions { margin-left:auto; display:flex; gap:8px; }
+.tp-quick-btn {
+  height:32px; padding:0 14px; border-radius:8px; font-size:12px; font-weight:700;
+  cursor:pointer; font-family:inherit; border:1.5px solid; background:transparent;
+}
+.tp-quick-btn.p { color:var(--green); border-color:color-mix(in srgb, var(--green) 35%, transparent); background:color-mix(in srgb, var(--green) 10%, transparent); }
+.tp-quick-btn.a { color:var(--red);   border-color:color-mix(in srgb, var(--red) 35%, transparent);   background:color-mix(in srgb, var(--red) 10%, transparent); }
+
+.tp-att-table { width:100%; border-collapse:collapse; }
+.tp-att-table th {
+  text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--t3); padding:8px 10px; border-bottom:1px solid var(--border2);
+}
+.tp-att-table td { padding:8px 10px; border-bottom:1px solid var(--border); font-size:13px; color:var(--t1); }
+.tp-att-idx { color:var(--t4); font-family:var(--font-mono); font-size:11px; width:34px; }
+.tp-status-grp { display:inline-flex; gap:6px; }
+.tp-status-btn {
+  width:32px; height:32px; border-radius:7px; font-size:12px; font-weight:800;
+  cursor:pointer; font-family:inherit; transition:all .12s; background:var(--surface2);
+  border:1.5px solid var(--border2); color:var(--t3);
+}
 `;
   document.head.appendChild(st);
 }
+
+const STATUS_CFG = {
+  P: { color: 'var(--green)', label: 'P', title: 'Present' },
+  A: { color: 'var(--red)',   label: 'A', title: 'Absent'  },
+  L: { color: 'var(--t2)',    label: 'L', title: 'Leave'   },
+};
 
 export const TeacherPortalModule = {
 
@@ -108,16 +170,16 @@ export const TeacherPortalModule = {
     this._render(el, teacher);
   },
 
+  // ══════════════════════════════════════════════════════════
+  // BATCH GRID (the "My Batches" list)
+  // ══════════════════════════════════════════════════════════
   _render(el, teacher) {
-    const allBatches = AppState.get('batches') || [];
+    const allBatches  = AppState.get('batches') || [];
     const myBatches   = allBatches.filter(b => b.teacherId === teacher.id);
-
     const totalStudents = myBatches.reduce((sum, b) => sum + this._activeStudentCount(b.id), 0);
 
     el.innerHTML = `
       <div class="tp-wrap">
-
-        <!-- Hero / welcome -->
         <div class="tp-hero">
           ${_avatarHTML(teacher.profilePicture, teacher.fullName, 52)}
           <div>
@@ -136,12 +198,10 @@ export const TeacherPortalModule = {
           </div>
         </div>
 
-        <!-- Search -->
         <div class="tp-search-row">
           <input id="tpSearch" class="tp-search" type="text" placeholder="Search your batches…"/>
         </div>
 
-        <!-- Batch grid -->
         <div class="tp-grid" id="tpGrid"></div>
       </div>`;
 
@@ -150,16 +210,12 @@ export const TeacherPortalModule = {
 
     const renderGrid = (filterText = '') => {
       const q = filterText.trim().toLowerCase();
-      const filtered = !q ? myBatches : myBatches.filter(b =>
-        (b.batchName || '').toLowerCase().includes(q)
-      );
+      const filtered = !q ? myBatches : myBatches.filter(b => (b.batchName || '').toLowerCase().includes(q));
 
       if (!filtered.length) {
         gridEl.innerHTML = `
           <div class="tp-empty" style="grid-column:1/-1">
-            ${myBatches.length
-              ? 'No batches match your search.'
-              : 'No batches have been assigned to you yet.'}
+            ${myBatches.length ? 'No batches match your search.' : 'No batches have been assigned to you yet.'}
           </div>`;
         return;
       }
@@ -167,7 +223,10 @@ export const TeacherPortalModule = {
       gridEl.innerHTML = filtered.map(b => this._cardHTML(b)).join('');
 
       gridEl.querySelectorAll('[data-mark-attendance]').forEach(btn => {
-        btn.addEventListener('click', () => this._openMarkAttendance(btn.dataset.markAttendance));
+        btn.addEventListener('click', () => {
+          const batch = AppState.findById('batches', btn.dataset.markAttendance);
+          if (batch) this._renderAttendanceView(el, teacher, batch);
+        });
       });
     };
 
@@ -214,11 +273,192 @@ export const TeacherPortalModule = {
     return enrolments.filter(e => e.batchId === batchId && e.status === 'active').length;
   },
 
-  // ── Extension point ──────────────────────────────────────────
-  // Called when a teacher clicks "Mark Attendance" on a batch card.
-  // Build the actual attendance-marking screen here (or route to it).
-  _openMarkAttendance(batchId) {
-    console.log('[TeacherPortal] Mark Attendance requested for batch:', batchId);
-    alert('Attendance marking screen goes here — batch ID: ' + batchId);
+  // ══════════════════════════════════════════════════════════
+  // TODAY-ONLY ATTENDANCE VIEW
+  // ══════════════════════════════════════════════════════════
+  async _renderAttendanceView(el, teacher, batch) {
+    // Ownership guard — a teacher may only mark their own batches,
+    // even if someone tampers with the DOM/data attribute.
+    if (batch.teacherId !== teacher.id) {
+      Toast.error('This batch is not assigned to you.');
+      return;
+    }
+
+    el.innerHTML = `<div class="tp-empty">Loading today's attendance…</div>`;
+
+    // Pull the latest records from the backend first — several
+    // teachers/admins could be marking the same batch concurrently.
+    try { await fetchAndSyncBatchAttendance(batch.id); } catch (e) { /* best-effort */ }
+
+    const today      = toISODate(new Date());
+    const isClassDay = AttendanceDateGenerator.isClassDay(batch.id, today);
+    const disc       = AppState.findById('disciplines', batch.disciplineId);
+    const campus     = AppState.findById('campuses', batch.campusId);
+
+    const dateObj  = new Date(today + 'T00:00:00');
+    const dateDisp = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    const headerHTML = `
+      <div class="tp-att-head">
+        <button class="tp-back-btn" id="tpAttBack">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to My Batches
+        </button>
+        <div class="tp-att-bar">
+          <div>
+            <div class="tp-att-batch">${disc ? disc.abbreviation + ' — ' : ''}${batch.batchName || ''}</div>
+            <div class="tp-att-sub">${campus ? campus.campusName + ' · ' : ''}${batch.sessionPeriod || ''}</div>
+          </div>
+          <div class="tp-att-date">📅 Today · ${dateDisp}</div>
+        </div>
+      </div>`;
+
+    const backWire = () => {
+      el.querySelector('#tpAttBack').addEventListener('click', () => this._render(el, teacher));
+    };
+
+    // ── Not a scheduled class day today ─────────────────────────
+    if (!isClassDay) {
+      el.innerHTML = headerHTML + `
+        <div class="tp-empty" style="margin-top:16px">
+          No class is scheduled today for <strong>${batch.batchName || 'this batch'}</strong>.
+        </div>`;
+      backWire();
+      return;
+    }
+
+    const enrolments = (AppState.get('enrolments') || []).filter(e => e.batchId === batch.id && e.status === 'active');
+    const students = enrolments
+      .map(e => AppState.findById('students', e.studentId))
+      .filter(Boolean)
+      .sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+
+    if (!students.length) {
+      el.innerHTML = headerHTML + `
+        <div class="tp-empty" style="margin-top:16px">No active students are enrolled in this batch.</div>`;
+      backWire();
+      return;
+    }
+
+    const canMark  = Auth.can('attendance:create') || Auth.can('attendance:edit');
+    const markedBy = AppState.get('currentUser')?.userId || null;
+
+    el.innerHTML = headerHTML + `
+      <div class="tp-att-statbar" id="tpStatBar" style="margin-top:16px"></div>
+      <div style="border:1px solid var(--border);border-radius:var(--r-lg, 12px);overflow:hidden;margin-top:14px">
+        <table class="tp-att-table">
+          <thead>
+            <tr>
+              <th class="tp-att-idx">#</th>
+              <th>Student Name</th>
+              <th style="text-align:center">Status</th>
+            </tr>
+          </thead>
+          <tbody id="tpAttBody"></tbody>
+        </table>
+      </div>`;
+
+    backWire();
+
+    const statBar = el.querySelector('#tpStatBar');
+    const tbody   = el.querySelector('#tpAttBody');
+
+    const renderStats = () => {
+      const existing = AttendanceService.getRecordsForDate(batch.id, today);
+      let p = 0, a = 0, l = 0;
+      students.forEach(s => {
+        const st = existing[s.id]?.status;
+        if (st === 'P') p++; else if (st === 'A') a++; else if (st === 'L') l++;
+      });
+      const markedTotal = p + a + l;
+      const pct = markedTotal > 0 ? Math.round((p / markedTotal) * 100) : null;
+      const pctColor = pct === null ? 'var(--t3)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
+
+      statBar.innerHTML = `
+        ${markedTotal > 0 ? `
+          <span class="tp-pill p">${p} P</span>
+          <span class="tp-pill a">${a} A</span>
+          <span class="tp-pill l">${l} Leave</span>
+          <span style="font-size:12px;font-weight:800;color:${pctColor}">${pct}%</span>
+        ` : `<span style="font-size:12px;color:var(--t3)">${students.length} students · Not marked yet</span>`}
+        <span style="font-size:11px;color:var(--t3)">${markedTotal}/${students.length} marked</span>
+        ${canMark ? `
+          <div class="tp-att-actions">
+            <button class="tp-quick-btn p" id="tpAllP">All Present</button>
+            <button class="tp-quick-btn a" id="tpAllA">All Absent</button>
+          </div>` : ''}
+      `;
+
+      statBar.querySelector('#tpAllP')?.addEventListener('click', () => {
+        students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, today, 'P', markedBy));
+        AppState.saveState();
+        renderStats();
+        renderRows();
+        Toast.success('Marked all students Present.');
+      });
+      statBar.querySelector('#tpAllA')?.addEventListener('click', () => {
+        students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, today, 'A', markedBy));
+        AppState.saveState();
+        renderStats();
+        renderRows();
+        Toast.success('Marked all students Absent.');
+      });
+    };
+
+    const rowHTML = (stu, idx, existing) => {
+      const status = existing[stu.id]?.status || '';
+      return `<tr data-sid="${stu.id}">
+        <td class="tp-att-idx">${idx + 1}</td>
+        <td style="font-weight:600">${stu.studentName || '—'}</td>
+        <td style="text-align:center">
+          ${canMark ? `
+            <div class="tp-status-grp" data-sid="${stu.id}">
+              ${['P', 'A', 'L'].map(s => {
+                const active = status === s;
+                const cfg = STATUS_CFG[s];
+                const tip = active ? `${cfg.title} (click again to unmark)` : cfg.title;
+                return `<button class="tp-status-btn" data-s="${s}" title="${tip}" style="
+                  border:${active ? `2px solid ${cfg.color}` : '1.5px solid var(--border2)'};
+                  background:${active ? `color-mix(in srgb, ${cfg.color} 15%, transparent)` : 'var(--surface2)'};
+                  color:${active ? cfg.color : 'var(--t3)'};
+                ">${cfg.label}</button>`;
+              }).join('')}
+            </div>`
+            : `<span style="font-weight:800;color:${status === 'P' ? 'var(--green)' : status === 'A' ? 'var(--red)' : status === 'L' ? 'var(--t2)' : 'var(--t4)'}">${status || '—'}</span>`
+          }
+        </td>
+      </tr>`;
+    };
+
+    const renderRows = () => {
+      const existing = AttendanceService.getRecordsForDate(batch.id, today);
+      tbody.innerHTML = students.map((s, i) => rowHTML(s, i, existing)).join('');
+    };
+
+    renderStats();
+    renderRows();
+
+    if (canMark) {
+      tbody.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-s]');
+        if (!btn) return;
+        const grp = btn.closest('.tp-status-grp');
+        if (!grp) return;
+        const sid    = grp.dataset.sid;
+        const status = btn.dataset.s;
+
+        const curRec    = AttendanceService.getRecordsForDate(batch.id, today)[sid];
+        const isUnclick = curRec?.status === status;
+
+        if (isUnclick) {
+          AttendanceService.clearAttendance(batch.id, sid, today);
+        } else {
+          AttendanceService.markAttendance(batch.id, sid, today, status, markedBy);
+        }
+        AppState.saveState();
+        renderStats();
+        renderRows();
+      });
+    }
   },
 };
