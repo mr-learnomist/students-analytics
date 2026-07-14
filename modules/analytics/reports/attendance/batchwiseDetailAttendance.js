@@ -101,10 +101,19 @@ function _loadScript(src, cb, errCb) {
   s.onerror = errCb;
   document.head.appendChild(s);
 }
-const _XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+// xlsx-js-style — a drop-in SheetJS fork that additionally supports real
+// cell styling (fill color, font color/bold, borders) via cell.s, which
+// the plain community-edition 'xlsx' library silently drops on write.
+// We track our OWN "loaded" flag rather than checking window.XLSX,
+// because other features in this app may load the plain (unstyled)
+// 'xlsx' library on the same page — checking window.XLSX's mere
+// existence could pick up that unstyled version instead of this one.
+const _XLSX_STYLE_SRC = 'https://cdn.jsdelivr.net/npm/xlsx-js-style/dist/xlsx.bundle.js';
+let _xlsxStyleLoaded = false;
 function _withXLSX(cb, errCb) {
-  if (window.XLSX) { cb(window.XLSX); return; }
-  _loadScript(_XLSX_SRC, () => cb(window.XLSX), errCb || (() => Toast.error('Could not load Excel library.')));
+  if (_xlsxStyleLoaded && window.XLSX) { cb(window.XLSX); return; }
+  _loadScript(_XLSX_STYLE_SRC, () => { _xlsxStyleLoaded = true; cb(window.XLSX); },
+    errCb || (() => Toast.error('Could not load Excel styling library.')));
 }
 
 // ── Sanitize a batch name into a valid, unique Excel sheet name ──
@@ -251,7 +260,107 @@ function _bulkBuildAoa(data) {
     ...summaryHeaders.map(() => ({ wch: 6 })),
   ];
 
-  return { rows, merges, colWidths };
+  const meta = {
+    monthRowIdx:  2,               // row index of the merged month header
+    dateHeaderRowIdx: 3,           // row index of the #/Name/date sub-header
+    dataStartRowIdx:  4,           // first student row
+    infoColCount: infoHeaders.length,
+    dateColStart: baseColCount,
+    dateColCount: dates.length,
+    summaryColStart: baseColCount + dates.length,
+    summaryCount: summaryHeaders.length,
+    monthKeys, byMonth,
+    showP, showA, showL, showPct,
+    totalCols: baseColCount + dates.length + summaryHeaders.length,
+  };
+
+  return { rows, merges, colWidths, meta };
+}
+
+// ── Colors — same palette used on-screen and in the PDF export ──
+const XLS_COLOR = {
+  monthFill:   'DBEAFE', monthFont:   '1E40AF', // blue-dim / blue
+  subFill:     'F1F5F9', subFont:     '475569', // surface2 / t3
+  altRowFill:  'F8FAFC',
+  present:     '16A34A', absent: 'DC2626', leave: 'D97706', // green / red / amber
+  pctGood:     '16A34A', pctBad: 'DC2626',
+  borderThin:  'CBD5E1', borderThick: '94A3B8',
+  nameFont:    '0F172A',
+};
+
+function _cellRef(XLSX, r, c) { return XLSX.utils.encode_cell({ r, c }); }
+function _styleCell(XLSX, ws, r, c, style) {
+  const ref = _cellRef(XLSX, r, c);
+  if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+  ws[ref].s = { ...(ws[ref].s || {}), ...style };
+}
+
+// ── Apply real fill/font/border styling to a built worksheet ──
+// (xlsx-js-style only — the plain community 'xlsx' silently ignores .s)
+function _bulkApplyXlsxStyles(XLSX, ws, meta, rowCount) {
+  const thin  = { style: 'thin',  color: { rgb: XLS_COLOR.borderThin } };
+  const thick = { style: 'medium', color: { rgb: XLS_COLOR.borderThick } };
+  const { monthRowIdx, dateHeaderRowIdx, dataStartRowIdx, dateColStart, dateColCount,
+           summaryColStart, summaryCount, monthKeys, byMonth, totalCols } = meta;
+
+  // Column index -> true if it's the LAST date column of its month (thicker right border)
+  const monthEndCols = new Set();
+  let cursor = dateColStart;
+  monthKeys.forEach(mk => { cursor += byMonth[mk].length; monthEndCols.add(cursor - 1); });
+  const infoEndCol = dateColStart - 1; // last student-info column before dates start
+
+  // ── Header rows (month band + date/day sub-header) ──
+  for (let r = monthRowIdx; r <= dateHeaderRowIdx; r++) {
+    for (let c = 0; c < totalCols; c++) {
+      _styleCell(XLSX, ws, r, c, {
+        fill: { fgColor: { rgb: r === monthRowIdx ? XLS_COLOR.monthFill : XLS_COLOR.subFill } },
+        font: { bold: true, sz: 9, color: { rgb: r === monthRowIdx ? XLS_COLOR.monthFont : XLS_COLOR.subFont } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: {
+          top: thin, bottom: thin,
+          left: thin,
+          right: (c === infoEndCol || monthEndCols.has(c) || c === totalCols - 1) ? thick : thin,
+        },
+      });
+    }
+  }
+
+  // ── Data rows ──
+  for (let r = dataStartRowIdx; r < dataStartRowIdx + rowCount; r++) {
+    const alt = (r - dataStartRowIdx) % 2 === 1;
+    for (let c = 0; c < totalCols; c++) {
+      const ref = _cellRef(XLSX, r, c);
+      const val = ws[ref] ? ws[ref].v : '';
+      const isDateCol = c >= dateColStart && c < dateColStart + dateColCount;
+      const isSummaryCol = c >= summaryColStart && c < summaryColStart + summaryCount;
+      const isPctCol = isSummaryCol && c === summaryColStart + summaryCount - 1 && meta.showPct;
+
+      const style = {
+        border: {
+          top: thin, bottom: thin, left: thin,
+          right: (c === infoEndCol || monthEndCols.has(c) || c === totalCols - 1) ? thick : thin,
+        },
+        alignment: { horizontal: c === 1 ? 'left' : 'center', vertical: 'center' },
+        fill: alt ? { fgColor: { rgb: XLS_COLOR.altRowFill } } : undefined,
+      };
+
+      if (c === 1) style.font = { bold: true, sz: 9, color: { rgb: XLS_COLOR.nameFont } };
+      else if (isDateCol && val) {
+        const color = val === 'P' ? XLS_COLOR.present : val === 'A' ? XLS_COLOR.absent : val === 'L' ? XLS_COLOR.leave : null;
+        if (color) style.font = { bold: true, sz: 9, color: { rgb: color } };
+      } else if (isPctCol && typeof val === 'string' && val.endsWith('%')) {
+        const n = parseInt(val, 10);
+        style.font = { bold: true, sz: 9, color: { rgb: n >= 75 ? XLS_COLOR.pctGood : XLS_COLOR.pctBad } };
+      } else if (isSummaryCol) {
+        style.font = { bold: true, sz: 9 };
+      }
+
+      _styleCell(XLSX, ws, r, c, style);
+    }
+  }
+
+  // ── Meta/title rows — bold first line ──
+  _styleCell(XLSX, ws, 0, 0, { font: { bold: true, sz: 11, color: { rgb: XLS_COLOR.monthFont } } });
 }
 
 // ── Bulk Export: one .xlsx workbook, one sheet per matched batch ──
@@ -266,10 +375,11 @@ function _bulkExportWorkbook(batches) {
     batches.forEach(batch => {
       const data = _bulkGatherBatchData(batch.id);
       if (!data) return; // no active students or no class dates
-      const { rows, merges, colWidths } = _bulkBuildAoa(data);
+      const { rows, merges, colWidths, meta } = _bulkBuildAoa(data);
       const ws = XLSX.utils.aoa_to_sheet(rows);
       ws['!cols']   = colWidths;
       if (merges.length) ws['!merges'] = merges;
+      _bulkApplyXlsxStyles(XLSX, ws, meta, data.students.length);
       XLSX.utils.book_append_sheet(wb, ws, _safeSheetName(batch.batchName, used));
       added++;
     });
@@ -726,23 +836,38 @@ function _injectAsStyles() {
 }
 .as-cdd-footer-btn:hover { opacity:.75; }
 
-/* ── Bulk Export card ── */
-.as-bulk-card {
+/* ── Bulk Export modal ── */
+.as-bulk-backdrop {
+  display:none; position:fixed; inset:0; z-index:9997;
+  background:rgba(15,23,42,.5);
+  align-items:center; justify-content:center; padding:20px;
+}
+.as-bulk-backdrop.open { display:flex; }
+.as-bulk-modal {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 12px; overflow: hidden; width: 100%; box-sizing: border-box;
+  border-radius: 14px; overflow: hidden; width: 100%; max-width:640px;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);
+  max-height:calc(100vh - 40px); display:flex; flex-direction:column;
 }
 .as-bulk-head {
-  display:flex; align-items:center; gap:10px; padding:11px 16px;
+  display:flex; align-items:flex-start; gap:10px; padding:14px 18px;
   border-bottom:1px solid var(--border);
 }
-.as-bulk-title { font-size:13px; font-weight:700; color:var(--t1); flex:1; }
-.as-bulk-sub   { font-size:11.5px; color:var(--t3); margin-top:1px; }
-.as-bulk-body  { padding:14px 16px; display:flex; flex-direction:column; gap:12px; }
+.as-bulk-title { font-size:14px; font-weight:700; color:var(--t1); flex:1; }
+.as-bulk-sub   { font-size:11.5px; color:var(--t3); margin-top:3px; }
+.as-bulk-close {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border-radius:7px; border:none;
+  background:var(--surface2); color:var(--t3); cursor:pointer; flex-shrink:0;
+  transition:all .15s;
+}
+.as-bulk-close:hover { background:var(--red-dim); color:var(--red); }
+.as-bulk-body  { padding:16px 18px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; }
 .as-bulk-row   { display:flex; gap:10px; flex-wrap:wrap; }
 .as-bulk-cell  { flex:1 1 160px; min-width:150px; }
 .as-bulk-footer{
   display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-  padding-top:10px; border-top:1px dashed var(--border2);
+  padding-top:12px; border-top:1px dashed var(--border2);
 }
 .as-bulk-count { font-size:12.5px; color:var(--t2); font-weight:600; }
 .as-bulk-count b { color:var(--blue); }
@@ -794,6 +919,13 @@ export function mountBatchwiseDetailAttendance(container, onBack) {
           Select filters then Apply — sheet loads with class dates, filled with marked attendance
         </div>
       </div>
+      <button id="asBulkOpenBtn" title="Bulk Export — Multiple Batches" style="display:inline-flex;align-items:center;gap:6px;height:32px;
+          margin-left:auto;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--border2);
+          background:var(--surface2);color:var(--t2);font-size:12.5px;font-weight:600;cursor:pointer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>Bulk Export
+      </button>
     </div>
 
     <div style="display:flex;flex-direction:column;gap:16px">
@@ -910,63 +1042,68 @@ export function mountBatchwiseDetailAttendance(container, onBack) {
         </div>
       </div>
 
-      <!-- Bulk Export card -->
-      <div class="as-bulk-card" id="asBulkCard">
-        <div class="as-bulk-head">
-          <div>
-            <div class="as-bulk-title">Bulk Export — Multiple Batches</div>
-            <div class="as-bulk-sub">Campus → Discipline → Session (multi) → Level — exports every matching <strong>active</strong> batch, all its class dates</div>
+      <!-- Bulk Export modal (hidden until opened via header icon) -->
+      <div class="as-bulk-backdrop" id="asBulkBackdrop">
+        <div class="as-bulk-modal" id="asBulkModal">
+          <div class="as-bulk-head">
+            <div>
+              <div class="as-bulk-title">Bulk Export — Multiple Batches</div>
+              <div class="as-bulk-sub">Campus → Discipline → Session (multi) → Level — exports every matching <strong>active</strong> batch, all its class dates</div>
+            </div>
+            <button type="button" id="asBulkCloseBtn" class="as-bulk-close" title="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
-        </div>
-        <div class="as-bulk-body">
-          <div class="as-bulk-row">
-            <div class="as-bulk-cell">
-              <div class="as-fcell-label">Campus</div>
-              <select id="asBulkCampus" class="as-filter-sel">
-                <option value="">All Campuses</option>
-              </select>
-            </div>
-            <div class="as-bulk-cell">
-              <div class="as-fcell-label">Discipline</div>
-              <select id="asBulkDisc" class="as-filter-sel">
-                <option value="">All</option>
-              </select>
-            </div>
-            <div class="as-bulk-cell">
-              <div class="as-fcell-label">Session</div>
-              <div class="as-cdd" id="asBulkSessionDd">
-                <button type="button" class="as-cdd-trigger" id="asBulkSessionTrigger">
-                  <span class="as-cdd-val placeholder" id="asBulkSessionVal">All Sessions</span>
-                  <svg class="as-cdd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                <div class="as-cdd-panel" id="asBulkSessionPanel">
-                  <div class="as-cdd-list" id="asBulkSessionList"></div>
-                  <div class="as-cdd-footer">
-                    <button type="button" class="as-cdd-footer-btn" id="asBulkSessionAll">All</button>
-                    <button type="button" class="as-cdd-footer-btn" id="asBulkSessionNone">None</button>
+          <div class="as-bulk-body">
+            <div class="as-bulk-row">
+              <div class="as-bulk-cell">
+                <div class="as-fcell-label">Campus</div>
+                <select id="asBulkCampus" class="as-filter-sel">
+                  <option value="">All Campuses</option>
+                </select>
+              </div>
+              <div class="as-bulk-cell">
+                <div class="as-fcell-label">Discipline</div>
+                <select id="asBulkDisc" class="as-filter-sel">
+                  <option value="">All</option>
+                </select>
+              </div>
+              <div class="as-bulk-cell">
+                <div class="as-fcell-label">Session</div>
+                <div class="as-cdd" id="asBulkSessionDd">
+                  <button type="button" class="as-cdd-trigger" id="asBulkSessionTrigger">
+                    <span class="as-cdd-val placeholder" id="asBulkSessionVal">All Sessions</span>
+                    <svg class="as-cdd-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div class="as-cdd-panel" id="asBulkSessionPanel">
+                    <div class="as-cdd-list" id="asBulkSessionList"></div>
+                    <div class="as-cdd-footer">
+                      <button type="button" class="as-cdd-footer-btn" id="asBulkSessionAll">All</button>
+                      <button type="button" class="as-cdd-footer-btn" id="asBulkSessionNone">None</button>
+                    </div>
                   </div>
                 </div>
               </div>
+              <div class="as-bulk-cell">
+                <div class="as-fcell-label">Level</div>
+                <select id="asBulkLevel" class="as-filter-sel">
+                  <option value="">All Levels</option>
+                </select>
+              </div>
             </div>
-            <div class="as-bulk-cell">
-              <div class="as-fcell-label">Level</div>
-              <select id="asBulkLevel" class="as-filter-sel">
-                <option value="">All Levels</option>
-              </select>
+            <div class="as-bulk-footer">
+              <span class="as-bulk-count" id="asBulkCount"><b>0</b> active batches matched</span>
+              <button class="as-bulk-btn xlsx" id="asBulkXlsxBtn" disabled>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>Download Workbook (.xlsx)
+              </button>
+              <button class="as-bulk-btn pdf" id="asBulkPdfBtn" disabled>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>Download PDFs (.zip, one per batch)
+              </button>
             </div>
-          </div>
-          <div class="as-bulk-footer">
-            <span class="as-bulk-count" id="asBulkCount"><b>0</b> active batches matched</span>
-            <button class="as-bulk-btn xlsx" id="asBulkXlsxBtn" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>Download Workbook (.xlsx)
-            </button>
-            <button class="as-bulk-btn pdf" id="asBulkPdfBtn" disabled>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>Download PDFs (.zip, one per batch)
-            </button>
           </div>
         </div>
       </div>
@@ -1406,6 +1543,16 @@ export function mountBatchwiseDetailAttendance(container, onBack) {
   const bXlsxBtn  = container.querySelector('#asBulkXlsxBtn');
   const bPdfBtn   = container.querySelector('#asBulkPdfBtn');
   const bCountEl  = container.querySelector('#asBulkCount');
+
+  // ── Modal open/close ────────────────────────────────────────
+  const bBackdrop = container.querySelector('#asBulkBackdrop');
+  const bModal    = container.querySelector('#asBulkModal');
+  const _bulkOpen  = () => bBackdrop.classList.add('open');
+  const _bulkClose = () => bBackdrop.classList.remove('open');
+  container.querySelector('#asBulkOpenBtn').addEventListener('click', _bulkOpen);
+  container.querySelector('#asBulkCloseBtn').addEventListener('click', _bulkClose);
+  bBackdrop.addEventListener('mousedown', e => { if (e.target === bBackdrop) _bulkClose(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && bBackdrop.classList.contains('open')) _bulkClose(); });
 
   _get('campuses').forEach(c => {
     const o = document.createElement('option');
