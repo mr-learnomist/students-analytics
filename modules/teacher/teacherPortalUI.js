@@ -48,6 +48,17 @@ function _injectStyles() {
   flex:1; min-width:180px; height:36px; padding:0 12px; border-radius:9px;
   border:1px solid var(--border2); background:var(--surface); color:var(--t1); font-size:13px;
 }
+.tp-filter-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+.tp-filter-tab {
+  height:34px; padding:0 14px; border-radius:9px; font-size:12.5px; font-weight:700;
+  cursor:pointer; font-family:inherit; border:1.5px solid var(--border2);
+  background:var(--surface2); color:var(--t3); transition:all .12s;
+}
+.tp-filter-tab:hover { color:var(--t1); }
+.tp-filter-tab.active {
+  border-color:var(--blue); color:var(--blue);
+  background:var(--blue-dim, rgba(79,133,247,.12));
+}
 
 .tp-grid {
   display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px;
@@ -201,6 +212,11 @@ export const TeacherPortalModule = {
         </div>
 
         <div class="tp-search-row">
+          <div class="tp-filter-tabs" id="tpFilterTabs">
+            <button class="tp-filter-tab" data-filter="active">Active</button>
+            <button class="tp-filter-tab" data-filter="closed">Closed</button>
+            <button class="tp-filter-tab" data-filter="all">All</button>
+          </div>
           <input id="tpSearch" class="tp-search" type="text" placeholder="Search your batches…"/>
         </div>
 
@@ -209,15 +225,34 @@ export const TeacherPortalModule = {
 
     const gridEl   = el.querySelector('#tpGrid');
     const searchEl = el.querySelector('#tpSearch');
+    const tabsEl   = el.querySelector('#tpFilterTabs');
+
+    // Batches without an explicit status are treated as active.
+    const _status = (b) => (b.status || 'active').toLowerCase();
+
+    let currentFilter = 'active'; // default: show active batches only
+
+    const renderTabs = () => {
+      tabsEl.querySelectorAll('.tp-filter-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === currentFilter);
+      });
+    };
 
     const renderGrid = (filterText = '') => {
       const q = filterText.trim().toLowerCase();
-      const filtered = !q ? myBatches : myBatches.filter(b => (b.batchName || '').toLowerCase().includes(q));
+      const scoped = currentFilter === 'all'
+        ? myBatches
+        : myBatches.filter(b => _status(b) === currentFilter);
+      const filtered = !q ? scoped : scoped.filter(b => (b.batchName || '').toLowerCase().includes(q));
 
       if (!filtered.length) {
         gridEl.innerHTML = `
           <div class="tp-empty" style="grid-column:1/-1">
-            ${myBatches.length ? 'No batches match your search.' : 'No batches have been assigned to you yet.'}
+            ${!myBatches.length
+              ? 'No batches have been assigned to you yet.'
+              : scoped.length
+                ? 'No batches match your search.'
+                : `No ${currentFilter === 'all' ? '' : currentFilter + ' '}batches found.`}
           </div>`;
         return;
       }
@@ -232,6 +267,16 @@ export const TeacherPortalModule = {
       });
     };
 
+    tabsEl.querySelectorAll('.tp-filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.filter === currentFilter) return;
+        currentFilter = btn.dataset.filter;
+        renderTabs();
+        renderGrid(searchEl.value);
+      });
+    });
+
+    renderTabs();
     renderGrid();
     searchEl.addEventListener('input', () => renderGrid(searchEl.value));
   },
@@ -288,24 +333,30 @@ export const TeacherPortalModule = {
 
     el.innerHTML = `<div class="tp-empty">Loading today's attendance…</div>`;
 
-    // Pull the latest records from the backend first — several
-    // teachers/admins could be marking the same batch concurrently.
-    try { await fetchAndSyncBatchAttendance(batch.id); } catch (e) { /* best-effort */ }
+    // Pull the latest attendance records AND the latest Lecture Plan
+    // data at the same time instead of one-after-another — this was
+    // the main cause of the slow load when opening a batch, since the
+    // two requests don't depend on each other.
+    //
+    // - fetchAndSyncBatchAttendance: several teachers/admins could be
+    //   marking the same batch concurrently, so we need fresh records.
+    // - LecturePlanStorage.loadLectureData: AppState only loads
+    //   lpAssignments/lpRows/lecturePlans ONCE at app boot — if a plan
+    //   gets created/updated by an admin after the teacher's tab was
+    //   already open, their local copy goes stale and isClassDay below
+    //   would wrongly say "no class today". Re-fetch it every time the
+    //   teacher opens the attendance screen.
+    const [, lpResult] = await Promise.allSettled([
+      fetchAndSyncBatchAttendance(batch.id),
+      LecturePlanStorage.loadLectureData(),
+    ]);
 
-    // ✅ Also refresh Lecture Plan data. AppState only loads
-    // lpAssignments/lpRows/lecturePlans ONCE at app boot — if a plan
-    // gets created/updated by an admin AFTER the teacher's tab was
-    // already open, their local copy goes stale and isClassDay below
-    // would wrongly say "no class today". Re-fetch it here every time
-    // the teacher opens the attendance screen.
-    try {
-      const fresh = await LecturePlanStorage.loadLectureData();
-      if (fresh) {
-        if (Array.isArray(fresh.lecturePlans)) AppState._silentSet('lecturePlans', fresh.lecturePlans);
-        if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
-        if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
-      }
-    } catch (e) { /* best-effort — fall back to whatever's already cached */ }
+    if (lpResult.status === 'fulfilled' && lpResult.value) {
+      const fresh = lpResult.value;
+      if (Array.isArray(fresh.lecturePlans)) AppState._silentSet('lecturePlans', fresh.lecturePlans);
+      if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
+      if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
+    }
 
     const today      = toISODate(new Date());
 
