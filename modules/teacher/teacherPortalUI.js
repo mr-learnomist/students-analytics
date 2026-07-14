@@ -132,6 +132,7 @@ function _injectStyles() {
   cursor:pointer; font-family:inherit; transition:all .12s; background:var(--surface2);
   border:1.5px solid var(--border2); color:var(--t3);
 }
+@keyframes tpspin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 `;
   document.head.appendChild(st);
 }
@@ -391,6 +392,32 @@ export const TeacherPortalModule = {
     const statBar = el.querySelector('#tpStatBar');
     const tbody   = el.querySelector('#tpAttBody');
 
+    const SAVE_ICON  = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`;
+    const CHECK_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+    const SPIN_ICON  = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:tpspin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+
+    const _enableSave = () => {
+      const btn = statBar.querySelector('#tpSaveBtn');
+      if (!btn) return;
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+    };
+
+    const _markSaved = () => {
+      const btn = statBar.querySelector('#tpSaveBtn');
+      if (!btn) return;
+      btn.innerHTML = `${CHECK_ICON} Saved`;
+      btn.style.background = 'var(--green)';
+      btn.disabled = true;
+      btn.style.opacity = '0.7';
+      btn.style.pointerEvents = 'none';
+      setTimeout(() => {
+        btn.innerHTML = `${SAVE_ICON} Save`;
+        btn.style.background = 'var(--blue)';
+      }, 2000);
+    };
+
     const renderStats = () => {
       const existing = AttendanceService.getRecordsForDate(batch.id, today);
       let p = 0, a = 0, l = 0;
@@ -403,33 +430,45 @@ export const TeacherPortalModule = {
       const pctColor = pct === null ? 'var(--t3)' : pct >= 75 ? 'var(--green)' : 'var(--red)';
 
       statBar.innerHTML = `
-        ${markedTotal > 0 ? `
-          <span class="tp-pill p">${p} P</span>
-          <span class="tp-pill a">${a} A</span>
-          <span class="tp-pill l">${l} Leave</span>
-          <span style="font-size:12px;font-weight:800;color:${pctColor}">${pct}%</span>
-        ` : `<span style="font-size:12px;color:var(--t3)">${students.length} students · Not marked yet</span>`}
-        <span style="font-size:11px;color:var(--t3)">${markedTotal}/${students.length} marked</span>
+        <div id="tpStatsInner" style="display:flex;align-items:center;gap:12px;flex:1;flex-wrap:wrap">
+          ${markedTotal > 0 ? `
+            <span class="tp-pill p">${p} P</span>
+            <span class="tp-pill a">${a} A</span>
+            <span class="tp-pill l">${l} Leave</span>
+            <span style="font-size:12px;font-weight:800;color:${pctColor}">${pct}%</span>
+          ` : `<span style="font-size:12px;color:var(--t3)">${students.length} students · Not marked yet</span>`}
+          <span style="font-size:11px;color:var(--t3)">${markedTotal}/${students.length} marked</span>
+        </div>
         ${canMark ? `
           <div class="tp-att-actions">
             <button class="tp-quick-btn p" id="tpAllP">All Present</button>
             <button class="tp-quick-btn a" id="tpAllA">All Absent</button>
+            <button class="tp-mark-btn" id="tpSaveBtn" style="opacity:.5;pointer-events:none" disabled>
+              ${SAVE_ICON} Save
+            </button>
           </div>` : ''}
       `;
 
       statBar.querySelector('#tpAllP')?.addEventListener('click', () => {
         students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, today, 'P', markedBy));
-        AppState.saveState();
+        _enableSave();
         renderStats();
         renderRows();
-        Toast.success('Marked all students Present.');
       });
       statBar.querySelector('#tpAllA')?.addEventListener('click', () => {
         students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, today, 'A', markedBy));
-        AppState.saveState();
+        _enableSave();
         renderStats();
         renderRows();
-        Toast.success('Marked all students Absent.');
+      });
+      statBar.querySelector('#tpSaveBtn')?.addEventListener('click', async () => {
+        const btn = statBar.querySelector('#tpSaveBtn');
+        btn.innerHTML = `${SPIN_ICON} Saving...`;
+        btn.disabled = true;
+        AppState.saveState();
+        await new Promise(r => setTimeout(r, 400));
+        _markSaved();
+        Toast.success('Attendance saved.');
       });
     };
 
@@ -483,7 +522,7 @@ export const TeacherPortalModule = {
         } else {
           AttendanceService.markAttendance(batch.id, sid, today, status, markedBy);
         }
-        AppState.saveState();
+        _enableSave();
         renderStats();
         renderRows();
       });
