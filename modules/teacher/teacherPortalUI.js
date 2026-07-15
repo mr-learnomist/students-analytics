@@ -352,10 +352,14 @@ export const TeacherPortalModule = {
 
     el.innerHTML = `<div class="tp-empty">Loading today's attendance…</div>`;
 
+    const today = toISODate(new Date());
+
     // Pull the latest attendance records AND the latest Lecture Plan
     // data at the same time instead of one-after-another — this was
-    // the main cause of the slow load when opening a batch, since the
-    // two requests don't depend on each other.
+    // part of the slow load. The other, bigger part: this screen only
+    // ever shows TODAY, so we now ask the backend for just today's
+    // records (fetchAndSyncBatchAttendance(batch.id, today)) instead of
+    // the batch's entire attendance history — much smaller payload.
     //
     // - fetchAndSyncBatchAttendance: several teachers/admins could be
     //   marking the same batch concurrently, so we need fresh records.
@@ -366,7 +370,7 @@ export const TeacherPortalModule = {
     //   would wrongly say "no class today". Re-fetch it every time the
     //   teacher opens the attendance screen.
     const [, lpResult] = await Promise.allSettled([
-      fetchAndSyncBatchAttendance(batch.id),
+      fetchAndSyncBatchAttendance(batch.id, today),
       LecturePlanStorage.loadLectureData(),
     ]);
 
@@ -376,8 +380,6 @@ export const TeacherPortalModule = {
       if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
       if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
     }
-
-    const today      = toISODate(new Date());
 
     // ── Class-day check — must match the admin Attendance module's
     // logic exactly: Lecture Plan rows take priority; the schedule
