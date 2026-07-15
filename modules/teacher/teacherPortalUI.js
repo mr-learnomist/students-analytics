@@ -465,12 +465,43 @@ export const TeacherPortalModule = {
     const CHECK_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
     const SPIN_ICON  = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:tpspin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
 
-    const _enableSave = () => {
+    // ── Unsaved-changes staging ──────────────────────────────────
+    // Clicking P/A/L only updates this local object — it does NOT call
+    // AttendanceService (so nothing hits the backend yet). Only the
+    // Save button commits `pending` to AttendanceService, which is what
+    // actually persists it. If the teacher marks students and then
+    // leaves without saving, `pending` simply disappears with this view
+    // — nothing was ever written anywhere, so reopening the batch shows
+    // only whatever was last actually saved.
+    //   pending[studentId] = 'P' | 'A' | 'L'  → staged mark
+    //   pending[studentId] = null              → staged "uncheck"
+    //   key absent                             → no staged change (show saved value)
+    let pending = {};
+
+    const _hasPending = () => Object.keys(pending).length > 0;
+
+    // Merge saved records with staged-but-unsaved changes, in the same
+    // { studentId: { status } } shape AttendanceService.getRecordsForDate
+    // returns, so the render functions below don't need to change.
+    const _mergedRecords = () => {
+      const saved  = AttendanceService.getRecordsForDate(batch.id, today);
+      const merged = { ...saved };
+      Object.entries(pending).forEach(([sid, status]) => {
+        if (status === null) delete merged[sid];
+        else merged[sid] = { status };
+      });
+      return merged;
+    };
+
+    // Reflects Save button appearance/enabled-state to match whether
+    // there are unsaved staged changes right now.
+    const _updateSaveState = () => {
       const btn = statBar.querySelector('#tpSaveBtn');
       if (!btn) return;
-      btn.disabled = false;
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
+      const has = _hasPending();
+      btn.disabled = !has;
+      btn.style.opacity = has ? '1' : '.5';
+      btn.style.pointerEvents = has ? 'auto' : 'none';
     };
 
     const _markSaved = () => {
@@ -482,13 +513,16 @@ export const TeacherPortalModule = {
       btn.style.opacity = '0.7';
       btn.style.pointerEvents = 'none';
       setTimeout(() => {
-        btn.innerHTML = `${SAVE_ICON} Save`;
-        btn.style.background = 'var(--blue)';
+        const b = statBar.querySelector('#tpSaveBtn'); // re-query — don't trust a stale reference
+        if (!b) return;
+        b.innerHTML = `${SAVE_ICON} Save`;
+        b.style.background = 'var(--blue)';
+        _updateSaveState(); // back to dim, since pending is now empty (unless changed meanwhile)
       }, 2000);
     };
 
     const renderStats = () => {
-      const existing = AttendanceService.getRecordsForDate(batch.id, today);
+      const existing = _mergedRecords();
       let p = 0, a = 0, l = 0;
       students.forEach(s => {
         const st = existing[s.id]?.status;
@@ -518,23 +552,41 @@ export const TeacherPortalModule = {
           </div>` : ''}
       `;
 
-      statBar.querySelector('#tpAllP')?.addEventListener('click', () => {
-        students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, today, 'P', markedBy));
-        _enableSave();
+      // Stage "mark everyone P/A" — same rule as individual clicks:
+      // if it matches what's already saved, clear the staged entry
+      // instead of leaving a redundant no-op pending change.
+      const _stageAll = (targetStatus) => {
+        const saved = AttendanceService.getRecordsForDate(batch.id, today);
+        students.forEach(s => {
+          if ((saved[s.id]?.status || '') === targetStatus) delete pending[s.id];
+          else pending[s.id] = targetStatus;
+        });
         renderStats();
+        _updateSaveState();
         renderRows();
-      });
-      statBar.querySelector('#tpAllA')?.addEventListener('click', () => {
-        students.forEach(s => AttendanceService.markAttendance(batch.id, s.id, today, 'A', markedBy));
-        _enableSave();
-        renderStats();
-        renderRows();
-      });
+      };
+
+      statBar.querySelector('#tpAllP')?.addEventListener('click', () => _stageAll('P'));
+      statBar.querySelector('#tpAllA')?.addEventListener('click', () => _stageAll('A'));
+
       statBar.querySelector('#tpSaveBtn')?.addEventListener('click', async () => {
+        const changes = Object.entries(pending);
+        if (!changes.length) return; // nothing staged — button should be disabled anyway
+
         const btn = statBar.querySelector('#tpSaveBtn');
         btn.innerHTML = `${SPIN_ICON} Saving...`;
         btn.disabled = true;
-        AppState.saveState();
+
+        // This is the ONE place staged changes actually get committed —
+        // AttendanceService.markAttendance/clearAttendance are what hit
+        // the backend (via _apiUpsert / DELETE), so nothing is persisted
+        // anywhere until this runs.
+        changes.forEach(([sid, status]) => {
+          if (status === null) AttendanceService.clearAttendance(batch.id, sid, today);
+          else AttendanceService.markAttendance(batch.id, sid, today, status, markedBy);
+        });
+        pending = {};
+
         await new Promise(r => setTimeout(r, 400));
         _markSaved();
         Toast.success('Attendance saved.');
@@ -567,7 +619,7 @@ export const TeacherPortalModule = {
     };
 
     const renderRows = () => {
-      const existing = AttendanceService.getRecordsForDate(batch.id, today);
+      const existing = _mergedRecords();
       tbody.innerHTML = students.map((s, i) => rowHTML(s, i, existing)).join('');
     };
 
@@ -583,16 +635,23 @@ export const TeacherPortalModule = {
         const sid    = grp.dataset.sid;
         const status = btn.dataset.s;
 
-        const curRec    = AttendanceService.getRecordsForDate(batch.id, today)[sid];
-        const isUnclick = curRec?.status === status;
+        const savedStatus = AttendanceService.getRecordsForDate(batch.id, today)[sid]?.status || '';
+        const curStatus    = _mergedRecords()[sid]?.status || '';
+        const isUnclick    = curStatus === status;
+        const newEffective = isUnclick ? '' : status;
 
-        if (isUnclick) {
-          AttendanceService.clearAttendance(batch.id, sid, today);
+        // Stage the click. If it happens to match what's already saved
+        // (e.g. teacher clicks then clicks back), drop the staged entry
+        // entirely so Save correctly goes back to disabled when there's
+        // truly nothing new to persist.
+        if (newEffective === savedStatus) {
+          delete pending[sid];
         } else {
-          AttendanceService.markAttendance(batch.id, sid, today, status, markedBy);
+          pending[sid] = newEffective === '' ? null : newEffective;
         }
-        _enableSave();
+
         renderStats();
+        _updateSaveState();
         renderRows();
       });
     }
