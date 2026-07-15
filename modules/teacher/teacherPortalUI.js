@@ -716,6 +716,25 @@ export const TeacherPortalModule = {
     const canMark  = Auth.can('attendance:create') || Auth.can('attendance:edit');
     const markedBy = AppState.get('currentUser')?.userId || null;
 
+    // ── Today's Lecture Plan entry — same info/style shown in the
+    // Lecture Plans detail view (topic + Done/Pending), just for today,
+    // right under the attendance sheet so the teacher can see what's
+    // scheduled without leaving this screen.
+    const todayRow = lpa?.rows?.find(r => r.date === today) || null;
+    const todayLpHTML = todayRow ? `
+      <div class="tp-card" style="margin-top:14px">
+        <div class="tp-card-top">
+          <div>
+            <div class="tp-card-name">Today's Lecture Plan</div>
+            <div class="tp-card-sub">${lpa.lpCode ? lpa.lpCode + ' — ' : ''}${lpa.lpTitle || ''}</div>
+          </div>
+        </div>
+        <div class="tp-card-row">
+          <span style="font-weight:600">${todayRow.topic || '—'} <span style="color:var(--t3);font-weight:400">(${todayRow.type || 'Lecture'})</span></span>
+          <span style="font-weight:800;color:${todayRow.status === 'Done' ? 'var(--green)' : 'var(--t3)'}">${todayRow.status || 'Pending'}</span>
+        </div>
+      </div>` : '';
+
     el.innerHTML = headerHTML + `
       <div class="tp-att-statbar" id="tpStatBar" style="margin-top:16px"></div>
       <div style="border:1px solid var(--border);border-radius:var(--r-lg, 12px);overflow:hidden;margin-top:14px">
@@ -729,7 +748,8 @@ export const TeacherPortalModule = {
           </thead>
           <tbody id="tpAttBody"></tbody>
         </table>
-      </div>`;
+      </div>
+      ${todayLpHTML}`;
 
     backWire();
 
