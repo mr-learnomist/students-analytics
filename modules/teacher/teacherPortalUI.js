@@ -18,6 +18,7 @@ import {
   AttendanceDateGenerator,
   fetchAndSyncBatchAttendance,
   toISODate,
+  formatDisplayDate,
 } from '../attendance/attendanceService.js';
 
 let _styleInjected = false;
@@ -59,6 +60,12 @@ function _injectStyles() {
   border-color:var(--blue); color:var(--blue);
   background:var(--blue-dim, rgba(79,133,247,.12));
 }
+
+.tp-section-title { font-size:15px; font-weight:800; color:var(--t1); margin-top:6px; }
+.tp-lp-progress-track {
+  flex:1; min-width:80px; height:6px; border-radius:4px; background:var(--surface2); overflow:hidden;
+}
+.tp-lp-progress-fill { height:100%; background:var(--blue); border-radius:4px; }
 
 .tp-grid {
   display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px;
@@ -221,6 +228,16 @@ export const TeacherPortalModule = {
         </div>
 
         <div class="tp-grid" id="tpGrid"></div>
+
+        <div class="tp-section-title">Lecture Plans</div>
+        <div class="tp-search-row">
+          <div class="tp-filter-tabs" id="tpLpFilterTabs">
+            <button class="tp-filter-tab" data-filter="active">Active</button>
+            <button class="tp-filter-tab" data-filter="closed">Closed</button>
+            <button class="tp-filter-tab" data-filter="all">All</button>
+          </div>
+        </div>
+        <div class="tp-grid" id="tpLpGrid"></div>
       </div>`;
 
     const gridEl   = el.querySelector('#tpGrid');
@@ -298,6 +315,217 @@ export const TeacherPortalModule = {
     renderTabs();
     renderGrid();
     searchEl.addEventListener('input', () => renderGrid(searchEl.value));
+
+    // ── Lecture Plans section — one card per batch, same active/closed
+    // status as above (derived from the same closing date). Shows
+    // whatever LP is assigned to that batch, or a "not assigned" card.
+    const lpGridEl = el.querySelector('#tpLpGrid');
+    const lpTabsEl = el.querySelector('#tpLpFilterTabs');
+    let currentLpFilter = 'active'; // default: active batches' plans only
+
+    const renderLpTabs = () => {
+      lpTabsEl.querySelectorAll('.tp-filter-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === currentLpFilter);
+      });
+    };
+
+    const renderLpGrid = () => {
+      const scoped = currentLpFilter === 'all'
+        ? myBatches
+        : myBatches.filter(b => _status(b) === currentLpFilter);
+
+      if (!scoped.length) {
+        lpGridEl.innerHTML = `
+          <div class="tp-empty" style="grid-column:1/-1">
+            ${!myBatches.length
+              ? 'No batches have been assigned to you yet.'
+              : `No ${currentLpFilter === 'all' ? '' : currentLpFilter + ' '}batches found.`}
+          </div>`;
+        return;
+      }
+
+      lpGridEl.innerHTML = scoped.map(b => this._lpCardHTML(b)).join('');
+
+      lpGridEl.querySelectorAll('[data-view-lp]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const batch = AppState.findById('batches', btn.dataset.viewLp);
+          if (batch) this._renderLecturePlanView(el, teacher, batch);
+        });
+      });
+    };
+
+    lpTabsEl.querySelectorAll('.tp-filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.filter === currentLpFilter) return;
+        currentLpFilter = btn.dataset.filter;
+        renderLpTabs();
+        renderLpGrid();
+      });
+    });
+
+    renderLpTabs();
+    renderLpGrid();
+
+    // The LP cards above render with whatever's already in AppState
+    // (instant, no wait). In the background, pull a fresh copy — using
+    // the same 2-minute cache from the attendance-view fix, so this is
+    // a network call only when that cache is stale — and quietly
+    // re-render just the LP grid once it lands. Doesn't touch the
+    // batch grid, search box, or block anything on first paint.
+    LecturePlanStorage.loadLectureData(120000).then(fresh => {
+      if (!fresh) return;
+      if (Array.isArray(fresh.lecturePlans)) AppState._silentSet('lecturePlans', fresh.lecturePlans);
+      if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
+      if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
+      renderLpGrid();
+    }).catch(() => { /* best-effort — cards just keep showing whatever was already cached */ });
+  },
+
+  _lpCardHTML(batch) {
+    const disc   = AppState.findById('disciplines', batch.disciplineId);
+    const campus = AppState.findById('campuses', batch.campusId);
+    const lpaMap = AppState.get('lpAssignments') || {};
+    const lpa    = lpaMap[batch.id];
+    const rows   = lpa?.rows || [];
+
+    if (!rows.length) {
+      return `
+        <div class="tp-card">
+          <div class="tp-card-top">
+            <div>
+              <div class="tp-card-name">${batch.batchName || '—'}</div>
+              <div class="tp-card-sub">${batch.sessionPeriod || ''}</div>
+            </div>
+          </div>
+          <div class="tp-badges">
+            ${disc ? `<span class="tp-badge">${disc.abbreviation || disc.fullName || ''}</span>` : ''}
+            ${campus ? `<span class="tp-badge grey">${campus.campusName}</span>` : ''}
+          </div>
+          <div class="tp-card-row">
+            <span style="color:var(--t3)">No Lecture Plan assigned</span>
+          </div>
+        </div>`;
+    }
+
+    const total = rows.length;
+    const done  = rows.filter(r => r.status === 'Done').length;
+    const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    return `
+      <div class="tp-card">
+        <div class="tp-card-top">
+          <div>
+            <div class="tp-card-name">${lpa.lpCode || lpa.lpTitle || 'Lecture Plan'}</div>
+            <div class="tp-card-sub">${batch.batchName || ''}</div>
+          </div>
+        </div>
+        <div class="tp-badges">
+          ${disc ? `<span class="tp-badge">${disc.abbreviation || disc.fullName || ''}</span>` : ''}
+          ${campus ? `<span class="tp-badge grey">${campus.campusName}</span>` : ''}
+        </div>
+        <div class="tp-card-row" style="gap:10px">
+          <span class="tp-lp-progress-track"><span class="tp-lp-progress-fill" style="width:${pct}%"></span></span>
+          <span style="color:var(--t3);white-space:nowrap">${done}/${total} · ${pct}%</span>
+        </div>
+        <div class="tp-card-row">
+          <span></span>
+          <button class="tp-mark-btn" data-view-lp="${batch.id}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            View Plan
+          </button>
+        </div>
+      </div>`;
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // READ-ONLY LECTURE PLAN VIEW (for a teacher's own batch)
+  // ══════════════════════════════════════════════════════════
+  _renderLecturePlanView(el, teacher, batch) {
+    if (batch.teacherId !== teacher.id) {
+      Toast.error('This batch is not assigned to you.');
+      return;
+    }
+
+    const campus = AppState.findById('campuses', batch.campusId);
+    const lpaMap = AppState.get('lpAssignments') || {};
+    const lpa    = lpaMap[batch.id];
+
+    const headerHTML = `
+      <div class="tp-att-head">
+        <button class="tp-back-btn" id="tpLpBack">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to My Batches
+        </button>
+        <div class="tp-att-bar">
+          <div>
+            <div class="tp-att-batch">${lpa?.lpCode ? lpa.lpCode + ' — ' : ''}${lpa?.lpTitle || 'Lecture Plan'}</div>
+            <div class="tp-att-sub">${batch.batchName || ''}${campus ? ' · ' + campus.campusName : ''}</div>
+          </div>
+        </div>
+      </div>`;
+
+    const backWire = () => {
+      el.querySelector('#tpLpBack').addEventListener('click', () => this._render(el, teacher));
+    };
+
+    const rows = lpa?.rows || [];
+    if (!rows.length) {
+      el.innerHTML = headerHTML + `
+        <div class="tp-empty" style="margin-top:16px">
+          No Lecture Plan has been assigned to <strong>${batch.batchName || 'this batch'}</strong> yet.
+        </div>`;
+      backWire();
+      return;
+    }
+
+    const sorted = [...rows].sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return a.date.localeCompare(b.date);
+    });
+
+    const total = sorted.length;
+    const done  = sorted.filter(r => r.status === 'Done').length;
+    const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    el.innerHTML = headerHTML + `
+      <div class="tp-att-statbar" style="margin-top:16px">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;flex-wrap:wrap">
+          <span class="tp-pill p">${done} Done</span>
+          <span class="tp-pill l">${total - done} Pending</span>
+          <span style="font-size:12px;font-weight:800;color:var(--blue)">${pct}% complete</span>
+        </div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--r-lg, 12px);overflow:hidden;margin-top:14px">
+        <table class="tp-att-table">
+          <thead>
+            <tr>
+              <th class="tp-att-idx">#</th>
+              <th>Date</th>
+              <th>Topic</th>
+              <th>Type</th>
+              <th style="text-align:center">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map((r, i) => `
+              <tr>
+                <td class="tp-att-idx">${i + 1}</td>
+                <td>${r.date ? formatDisplayDate(r.date) : '—'}</td>
+                <td style="font-weight:600">${r.topic || '—'}</td>
+                <td>${r.type || 'Lecture'}</td>
+                <td style="text-align:center">
+                  <span style="font-weight:800;color:${r.status === 'Done' ? 'var(--green)' : 'var(--t3)'}">${r.status || 'Pending'}</span>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    backWire();
   },
 
   _cardHTML(batch) {
