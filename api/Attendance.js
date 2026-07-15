@@ -10,7 +10,8 @@ const SECRET_KEY = process.env.API_SECRET_KEY;
 const DB_NAME    = 'sms';
 const COL_NAME   = 'attendance'; // alag collection — appstate se separate
 
-let cachedClient = null;
+let cachedClient   = null;
+let indexesEnsured = false;
 
 async function connectDB() {
   if (cachedClient) return cachedClient;
@@ -19,6 +20,20 @@ async function connectDB() {
   await client.connect();
   cachedClient = client;
   return client;
+}
+
+// Runs once per warm serverless instance (createIndex is a no-op if the
+// index already exists, but we still avoid paying that round-trip on
+// every single request). Without these indexes every GET/POST/DELETE
+// below does a full COLLECTION SCAN — this is almost certainly the
+// real reason attendance requests feel slow, more so than payload size.
+async function ensureIndexes(col) {
+  if (indexesEnsured) return;
+  await Promise.all([
+    col.createIndex({ batchId: 1, date: 1 }), // speeds up GET filter
+    col.createIndex({ id: 1 }, { unique: true }), // speeds up POST upsert + DELETE by id
+  ]);
+  indexesEnsured = true;
 }
 
 module.exports = async function handler(req, res) {
@@ -37,6 +52,7 @@ module.exports = async function handler(req, res) {
   try {
     const client = await connectDB();
     const col    = client.db(DB_NAME).collection(COL_NAME);
+    await ensureIndexes(col);
 
     // ── GET — batch ki attendance fetch karo ─────────────────
     // Query: /api/attendance?batchId=xxx
@@ -92,12 +108,22 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ── DELETE — kisi batch ki sari records delete karo ───────
-    // Body: { batchId, date? }
+    // ── DELETE — ek single record (by id) YA batch ki sari records ──
+    // Query:  /api/attendance?id=att_xxx        (single record — used
+    //         by the frontend's "uncheck" action, _apiDelete())
+    // Body:   { batchId, date? }                 (bulk delete — admin
+    //         tools / batch cleanup)
     if (req.method === 'DELETE') {
+      const { id } = req.query;
+
+      if (id) {
+        const result = await col.deleteOne({ id });
+        return res.status(200).json({ success: true, deleted: result.deletedCount });
+      }
+
       const { batchId, date } = req.body || {};
       if (!batchId) {
-        return res.status(400).json({ success: false, error: 'batchId required' });
+        return res.status(400).json({ success: false, error: 'id (query) or batchId (body) required' });
       }
       const filter = { batchId };
       if (date) filter.date = date;
