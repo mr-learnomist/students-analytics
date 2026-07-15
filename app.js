@@ -301,6 +301,18 @@ function registerRoutes() {
   Router
     .register('dashboard',  { permission: 'dashboard',  title: 'Dashboard',   mount: null })
     .register('teacherPortal', { permission: 'teacherPortal', title: 'My Batches', mount: (el) => TeacherPortalModule.mount(el.querySelector('#teacherPortalMount')) })
+    .register('teacherLecturePlan', { permission: 'teacherPortal', title: 'Lecture Plans', mount: (el) => TeacherPortalModule.mountLecturePlans(el.querySelector('#teacherLecturePlanMount')) })
+    // ── Placeholder routes — pages exist (sidebar + container) but have
+    // no module wired up yet. mount:null = static HTML content already
+    // sitting in the data-view div (same pattern as 'dashboard' below).
+    // When one of these is ready to be built, swap its mount to a real
+    // module call — no index.html changes needed at that point.
+    .register('teacherTimetable',          { permission: 'teacherPortal', title: 'Timetable',            mount: null })
+    .register('teacherAssessmentSchedule', { permission: 'teacherPortal', title: 'Assessment Schedule',  mount: null })
+    .register('teacherResultProfile',      { permission: 'teacherPortal', title: 'Result Profile',       mount: null })
+    .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: null })
+    .register('teacherLeaves',             { permission: 'teacherPortal', title: 'Leaves',               mount: null })
+    .register('teacherNotification',       { permission: 'teacherPortal', title: 'Notification',         mount: null })
     .register('batches',    { permission: 'batches',    title: 'Batches',     mount: (el) => BatchModule.mount(el.querySelector('#batchMount')) })
     .register('admin',      { permission: 'admin',      title: 'Admin Panel', mount: () => initAdminTabs() })
     .register('students',   { permission: 'students',   title: 'Students',    mount: (el) => StudentModule.mount(el.querySelector('#studentMount')) })
