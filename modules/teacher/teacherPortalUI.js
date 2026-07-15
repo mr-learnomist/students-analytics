@@ -228,16 +228,6 @@ export const TeacherPortalModule = {
         </div>
 
         <div class="tp-grid" id="tpGrid"></div>
-
-        <div class="tp-section-title">Lecture Plans</div>
-        <div class="tp-search-row">
-          <div class="tp-filter-tabs" id="tpLpFilterTabs">
-            <button class="tp-filter-tab" data-filter="active">Active</button>
-            <button class="tp-filter-tab" data-filter="closed">Closed</button>
-            <button class="tp-filter-tab" data-filter="all">All</button>
-          </div>
-        </div>
-        <div class="tp-grid" id="tpLpGrid"></div>
       </div>`;
 
     const gridEl   = el.querySelector('#tpGrid');
@@ -315,10 +305,70 @@ export const TeacherPortalModule = {
     renderTabs();
     renderGrid();
     searchEl.addEventListener('input', () => renderGrid(searchEl.value));
+  },
 
-    // ── Lecture Plans section — one card per batch, same active/closed
-    // status as above (derived from the same closing date). Shows
-    // whatever LP is assigned to that batch, or a "not assigned" card.
+  // ══════════════════════════════════════════════════════════
+  // LECTURE PLANS PAGE — sidebar entry point, own route
+  // Read-only for teachers: one card per own batch, showing
+  // whatever Lecture Plan is assigned to it (or "not assigned").
+  // ══════════════════════════════════════════════════════════
+  mountLecturePlans(el) {
+    if (!el) return;
+    _injectStyles();
+
+    const session = Auth.getCurrentUser();
+    if (!session || !session.isTeacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          This page is only available to teacher accounts.
+        </div>`;
+      return;
+    }
+
+    const teacher = AppState.findById('teachers', session.userId);
+    if (!teacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          Your teacher profile could not be found. Please contact your administrator.
+        </div>`;
+      return;
+    }
+
+    this._renderLecturePlans(el, teacher);
+  },
+
+  _renderLecturePlans(el, teacher) {
+    const allBatches = AppState.get('batches') || [];
+    const myBatches   = allBatches.filter(b => b.teacherId === teacher.id);
+
+    el.innerHTML = `
+      <div class="tp-wrap">
+        <div class="tp-search-row">
+          <div class="tp-filter-tabs" id="tpLpFilterTabs">
+            <button class="tp-filter-tab" data-filter="active">Active</button>
+            <button class="tp-filter-tab" data-filter="closed">Closed</button>
+            <button class="tp-filter-tab" data-filter="all">All</button>
+          </div>
+        </div>
+        <div class="tp-grid" id="tpLpGrid"></div>
+      </div>`;
+
+    // Same "closed once its closing date has passed" rule as My Batches.
+    const today  = toISODate(new Date());
+    const lpaMap = AppState.get('lpAssignments') || {};
+
+    const _effectiveEndDate = (b) => {
+      if (b.endDateMode === 'lp' || !b.endDateMode) {
+        const datedRows = (lpaMap[b.id]?.rows || []).filter(r => r.date);
+        return datedRows.length ? datedRows[datedRows.length - 1].date : null;
+      }
+      return b.endDate || null;
+    };
+    const _status = (b) => {
+      const end = _effectiveEndDate(b);
+      return end && end < today ? 'closed' : 'active';
+    };
+
     const lpGridEl = el.querySelector('#tpLpGrid');
     const lpTabsEl = el.querySelector('#tpLpFilterTabs');
     let currentLpFilter = 'active'; // default: active batches' plans only
@@ -366,12 +416,9 @@ export const TeacherPortalModule = {
     renderLpTabs();
     renderLpGrid();
 
-    // The LP cards above render with whatever's already in AppState
-    // (instant, no wait). In the background, pull a fresh copy — using
-    // the same 2-minute cache from the attendance-view fix, so this is
-    // a network call only when that cache is stale — and quietly
-    // re-render just the LP grid once it lands. Doesn't touch the
-    // batch grid, search box, or block anything on first paint.
+    // Cards render instantly with whatever's already in AppState, then
+    // quietly refresh in the background (same 2-minute cache as the
+    // attendance view) and re-render once fresh data lands.
     LecturePlanStorage.loadLectureData(120000).then(fresh => {
       if (!fresh) return;
       if (Array.isArray(fresh.lecturePlans)) AppState._silentSet('lecturePlans', fresh.lecturePlans);
@@ -456,7 +503,7 @@ export const TeacherPortalModule = {
       <div class="tp-att-head">
         <button class="tp-back-btn" id="tpLpBack">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-          Back to My Batches
+          Back to Lecture Plans
         </button>
         <div class="tp-att-bar">
           <div>
@@ -467,7 +514,7 @@ export const TeacherPortalModule = {
       </div>`;
 
     const backWire = () => {
-      el.querySelector('#tpLpBack').addEventListener('click', () => this._render(el, teacher));
+      el.querySelector('#tpLpBack').addEventListener('click', () => this._renderLecturePlans(el, teacher));
     };
 
     const rows = lpa?.rows || [];
