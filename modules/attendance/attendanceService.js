@@ -67,9 +67,23 @@ async function _apiDelete(recordId) {
   }
 }
 
-export async function fetchAndSyncBatchAttendance(batchId) {
+// `date` is OPTIONAL. Pass it when the caller only needs one day's
+// records (e.g. the Teacher Portal's today-only sheet) — this avoids
+// downloading the batch's ENTIRE attendance history just to show one
+// day, which is what was making that screen slow to load on batches
+// with a long running history. Omit `date` to keep the old
+// full-history behaviour (used by admin views that need past dates).
+//
+// NOTE: this only speeds things up if the backend /api/attendance
+// GET handler actually filters by the `date` query param. If the
+// endpoint currently ignores unknown params, ask the backend dev to
+// add that filter — that's where the real time savings come from.
+export async function fetchAndSyncBatchAttendance(batchId, date = null) {
   try {
-    const res = await fetch(`${_API_BASE}?batchId=${batchId}`, {
+    const qs = date
+      ? `batchId=${batchId}&date=${encodeURIComponent(date)}`
+      : `batchId=${batchId}`;
+    const res = await fetch(`${_API_BASE}?${qs}`, {
       headers: { 'x-api-key': _API_KEY() },
     });
     if (!res.ok) return;
