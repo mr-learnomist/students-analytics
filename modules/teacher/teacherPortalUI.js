@@ -354,24 +354,21 @@ export const TeacherPortalModule = {
 
     const today = toISODate(new Date());
 
-    // Pull the latest attendance records AND the latest Lecture Plan
-    // data at the same time instead of one-after-another — this was
-    // part of the slow load. The other, bigger part: this screen only
-    // ever shows TODAY, so we now ask the backend for just today's
-    // records (fetchAndSyncBatchAttendance(batch.id, today)) instead of
-    // the batch's entire attendance history — much smaller payload.
+    // The other big part of the slowness: LecturePlanStorage.loadLectureData()
+    // downloads EVERY batch's LP data system-wide on every call, with no
+    // per-batch scoping on the backend. Until that's added server-side,
+    // we cache it for 2 minutes client-side — LP data rarely changes
+    // mid-day, so a teacher opening several batches back-to-back won't
+    // re-trigger that full download each time.
     //
     // - fetchAndSyncBatchAttendance: several teachers/admins could be
-    //   marking the same batch concurrently, so we need fresh records.
-    // - LecturePlanStorage.loadLectureData: AppState only loads
-    //   lpAssignments/lpRows/lecturePlans ONCE at app boot — if a plan
-    //   gets created/updated by an admin after the teacher's tab was
-    //   already open, their local copy goes stale and isClassDay below
-    //   would wrongly say "no class today". Re-fetch it every time the
-    //   teacher opens the attendance screen.
+    //   marking the same batch concurrently, so we need fresh records —
+    //   no caching here, always live.
+    // - LecturePlanStorage.loadLectureData(120000): served from the
+    //   2-minute cache when available; only hits the network if stale.
     const [, lpResult] = await Promise.allSettled([
       fetchAndSyncBatchAttendance(batch.id, today),
-      LecturePlanStorage.loadLectureData(),
+      LecturePlanStorage.loadLectureData(120000),
     ]);
 
     if (lpResult.status === 'fulfilled' && lpResult.value) {
