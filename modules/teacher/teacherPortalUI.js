@@ -13,6 +13,7 @@ import { Auth }          from '../../utils/auth.js';
 import { Toast }         from '../../utils/helpers.js';
 import { _avatarHTML }   from './teacherUI.js';
 import LecturePlanStorage from '../../utils/lecturePlanStorage.js';
+import { LecturePlanService } from '../lecturePlan/lecturePlanService.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -66,6 +67,13 @@ function _injectStyles() {
   flex:1; min-width:80px; height:6px; border-radius:4px; background:var(--surface2); overflow:hidden;
 }
 .tp-lp-progress-fill { height:100%; background:var(--blue); border-radius:4px; }
+
+.tp-lp-mark-btn {
+  height:28px; padding:0 12px; border-radius:7px; font-size:11.5px; font-weight:700;
+  cursor:pointer; font-family:inherit; border:1.5px solid; background:transparent;
+}
+.tp-lp-mark-btn.todo { color:var(--blue); border-color:color-mix(in srgb, var(--blue) 35%, transparent); background:color-mix(in srgb, var(--blue) 10%, transparent); }
+.tp-lp-mark-btn.done { color:var(--t3);   border-color:var(--border2); background:var(--surface2); }
 
 .tp-grid {
   display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px;
@@ -719,10 +727,13 @@ export const TeacherPortalModule = {
     // ── Today's Lecture Plan entry — same info/style shown in the
     // Lecture Plans detail view (topic + Done/Pending), just for today,
     // right under the attendance sheet so the teacher can see what's
-    // scheduled without leaving this screen.
+    // scheduled without leaving this screen. Teachers who can mark
+    // attendance for this batch can also toggle this row Done/Pending —
+    // it writes through LecturePlanService.markRow, the SAME function
+    // the admin Lecture Plan editor uses, so it shows as Done there too.
     const todayRow = lpa?.rows?.find(r => r.date === today) || null;
-    const todayLpHTML = todayRow ? `
-      <div class="tp-card" style="margin-top:14px">
+    const _lpCardHTML = (row) => `
+      <div class="tp-card" id="tpTodayLpCard" style="margin-top:14px">
         <div class="tp-card-top">
           <div>
             <div class="tp-card-name">Today's Lecture Plan</div>
@@ -730,10 +741,17 @@ export const TeacherPortalModule = {
           </div>
         </div>
         <div class="tp-card-row">
-          <span style="font-weight:600">${todayRow.topic || '—'} <span style="color:var(--t3);font-weight:400">(${todayRow.type || 'Lecture'})</span></span>
-          <span style="font-weight:800;color:${todayRow.status === 'Done' ? 'var(--green)' : 'var(--t3)'}">${todayRow.status || 'Pending'}</span>
+          <span style="font-weight:600">${row.topic || '—'} <span style="color:var(--t3);font-weight:400">(${row.type || 'Lecture'})</span></span>
+          <span style="display:flex;align-items:center;gap:10px">
+            <span style="font-weight:800;color:${row.status === 'Done' ? 'var(--green)' : 'var(--t3)'}">${row.status || 'Pending'}</span>
+            ${canMark ? `
+              <button class="tp-lp-mark-btn ${row.status === 'Done' ? 'done' : 'todo'}" id="tpLpMarkBtn">
+                ${row.status === 'Done' ? 'Mark Pending' : 'Mark Done'}
+              </button>` : ''}
+          </span>
         </div>
-      </div>` : '';
+      </div>`;
+    const todayLpHTML = todayRow ? _lpCardHTML(todayRow) : '';
 
     el.innerHTML = headerHTML + `
       <div class="tp-att-statbar" id="tpStatBar" style="margin-top:16px"></div>
@@ -750,6 +768,39 @@ export const TeacherPortalModule = {
         </table>
       </div>
       ${todayLpHTML}`;
+
+    // Wire the Mark Done/Pending toggle. Writes through the same
+    // LecturePlanService.markRow the admin editor uses, then pushes
+    // the whole lecturePlans/lpRows/lpAssignments payload to the
+    // backend via LecturePlanStorage.setLectureData — this also
+    // invalidates its 2-minute read cache, so the Lecture Plans page
+    // picks up the change on next visit instead of showing stale data.
+    if (todayRow && canMark) {
+      const _onLpMarkClick = () => {
+        const btn = el.querySelector('#tpLpMarkBtn');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.style.opacity = '.6';
+
+        const willBeDone = todayRow.status !== 'Done';
+        LecturePlanService.markRow(batch.id, todayRow.id, willBeDone);
+
+        LecturePlanStorage.setLectureData({
+          lecturePlans:  AppState.get('lecturePlans')  || [],
+          lpRows:        AppState.get('lpRows')        || {},
+          lpAssignments: AppState.get('lpAssignments') || {},
+        });
+
+        todayRow.status = willBeDone ? 'Done' : 'Pending';
+        const cardEl = el.querySelector('#tpTodayLpCard');
+        if (cardEl) cardEl.outerHTML = _lpCardHTML(todayRow);
+        // The card node above was just replaced — re-attach to the new button.
+        el.querySelector('#tpLpMarkBtn')?.addEventListener('click', _onLpMarkClick);
+
+        Toast.success(willBeDone ? 'Marked as Done.' : 'Marked as Pending.');
+      };
+      el.querySelector('#tpLpMarkBtn')?.addEventListener('click', _onLpMarkClick);
+    }
 
     backWire();
 
