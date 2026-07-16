@@ -274,9 +274,18 @@ export const AssessmentCalendarTab = {
   _filterSession:[],      // session filter (from LP Timeline)
   _container: null,
   _unsubscribers: [],
+  // When set (array of batch IDs), every entry AND the Batch filter
+  // dropdown itself are restricted to just these batches — used by
+  // the Teacher Portal so a teacher only ever sees assessments for
+  // their own LP-assigned batches, regardless of what they pick in
+  // the other filter dropdowns. null = unrestricted (admin/default).
+  _allowedBatchIds: null,
 
   // ── Mount ───────────────────────────────────────────────────
-  mount(container) {
+  // opts.allowedBatchIds: optional array of batch IDs to restrict this
+  // instance to (see _allowedBatchIds above). Omit for the normal,
+  // unrestricted admin view.
+  mount(container, opts = {}) {
     this._container = container;
     this._year  = new Date().getFullYear();
     this._month = new Date().getMonth();
@@ -293,6 +302,7 @@ export const AssessmentCalendarTab = {
     this._filterLevel  = [];
     this._filterSession= [];
     this._unsubscribers = [];
+    this._allowedBatchIds = Array.isArray(opts.allowedBatchIds) ? opts.allowedBatchIds : null;
 
     this._injectStyles();
     container.innerHTML = this._shellTemplate();
@@ -343,11 +353,15 @@ export const AssessmentCalendarTab = {
 
   // ── Shell (toolbar + calendar area) ────────────────────────
   _shellTemplate() {
-    const batches     = AppState.get('batches')      || [];
+    let batches       = AppState.get('batches')      || [];
     const campuses    = AppState.get('campuses')     || [];
     const disciplines = AppState.get('disciplines')  || [];
     const levels      = AppState.get('levels')       || [];
     const subjects    = AppState.get('subjects')     || [];
+
+    if (Array.isArray(this._allowedBatchIds)) {
+      batches = batches.filter(b => this._allowedBatchIds.includes(b.id));
+    }
 
     // Session periods — derive from batches that have LP assignments
     const allAssign = (typeof getAllAssignments === 'function') ? getAllAssignments() : {};
@@ -1036,6 +1050,13 @@ export const AssessmentCalendarTab = {
     let scheduleEntries = getSchedules().map(s => ({ ...s, source: SOURCE_SCHEDULE }));
     let lpEntries = buildLPEntries();
     let all = [...scheduleEntries, ...lpEntries];
+
+    // Hard scope — always applied first, cannot be widened by any of
+    // the dropdown filters below. Used by the Teacher Portal so a
+    // teacher can never see another batch's assessments.
+    if (Array.isArray(this._allowedBatchIds)) {
+      all = all.filter(e => this._allowedBatchIds.includes(e.batchId));
+    }
 
     // Campus filter (multi)
     if (this._filterCampus.length) {
