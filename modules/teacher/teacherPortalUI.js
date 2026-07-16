@@ -75,6 +75,16 @@ function _injectStyles() {
 .tp-lp-mark-btn.todo { color:var(--blue); border-color:color-mix(in srgb, var(--blue) 35%, transparent); background:color-mix(in srgb, var(--blue) 10%, transparent); }
 .tp-lp-mark-btn.done { color:var(--t3);   border-color:var(--border2); background:var(--surface2); }
 
+.tp-lp-row + .tp-lp-row { margin-top:12px; padding-top:12px; border-top:1px solid var(--border2); }
+.tp-lp-remark-row { margin-top:6px; }
+.tp-lp-remark-input {
+  width:100%; height:30px; padding:0 10px; border-radius:7px;
+  border:1px solid var(--border2); background:var(--surface2); color:var(--t1);
+  font-size:12px; font-family:inherit;
+}
+.tp-lp-remark-input:focus { outline:none; border-color:var(--blue); }
+.tp-lp-remark-display { margin-top:4px; font-size:11.5px; color:var(--t3); }
+
 .tp-grid {
   display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px;
 }
@@ -724,34 +734,51 @@ export const TeacherPortalModule = {
     const canMark  = Auth.can('attendance:create') || Auth.can('attendance:edit');
     const markedBy = AppState.get('currentUser')?.userId || null;
 
-    // ── Today's Lecture Plan entry — same info/style shown in the
+    // ── Today's Lecture Plan entries — same info/style shown in the
     // Lecture Plans detail view (topic + Done/Pending), just for today,
-    // right under the attendance sheet so the teacher can see what's
-    // scheduled without leaving this screen. Teachers who can mark
-    // attendance for this batch can also toggle this row Done/Pending —
-    // it writes through LecturePlanService.markRow, the SAME function
-    // the admin Lecture Plan editor uses, so it shows as Done there too.
-    const todayRow = lpa?.rows?.find(r => r.date === today) || null;
-    const _lpCardHTML = (row) => `
-      <div class="tp-card" id="tpTodayLpCard" style="margin-top:14px">
-        <div class="tp-card-top">
-          <div>
-            <div class="tp-card-name">Today's Lecture Plan</div>
-            <div class="tp-card-sub">${lpa.lpCode ? lpa.lpCode + ' — ' : ''}${lpa.lpTitle || ''}</div>
-          </div>
-        </div>
+    // right under the attendance sheet. A batch can have MORE THAN ONE
+    // session on the same date (e.g. double lecture), so we show every
+    // row that matches today — not just the first. Teachers who can
+    // mark attendance for this batch can also toggle each row
+    // Done/Pending and add a remark; both write through the SAME
+    // LecturePlanService functions the admin editor uses, so changes
+    // show up there too.
+    const todayRows = (lpa?.rows || []).filter(r => r.date === today);
+
+    const _escapeAttr = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+    const _lpRowHTML = (row) => `
+      <div class="tp-lp-row" data-row-id="${row.id}">
         <div class="tp-card-row">
           <span style="font-weight:600">${row.topic || '—'} <span style="color:var(--t3);font-weight:400">(${row.type || 'Lecture'})</span></span>
           <span style="display:flex;align-items:center;gap:10px">
             <span style="font-weight:800;color:${row.status === 'Done' ? 'var(--green)' : 'var(--t3)'}">${row.status || 'Pending'}</span>
             ${canMark ? `
-              <button class="tp-lp-mark-btn ${row.status === 'Done' ? 'done' : 'todo'}" id="tpLpMarkBtn">
+              <button class="tp-lp-mark-btn ${row.status === 'Done' ? 'done' : 'todo'}" data-lp-mark="${row.id}">
                 ${row.status === 'Done' ? 'Mark Pending' : 'Mark Done'}
               </button>` : ''}
           </span>
         </div>
+        ${canMark
+          ? `<div class="tp-lp-remark-row">
+               <input type="text" class="tp-lp-remark-input" data-lp-remark="${row.id}"
+                      placeholder="Add a remark…" value="${_escapeAttr(row.remarks)}" />
+             </div>`
+          : (row.remarks ? `<div class="tp-lp-remark-display">📝 ${row.remarks}</div>` : '')}
       </div>`;
-    const todayLpHTML = todayRow ? _lpCardHTML(todayRow) : '';
+
+    const _lpCardHTML = (rows) => `
+      <div class="tp-card" id="tpTodayLpCard" style="margin-top:14px">
+        <div class="tp-card-top">
+          <div>
+            <div class="tp-card-name">Today's Lecture Plan${rows.length > 1 ? ` · ${rows.length} sessions` : ''}</div>
+            <div class="tp-card-sub">${lpa.lpCode ? lpa.lpCode + ' — ' : ''}${lpa.lpTitle || ''}</div>
+          </div>
+        </div>
+        ${rows.map(_lpRowHTML).join('')}
+      </div>`;
+
+    const todayLpHTML = todayRows.length ? _lpCardHTML(todayRows) : '';
 
     el.innerHTML = headerHTML + `
       <div class="tp-att-statbar" id="tpStatBar" style="margin-top:16px"></div>
@@ -769,37 +796,59 @@ export const TeacherPortalModule = {
       </div>
       ${todayLpHTML}`;
 
-    // Wire the Mark Done/Pending toggle. Writes through the same
-    // LecturePlanService.markRow the admin editor uses, then pushes
-    // the whole lecturePlans/lpRows/lpAssignments payload to the
-    // backend via LecturePlanStorage.setLectureData — this also
-    // invalidates its 2-minute read cache, so the Lecture Plans page
+    // Push the current lecturePlans/lpRows/lpAssignments state to the
+    // backend and invalidate the read cache, so the Lecture Plans page
     // picks up the change on next visit instead of showing stale data.
-    if (todayRow && canMark) {
-      const _onLpMarkClick = () => {
-        const btn = el.querySelector('#tpLpMarkBtn');
-        if (!btn) return;
-        btn.disabled = true;
-        btn.style.opacity = '.6';
+    const _persistLpChange = () => {
+      LecturePlanStorage.setLectureData({
+        lecturePlans:  AppState.get('lecturePlans')  || [],
+        lpRows:        AppState.get('lpRows')        || {},
+        lpAssignments: AppState.get('lpAssignments') || {},
+      });
+    };
 
-        const willBeDone = todayRow.status !== 'Done';
-        LecturePlanService.markRow(batch.id, todayRow.id, willBeDone);
+    if (todayRows.length && canMark) {
+      const _wireLpCard = () => {
+        const card = el.querySelector('#tpTodayLpCard');
+        if (!card) return;
 
-        LecturePlanStorage.setLectureData({
-          lecturePlans:  AppState.get('lecturePlans')  || [],
-          lpRows:        AppState.get('lpRows')        || {},
-          lpAssignments: AppState.get('lpAssignments') || {},
+        card.querySelectorAll('[data-lp-mark]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const row = todayRows.find(r => r.id === btn.dataset.lpMark);
+            if (!row) return;
+            btn.disabled = true;
+            btn.style.opacity = '.6';
+
+            const willBeDone = row.status !== 'Done';
+            LecturePlanService.markRow(batch.id, row.id, willBeDone);
+            _persistLpChange();
+            row.status = willBeDone ? 'Done' : 'Pending';
+
+            card.outerHTML = _lpCardHTML(todayRows);
+            _wireLpCard(); // card node was just replaced — re-attach everything
+            Toast.success(willBeDone ? 'Marked as Done.' : 'Marked as Pending.');
+          });
         });
 
-        todayRow.status = willBeDone ? 'Done' : 'Pending';
-        const cardEl = el.querySelector('#tpTodayLpCard');
-        if (cardEl) cardEl.outerHTML = _lpCardHTML(todayRow);
-        // The card node above was just replaced — re-attach to the new button.
-        el.querySelector('#tpLpMarkBtn')?.addEventListener('click', _onLpMarkClick);
-
-        Toast.success(willBeDone ? 'Marked as Done.' : 'Marked as Pending.');
+        card.querySelectorAll('[data-lp-remark]').forEach(input => {
+          const _saveRemark = () => {
+            const row = todayRows.find(r => r.id === input.dataset.lpRemark);
+            if (!row) return;
+            const val = input.value.trim();
+            if (val === (row.remarks || '')) return; // unchanged — nothing to save
+            row.remarks = val;
+            LecturePlanService.setRowRemark(batch.id, row.id, val);
+            _persistLpChange();
+            Toast.success('Remark saved.');
+          };
+          input.addEventListener('blur', _saveRemark);
+          input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+          });
+        });
       };
-      el.querySelector('#tpLpMarkBtn')?.addEventListener('click', _onLpMarkClick);
+
+      _wireLpCard();
     }
 
     backWire();
