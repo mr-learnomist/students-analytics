@@ -324,6 +324,19 @@ export const TeacherPortalModule = {
     renderTabs();
     renderGrid();
     searchEl.addEventListener('input', () => renderGrid(searchEl.value));
+
+    // Warm the LP cache in the background as soon as My Batches loads —
+    // this is almost always the first page a teacher lands on. By the
+    // time they pick a batch and open its attendance, LecturePlanStorage
+    // (2-min cache) is often already fresh, so _renderAttendanceView's
+    // loadLectureData(120000) call resolves instantly instead of being
+    // the thing the teacher waits on for that first click of the day.
+    LecturePlanStorage.loadLectureData(120000).then(fresh => {
+      if (!fresh) return;
+      if (Array.isArray(fresh.lecturePlans)) AppState._silentSet('lecturePlans', fresh.lecturePlans);
+      if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
+      if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
+    }).catch(() => { /* best-effort — first batch click will just fetch it then */ });
   },
 
   // ══════════════════════════════════════════════════════════
@@ -402,7 +415,7 @@ export const TeacherPortalModule = {
     }
 
     el.innerHTML = `<div id="tpAssessmentCalMount"></div>`;
-    AssessmentCalendarTab.mount(el.querySelector('#tpAssessmentCalMount'), { allowedBatchIds });
+    AssessmentCalendarTab.mount(el.querySelector('#tpAssessmentCalMount'), { allowedBatchIds, readOnly: true });
   },
 
   _renderLecturePlans(el, teacher) {
