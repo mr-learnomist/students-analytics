@@ -14,6 +14,7 @@ import { Toast }         from '../../utils/helpers.js';
 import { _avatarHTML }   from './teacherUI.js';
 import LecturePlanStorage from '../../utils/lecturePlanStorage.js';
 import { LecturePlanService } from '../lecturePlan/lecturePlanService.js';
+import { AssessmentCalendarTab } from '../testing/assessmentCalendar.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -353,6 +354,55 @@ export const TeacherPortalModule = {
     }
 
     this._renderLecturePlans(el, teacher);
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // ASSESSMENT SCHEDULE PAGE — sidebar entry point, own route.
+  // Reuses the SAME AssessmentCalendarTab the admin panel uses, just
+  // hard-scoped (via mount's allowedBatchIds) to batches that are
+  // BOTH assigned to this teacher AND have a Lecture Plan assigned —
+  // a batch with no LP has nothing here, even if an admin manually
+  // scheduled a test for it outside the LP.
+  // ══════════════════════════════════════════════════════════
+  mountAssessmentSchedule(el) {
+    if (!el) return;
+    _injectStyles();
+
+    const session = Auth.getCurrentUser();
+    if (!session || !session.isTeacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          This page is only available to teacher accounts.
+        </div>`;
+      return;
+    }
+
+    const teacher = AppState.findById('teachers', session.userId);
+    if (!teacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          Your teacher profile could not be found. Please contact your administrator.
+        </div>`;
+      return;
+    }
+
+    const allBatches = AppState.get('batches')      || [];
+    const lpaMap      = AppState.get('lpAssignments') || {};
+
+    const allowedBatchIds = allBatches
+      .filter(b => b.teacherId === teacher.id && lpaMap[b.id])
+      .map(b => b.id);
+
+    if (!allowedBatchIds.length) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          None of your batches have an assigned Lecture Plan yet — nothing to show here.
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = `<div id="tpAssessmentCalMount"></div>`;
+    AssessmentCalendarTab.mount(el.querySelector('#tpAssessmentCalMount'), { allowedBatchIds });
   },
 
   _renderLecturePlans(el, teacher) {
