@@ -308,7 +308,7 @@ function registerRoutes() {
     // When one of these is ready to be built, swap its mount to a real
     // module call — no index.html changes needed at that point.
     .register('teacherTimetable',          { permission: 'teacherPortal', title: 'Timetable',            mount: null })
-    .register('teacherAssessmentSchedule', { permission: 'teacherPortal', title: 'Assessment Schedule',  mount: null })
+    .register('teacherAssessmentSchedule', { permission: 'teacherPortal', title: 'Assessment Schedule',  mount: (el) => TeacherPortalModule.mountAssessmentSchedule(el.querySelector('#teacherAssessmentScheduleMount')) })
     .register('teacherResultProfile',      { permission: 'teacherPortal', title: 'Result Profile',       mount: null })
     .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: null })
     .register('teacherLeaves',             { permission: 'teacherPortal', title: 'Leaves',               mount: null })
