@@ -339,6 +339,19 @@ export const TeacherPortalModule = {
       if (fresh.lpRows)                      AppState._silentSet('lpRows', fresh.lpRows);
       if (fresh.lpAssignments)               AppState._silentSet('lpAssignments', fresh.lpAssignments);
     }).catch(() => { /* best-effort — first batch click will just fetch it then */ });
+
+    // Prefetch TODAY's attendance for active batches only, right when
+    // My Batches loads — so by the time the teacher taps "Mark
+    // Attendance" on one of them, the data is often already there.
+    // Closed batches are deliberately skipped here: they're rarely
+    // opened, so there's no point paying that cost for every teacher
+    // on every login — those still just fetch normally, on demand,
+    // when actually opened.
+    myBatches
+      .filter(b => _status(b) === 'active')
+      .forEach(b => {
+        fetchAndSyncBatchAttendance(b.id, today).catch(() => { /* best-effort — click-time fetch is the fallback */ });
+      });
   },
 
   // ══════════════════════════════════════════════════════════
@@ -813,13 +826,17 @@ export const TeacherPortalModule = {
     // mid-day, so a teacher opening several batches back-to-back won't
     // re-trigger that full download each time.
     //
-    // - fetchAndSyncBatchAttendance: several teachers/admins could be
-    //   marking the same batch concurrently, so we need fresh records —
-    //   no caching here, always live.
+    // - fetchAndSyncBatchAttendance(…, 45000): reuses the My Batches
+    //   page's background prefetch (active batches only) if it ran in
+    //   the last 45s — that's what makes this click feel instant right
+    //   after landing on My Batches. Closed batches were never
+    //   prefetched, so this is a cache MISS for them and they just
+    //   fetch fresh, same as before. 45s is short enough that we're
+    //   still effectively live for concurrent multi-teacher marking.
     // - LecturePlanStorage.loadLectureData(120000): served from the
     //   2-minute cache when available; only hits the network if stale.
     const [, lpResult] = await Promise.allSettled([
-      fetchAndSyncBatchAttendance(batch.id, today),
+      fetchAndSyncBatchAttendance(batch.id, today, 45000),
       LecturePlanStorage.loadLectureData(120000),
     ]);
 
