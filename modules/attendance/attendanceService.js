@@ -74,32 +74,61 @@ async function _apiDelete(recordId) {
 // with a long running history. Omit `date` to keep the old
 // full-history behaviour (used by admin views that need past dates).
 //
+// `maxAgeMs` is OPTIONAL (default 0 = always hit the network, old
+// behaviour — needed for the actual attendance-marking screen since
+// several teachers/admins could be marking concurrently and it must
+// show the latest state). Pass maxAgeMs > 0 to reuse a recent fetch
+// for this exact batchId+date instead of re-fetching — this is what
+// lets a login-time prefetch of active batches actually save time
+// when the teacher then clicks into one, rather than just doubling
+// the network calls.
+//
 // NOTE: this only speeds things up if the backend /api/attendance
 // GET handler actually filters by the `date` query param. If the
 // endpoint currently ignores unknown params, ask the backend dev to
 // add that filter — that's where the real time savings come from.
-export async function fetchAndSyncBatchAttendance(batchId, date = null) {
-  try {
-    const qs = date
-      ? `batchId=${batchId}&date=${encodeURIComponent(date)}`
-      : `batchId=${batchId}`;
-    const res = await fetch(`${_API_BASE}?${qs}`, {
-      headers: { 'x-api-key': _API_KEY() },
-    });
-    if (!res.ok) return;
-    const { records } = await res.json();
-    if (!Array.isArray(records)) return;
+const _lastFetchAt = {}; // `${batchId}__${date||'all'}` -> timestamp
+const _inflight     = {}; // same key -> in-progress Promise (de-dupe concurrent calls)
 
-    // Merge fetched records into local AppState cache
-    const existing = AppState.get(RECORDS_KEY) || [];
-    const map = {};
-    existing.forEach(r => { map[r.id] = r; });
-    records.forEach(r => { map[r.id] = r; });
-    // Direct set without triggering saveState (read-only sync)
-    AppState._silentSet(RECORDS_KEY, Object.values(map));
-  } catch (e) {
-    console.error('[AttendanceService] fetchAndSync error:', e.message);
+export async function fetchAndSyncBatchAttendance(batchId, date = null, maxAgeMs = 0) {
+  const key = `${batchId}__${date || 'all'}`;
+
+  if (maxAgeMs > 0 && _lastFetchAt[key] && (Date.now() - _lastFetchAt[key]) < maxAgeMs) {
+    return true; // recent enough — trust what's already in AppState (from the earlier fetch)
   }
+  if (_inflight[key]) return _inflight[key]; // a fetch for this exact batch+date is already running
+
+  const _run = async () => {
+    try {
+      const qs = date
+        ? `batchId=${batchId}&date=${encodeURIComponent(date)}`
+        : `batchId=${batchId}`;
+      const res = await fetch(`${_API_BASE}?${qs}`, {
+        headers: { 'x-api-key': _API_KEY() },
+      });
+      if (!res.ok) return false;
+      const { records } = await res.json();
+      if (!Array.isArray(records)) return false;
+
+      // Merge fetched records into local AppState cache
+      const existing = AppState.get(RECORDS_KEY) || [];
+      const map = {};
+      existing.forEach(r => { map[r.id] = r; });
+      records.forEach(r => { map[r.id] = r; });
+      // Direct set without triggering saveState (read-only sync)
+      AppState._silentSet(RECORDS_KEY, Object.values(map));
+      _lastFetchAt[key] = Date.now();
+      return true;
+    } catch (e) {
+      console.error('[AttendanceService] fetchAndSync error:', e.message);
+      return false;
+    } finally {
+      delete _inflight[key];
+    }
+  };
+
+  _inflight[key] = _run();
+  return _inflight[key];
 }
 
 // Day index constants (mirrors JS Date.getDay())
