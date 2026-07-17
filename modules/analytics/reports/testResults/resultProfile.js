@@ -999,6 +999,25 @@ export const ResultProfile = {
       return;
     }
 
+    // Teacher-scoped instances: a specific Batch must be picked before
+    // showing a table. Without a pinned batch, a subject/campus-only
+    // query pulls test columns from EVERY one of the teacher's batches
+    // that share that subject, merged into one table — which doesn't
+    // match a single batch's roster. Requiring a batch keeps every
+    // column and every row scoped to exactly that one batch.
+    if (Array.isArray(this._allowedBatchIds) && !this._appliedFilter.batch) {
+      area.innerHTML = `
+        <div class="rp-empty">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1.3" style="color:var(--t4)">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          <p>Select a batch to view results</p>
+          <span>Choose a specific batch from "Select Filter" above — results are shown one batch at a time here.</span>
+        </div>`;
+      return;
+    }
+
     // ── Build data ──────────────────────────────────────────────
     const f = this._appliedFilter;
 
