@@ -134,10 +134,11 @@ function _injectStyles() {
     /* ── Student notes ── */
     .tn-student-layout { display:grid; grid-template-columns:260px 1fr; gap:16px; align-items:start; }
     @media (max-width:720px) { .tn-student-layout { grid-template-columns:1fr; } }
-    .tn-student-search {
+    .tn-search-input {
       width:100%; height:34px; padding:0 12px; border-radius:9px; border:1px solid var(--border2);
       background:var(--surface); color:var(--t1); font-size:12.5px; margin-bottom:8px;
     }
+    .tn-search-input:focus { outline:none; border-color:var(--blue); }
     .tn-student-list { display:flex; flex-direction:column; gap:4px; max-height:520px; overflow-y:auto; }
     .tn-student-item {
       display:flex; flex-direction:column; padding:8px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent;
@@ -213,6 +214,8 @@ export const TeacherNotesModule = {
     this._tab = 'sticky';
     this._selectedStudentId = null;
     this._studentSearch = '';
+    this._stickySearch = '';
+    this._taskSearch = '';
 
     el.innerHTML = `<div class="tn-empty">Loading your notes…</div>`;
     await fetchAndSyncTeacherNotes(ctx.teacher.id);
@@ -263,8 +266,13 @@ export const TeacherNotesModule = {
   // ══════════════════════════════════════════════════════════
   _renderSticky(host) {
     const teacherId = this._ctx.teacher.id;
-    const notes = TeacherNotesService.getByKind(teacherId, 'sticky')
+    const allNotes = TeacherNotesService.getByKind(teacherId, 'sticky')
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+    const q = this._stickySearch.trim().toLowerCase();
+    const notes = !q ? allNotes : allNotes.filter(n =>
+      (n.title || '').toLowerCase().includes(q) || (n.body || '').toLowerCase().includes(q)
+    );
 
     const cardHTML = (note, editing) => {
       const bg = STICKY_COLORS[note.color] || STICKY_COLORS.yellow;
@@ -301,14 +309,22 @@ export const TeacherNotesModule = {
     };
 
     host.innerHTML = `
+      <input type="text" class="tn-search-input" id="tnStickySearch" placeholder="Search sticky notes…" value="${_escAttr(this._stickySearch)}" />
       <div class="tn-toolbar">
         <span style="font-size:12px;color:var(--t3)">${notes.length} note${notes.length === 1 ? '' : 's'}</span>
         <button class="tn-btn" id="tnNewSticky">${ICON.plus} New Note</button>
       </div>
       ${notes.length
         ? `<div class="tn-sticky-grid" id="tnStickyGrid">${notes.map(n => cardHTML(n, false)).join('')}</div>`
-        : `<div class="tn-empty">No sticky notes yet. Click "New Note" to add one.</div>`}
+        : `<div class="tn-empty">${allNotes.length ? 'No notes match your search.' : 'No sticky notes yet. Click "New Note" to add one.'}</div>`}
     `;
+
+    host.querySelector('#tnStickySearch')?.addEventListener('input', (e) => {
+      this._stickySearch = e.target.value;
+      this._renderSticky(host);
+      const s = host.querySelector('#tnStickySearch');
+      if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    });
 
     const _wireCard = (note, editing) => {
       const card = host.querySelector(`.tn-sticky-card[data-id="${note.id}"]`);
@@ -392,8 +408,11 @@ export const TeacherNotesModule = {
   // ══════════════════════════════════════════════════════════
   _renderTasks(host) {
     const teacherId = this._ctx.teacher.id;
-    const tasks = TeacherNotesService.getByKind(teacherId, 'task');
+    const allTasks = TeacherNotesService.getByKind(teacherId, 'task');
     const today = toISODate(new Date());
+
+    const q = this._taskSearch.trim().toLowerCase();
+    const tasks = !q ? allTasks : allTasks.filter(t => (t.title || '').toLowerCase().includes(q));
 
     const pending = tasks.filter(t => t.status !== 'done')
       .sort((a, b) => (a.endDate || a.startDate || '9999') < (b.endDate || b.startDate || '9999') ? -1 : 1);
@@ -484,6 +503,7 @@ export const TeacherNotesModule = {
       </div>` : '';
 
     host.innerHTML = `
+      <input type="text" class="tn-search-input" id="tnTaskSearch" placeholder="Search tasks…" value="${_escAttr(this._taskSearch)}" />
       <div class="tn-task-form">
         <input type="text" id="tnTaskTitle" placeholder="Add an important task…" />
         <label class="tn-task-date-field">
@@ -502,7 +522,7 @@ export const TeacherNotesModule = {
         <button class="tn-btn" id="tnTaskAdd">${ICON.plus} Add Task</button>
       </div>
 
-      ${tasks.length ? '' : '<div class="tn-empty" style="margin-top:14px">No tasks yet — add your first one above.</div>'}
+      ${tasks.length ? '' : `<div class="tn-empty" style="margin-top:14px">${allTasks.length ? 'No tasks match your search.' : 'No tasks yet — add your first one above.'}</div>`}
 
       ${pending.length ? `
         <div class="tn-task-group-label" style="margin-top:16px">Pending (${pending.length})</div>
@@ -516,6 +536,13 @@ export const TeacherNotesModule = {
 
       ${timelineHTML}
     `;
+
+    host.querySelector('#tnTaskSearch')?.addEventListener('input', (e) => {
+      this._taskSearch = e.target.value;
+      this._renderTasks(host);
+      const s = host.querySelector('#tnTaskSearch');
+      if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    });
 
     host.querySelector('#tnTaskAdd')?.addEventListener('click', () => {
       const titleEl = host.querySelector('#tnTaskTitle');
@@ -650,7 +677,7 @@ export const TeacherNotesModule = {
     host.innerHTML = `
       <div class="tn-student-layout">
         <div>
-          <input type="text" class="tn-student-search" id="tnStudentSearch" placeholder="Search students…" value="${_escAttr(this._studentSearch)}" />
+          <input type="text" class="tn-search-input" id="tnStudentSearch" placeholder="Search students…" value="${_escAttr(this._studentSearch)}" />
           <div class="tn-student-list" id="tnStudentList">${listHTML()}</div>
         </div>
         <div class="tn-student-panel" id="tnStudentPanel">${panelHTML()}</div>
