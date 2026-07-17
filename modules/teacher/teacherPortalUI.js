@@ -15,6 +15,7 @@ import { _avatarHTML }   from './teacherUI.js';
 import LecturePlanStorage from '../../utils/lecturePlanStorage.js';
 import { LecturePlanService } from '../lecturePlan/lecturePlanService.js';
 import { AssessmentCalendarTab } from '../testing/assessmentCalendar.js';
+import { TeacherNotesModule } from './teacherNotesUI.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -416,6 +417,54 @@ export const TeacherPortalModule = {
 
     el.innerHTML = `<div id="tpAssessmentCalMount"></div>`;
     AssessmentCalendarTab.mount(el.querySelector('#tpAssessmentCalMount'), { allowedBatchIds, readOnly: true });
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // NOTES PAGE — sidebar entry point, own route.
+  // Sticky notes, tasks (+ timeline), and per-student notes —
+  // entirely personal to the logged-in teacher.
+  // ══════════════════════════════════════════════════════════
+  mountNotes(el) {
+    if (!el) return;
+    _injectStyles();
+
+    const session = Auth.getCurrentUser();
+    if (!session || !session.isTeacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          This page is only available to teacher accounts.
+        </div>`;
+      return;
+    }
+
+    const teacher = AppState.findById('teachers', session.userId);
+    if (!teacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          Your teacher profile could not be found. Please contact your administrator.
+        </div>`;
+      return;
+    }
+
+    // Full roster across every batch this teacher teaches, so Student
+    // Notes can be written about any of their students, same active-
+    // enrolment rule used on the attendance sheet.
+    const allBatches  = AppState.get('batches') || [];
+    const myBatches   = allBatches.filter(b => b.teacherId === teacher.id);
+    const enrolments  = AppState.get('enrolments') || [];
+
+    const students = [];
+    myBatches.forEach(batch => {
+      enrolments
+        .filter(e => e.batchId === batch.id && e.status === 'active')
+        .forEach(e => {
+          const stu = AppState.findById('students', e.studentId);
+          if (stu) students.push({ id: stu.id, studentName: stu.studentName, batchId: batch.id, batchName: batch.batchName });
+        });
+    });
+    students.sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+
+    TeacherNotesModule.mount(el, { teacher, students });
   },
 
   _renderLecturePlans(el, teacher) {
