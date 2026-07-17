@@ -16,6 +16,7 @@ import LecturePlanStorage from '../../utils/lecturePlanStorage.js';
 import { LecturePlanService } from '../lecturePlan/lecturePlanService.js';
 import { AssessmentCalendarTab } from '../testing/assessmentCalendar.js';
 import { TeacherNotesModule } from './teacherNotesUI.js';
+import { ResultProfile } from '../analytics/reports/testResults/resultProfile.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -465,6 +466,52 @@ export const TeacherPortalModule = {
     students.sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
 
     TeacherNotesModule.mount(el, { teacher, students });
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // RESULT PROFILE PAGE — sidebar entry point, own route.
+  // Reuses the SAME ResultProfile report the admin panel uses, hard-
+  // scoped (via mount's allowedBatchIds) to batches assigned to this
+  // teacher — a batch not assigned to them never appears, in the
+  // filters or in any result row.
+  // ══════════════════════════════════════════════════════════
+  mountResultProfile(el) {
+    if (!el) return;
+    _injectStyles();
+
+    const session = Auth.getCurrentUser();
+    if (!session || !session.isTeacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          This page is only available to teacher accounts.
+        </div>`;
+      return;
+    }
+
+    const teacher = AppState.findById('teachers', session.userId);
+    if (!teacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          Your teacher profile could not be found. Please contact your administrator.
+        </div>`;
+      return;
+    }
+
+    const allBatches = AppState.get('batches') || [];
+    const allowedBatchIds = allBatches
+      .filter(b => b.teacherId === teacher.id)
+      .map(b => b.id);
+
+    if (!allowedBatchIds.length) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          No batches are assigned to you yet — nothing to show here.
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = `<div id="tpResultProfileMount"></div>`;
+    ResultProfile.mount(el.querySelector('#tpResultProfileMount'), { allowedBatchIds });
   },
 
   _renderLecturePlans(el, teacher) {
