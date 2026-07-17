@@ -310,7 +310,7 @@ function registerRoutes() {
     .register('teacherTimetable',          { permission: 'teacherPortal', title: 'Timetable',            mount: null })
     .register('teacherAssessmentSchedule', { permission: 'teacherPortal', title: 'Assessment Schedule',  mount: (el) => TeacherPortalModule.mountAssessmentSchedule(el.querySelector('#teacherAssessmentScheduleMount')) })
     .register('teacherResultProfile',      { permission: 'teacherPortal', title: 'Result Profile',       mount: null })
-    .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: null })
+    .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: (el) => TeacherPortalModule.mountNotes(el.querySelector('#teacherNotesMount')) })
     .register('teacherLeaves',             { permission: 'teacherPortal', title: 'Leaves',               mount: null })
     .register('teacherNotification',       { permission: 'teacherPortal', title: 'Notification',         mount: null })
     .register('batches',    { permission: 'batches',    title: 'Batches',     mount: (el) => BatchModule.mount(el.querySelector('#batchMount')) })
