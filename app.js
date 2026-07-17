@@ -309,7 +309,7 @@ function registerRoutes() {
     // module call — no index.html changes needed at that point.
     .register('teacherTimetable',          { permission: 'teacherPortal', title: 'Timetable',            mount: null })
     .register('teacherAssessmentSchedule', { permission: 'teacherPortal', title: 'Assessment Schedule',  mount: (el) => TeacherPortalModule.mountAssessmentSchedule(el.querySelector('#teacherAssessmentScheduleMount')) })
-    .register('teacherResultProfile',      { permission: 'teacherPortal', title: 'Result Profile',       mount: null })
+    .register('teacherResultProfile',      { permission: 'teacherPortal', title: 'Result Profile',       mount: (el) => TeacherPortalModule.mountResultProfile(el.querySelector('#teacherResultProfileMount')) })
     .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: (el) => TeacherPortalModule.mountNotes(el.querySelector('#teacherNotesMount')) })
     .register('teacherLeaves',             { permission: 'teacherPortal', title: 'Leaves',               mount: null })
     .register('teacherNotification',       { permission: 'teacherPortal', title: 'Notification',         mount: null })
