@@ -84,6 +84,8 @@ function _injectStyles() {
       height:32px; padding:0 10px; border-radius:8px; border:1px solid var(--border2);
       background:var(--surface); color:var(--t1); font-size:12.5px; font-family:inherit;
     }
+    .tn-task-date-field { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--t3); font-weight:600; }
+    .tn-task-date-field input { height:32px; }
     .tn-task-group-label { font-size:11.5px; font-weight:800; letter-spacing:.03em; color:var(--t3); text-transform:uppercase; margin:4px 2px; }
     .tn-task-list { display:flex; flex-direction:column; gap:8px; }
     .tn-task-row {
@@ -103,6 +105,21 @@ function _injectStyles() {
     .tn-task-priority { font-weight:700; }
     .tn-task-due { color:var(--t3); }
     .tn-task-due.overdue { color:var(--red); font-weight:700; }
+
+    .tn-task-row--editing { flex-direction:column; align-items:stretch; }
+    .tn-task-edit-form { display:flex; flex-direction:column; gap:8px; width:100%; }
+    .tn-task-edit-title {
+      width:100%; height:32px; padding:0 10px; border-radius:8px; border:1px solid var(--border2);
+      background:var(--surface2); color:var(--t1); font-size:12.5px; font-family:inherit;
+    }
+    .tn-task-edit-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .tn-task-edit-row select {
+      height:32px; padding:0 10px; border-radius:8px; border:1px solid var(--border2);
+      background:var(--surface2); color:var(--t1); font-size:12.5px; font-family:inherit;
+    }
+    .tn-task-edit-form .tn-editor-actions { justify-content:flex-end; }
+    .tn-task-edit-form .tn-editor-save   { background:var(--blue); color:#fff; }
+    .tn-task-edit-form .tn-editor-cancel { background:var(--surface2); color:var(--t2); border:1px solid var(--border2); }
 
     .tn-timeline { display:flex; flex-direction:column; gap:14px; margin-top:6px; }
     .tn-timeline-date { font-size:11.5px; font-weight:800; color:var(--t3); }
@@ -379,14 +396,24 @@ export const TeacherNotesModule = {
     const today = toISODate(new Date());
 
     const pending = tasks.filter(t => t.status !== 'done')
-      .sort((a, b) => (a.dueDate || '9999') < (b.dueDate || '9999') ? -1 : 1);
+      .sort((a, b) => (a.endDate || a.startDate || '9999') < (b.endDate || b.startDate || '9999') ? -1 : 1);
     const done = tasks.filter(t => t.status === 'done')
       .sort((a, b) => new Date(b.completedAt || b.updatedAt) - new Date(a.completedAt || a.updatedAt));
+
+    const _dateRangeLabel = (task) => {
+      const { startDate, endDate } = task;
+      if (!startDate && !endDate) return '';
+      if (startDate && endDate && startDate !== endDate) {
+        return `${formatDisplayDate(startDate)} → ${formatDisplayDate(endDate)}`;
+      }
+      return `Deadline ${formatDisplayDate(endDate || startDate)}`;
+    };
 
     const taskRowHTML = (task) => {
       const pr = PRIORITY_CFG[task.priority] || PRIORITY_CFG.medium;
       const isDone = task.status === 'done';
-      const overdue = !isDone && task.dueDate && task.dueDate < today;
+      const overdue = !isDone && task.endDate && task.endDate < today;
+      const rangeLabel = _dateRangeLabel(task);
       return `
         <div class="tn-task-row ${isDone ? 'done' : ''}" data-id="${task.id}">
           <button class="tn-task-check ${isDone ? 'checked' : ''}" data-toggle="${task.id}" title="${isDone ? 'Mark pending' : 'Mark done'}">
@@ -396,12 +423,33 @@ export const TeacherNotesModule = {
             <div class="tn-task-title ${isDone ? 'strike' : ''}">${_esc(task.title)}</div>
             <div class="tn-task-meta">
               <span class="tn-task-priority" style="color:${pr.color}">${pr.label}</span>
-              ${task.dueDate ? `<span class="tn-task-due ${overdue ? 'overdue' : ''}">${overdue ? 'Overdue · ' : 'Due '}${formatDisplayDate(task.dueDate)}</span>` : ''}
+              ${rangeLabel ? `<span class="tn-task-due ${overdue ? 'overdue' : ''}">${overdue ? 'Overdue · ' : ''}${rangeLabel}</span>` : ''}
             </div>
           </div>
+          <button class="tn-icon-btn" data-edit="${task.id}" title="Edit">${ICON.edit}</button>
           <button class="tn-icon-btn" data-delete="${task.id}" title="Delete">${ICON.trash}</button>
         </div>`;
     };
+
+    const taskEditHTML = (task) => `
+      <div class="tn-task-row tn-task-row--editing" data-id="${task.id}">
+        <div class="tn-task-edit-form">
+          <input type="text" class="tn-task-edit-title" value="${_escAttr(task.title)}" placeholder="Task title" />
+          <div class="tn-task-edit-row">
+            <label class="tn-task-date-field"><span>Start</span><input type="date" class="tn-task-edit-start" value="${task.startDate || ''}" /></label>
+            <label class="tn-task-date-field"><span>Deadline</span><input type="date" class="tn-task-edit-end" value="${task.endDate || ''}" /></label>
+            <select class="tn-task-edit-priority">
+              <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>Medium priority</option>
+              <option value="high"   ${task.priority === 'high'   ? 'selected' : ''}>High priority</option>
+              <option value="low"    ${task.priority === 'low'    ? 'selected' : ''}>Low priority</option>
+            </select>
+          </div>
+          <div class="tn-editor-actions">
+            <button class="tn-editor-cancel" data-cancel-edit="${task.id}">Cancel</button>
+            <button class="tn-editor-save" data-save-edit="${task.id}">Save</button>
+          </div>
+        </div>
+      </div>`;
 
     // Timeline — created + completed events, newest first, grouped by date.
     const events = [];
@@ -438,7 +486,14 @@ export const TeacherNotesModule = {
     host.innerHTML = `
       <div class="tn-task-form">
         <input type="text" id="tnTaskTitle" placeholder="Add an important task…" />
-        <input type="date" id="tnTaskDue" />
+        <label class="tn-task-date-field">
+          <span>Start</span>
+          <input type="date" id="tnTaskStart" />
+        </label>
+        <label class="tn-task-date-field">
+          <span>Deadline</span>
+          <input type="date" id="tnTaskEnd" />
+        </label>
         <select id="tnTaskPriority">
           <option value="medium">Medium priority</option>
           <option value="high">High priority</option>
@@ -464,13 +519,20 @@ export const TeacherNotesModule = {
 
     host.querySelector('#tnTaskAdd')?.addEventListener('click', () => {
       const titleEl = host.querySelector('#tnTaskTitle');
-      const dueEl   = host.querySelector('#tnTaskDue');
+      const startEl = host.querySelector('#tnTaskStart');
+      const endEl   = host.querySelector('#tnTaskEnd');
       const prEl    = host.querySelector('#tnTaskPriority');
       const title = titleEl.value.trim();
       if (!title) { titleEl.focus(); return; }
+      if (startEl.value && endEl.value && endEl.value < startEl.value) {
+        Toast.error('Deadline can\'t be before the start date.');
+        endEl.focus();
+        return;
+      }
       TeacherNotesService.create({
         teacherId, kind: 'task', title,
-        dueDate: dueEl.value || null,
+        startDate: startEl.value || null,
+        endDate:   endEl.value   || null,
         priority: prEl.value,
         status: 'pending',
         completedAt: null,
@@ -492,6 +554,35 @@ export const TeacherNotesModule = {
           completedAt: willBeDone ? new Date().toISOString() : null,
         });
         this._renderTasks(host);
+      });
+    });
+
+    host.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const task = tasks.find(t => t.id === btn.dataset.edit);
+        if (!task) return;
+        const row = host.querySelector(`.tn-task-row[data-id="${task.id}"]`);
+        if (!row) return;
+        row.outerHTML = taskEditHTML(task);
+
+        const editRow = host.querySelector(`.tn-task-row--editing[data-id="${task.id}"]`);
+        editRow.querySelector(`[data-cancel-edit="${task.id}"]`)?.addEventListener('click', () => {
+          this._renderTasks(host);
+        });
+        editRow.querySelector(`[data-save-edit="${task.id}"]`)?.addEventListener('click', () => {
+          const title = editRow.querySelector('.tn-task-edit-title').value.trim();
+          const startVal = editRow.querySelector('.tn-task-edit-start').value || null;
+          const endVal   = editRow.querySelector('.tn-task-edit-end').value   || null;
+          const priority = editRow.querySelector('.tn-task-edit-priority').value;
+          if (!title) { editRow.querySelector('.tn-task-edit-title').focus(); return; }
+          if (startVal && endVal && endVal < startVal) {
+            Toast.error('Deadline can\'t be before the start date.');
+            return;
+          }
+          TeacherNotesService.update(task.id, { title, startDate: startVal, endDate: endVal, priority });
+          Toast.success('Task updated.');
+          this._renderTasks(host);
+        });
       });
     });
     host.querySelectorAll('[data-delete]').forEach(btn => {
