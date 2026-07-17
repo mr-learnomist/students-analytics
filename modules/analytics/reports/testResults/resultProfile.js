@@ -687,7 +687,13 @@ export const ResultProfile = {
   // Applied filter (drives table)
   _appliedFilter: null,   // null = nothing applied yet
 
-  mount(container) {
+  // When set (array of batch IDs), results are hard-restricted to just
+  // these batches — used by the Teacher Portal so a teacher only ever
+  // sees results for their own assigned batches, regardless of which
+  // campus/subject they pick in the filters. null = unrestricted (admin/default).
+  _allowedBatchIds: null,
+
+  mount(container, opts = {}) {
     if (!container) return;
     _injectStyles();
     this._container     = container;
@@ -699,6 +705,7 @@ export const ResultProfile = {
     this._selSubject    = '';
     this._selBatch      = '';
     this._appliedFilter = null;
+    this._allowedBatchIds = Array.isArray(opts.allowedBatchIds) ? opts.allowedBatchIds : null;
     this._render();
   },
 
@@ -752,7 +759,10 @@ export const ResultProfile = {
     const levels      = _getLevels(this._selDiscipline);
     const sessions    = _getSessions(this._selSubject);
     const subjects    = _getSubjectsFor({ disciplineId: this._selDiscipline, levelId: this._selLevel });
-    const batches     = _getBatchesFor({ disciplineId: this._selDiscipline, levelId: this._selLevel, subjectId: this._selSubject, sessionId: this._selSession, campusId: this._selCampus });
+    let batches        = _getBatchesFor({ disciplineId: this._selDiscipline, levelId: this._selLevel, subjectId: this._selSubject, sessionId: this._selSession, campusId: this._selCampus });
+    if (Array.isArray(this._allowedBatchIds)) {
+      batches = batches.filter(b => this._allowedBatchIds.includes(b.id));
+    }
 
     const sel = (id, label, opts, val, disabled = false) => `
       <div class="rp-filter-col">
@@ -996,7 +1006,14 @@ export const ResultProfile = {
     // If subject not explicitly selected, derive from batch.subjectId
     const batchForEntries = f.batch ? (_getBatches().find(b => b.id === f.batch) || {}) : {};
     const resolvedSubjectId = f.subject || batchForEntries.subjectId || '';
-    const entries = _buildEntries({ subjectId: resolvedSubjectId, batchId: f.batch || '' });
+    let entries = _buildEntries({ subjectId: resolvedSubjectId, batchId: f.batch || '' });
+
+    // Hard scope — always applied, cannot be widened by picking a
+    // different subject/campus in the filters. Used by the Teacher
+    // Portal so a teacher can never see another batch's results.
+    if (Array.isArray(this._allowedBatchIds)) {
+      entries = entries.filter(e => this._allowedBatchIds.includes(e.batchId));
+    }
 
     if (!entries.length) {
       area.innerHTML = `
