@@ -232,16 +232,35 @@ export const TeacherHorizonModule = {
   // Batch Health — same idea as the Result Profile report (average
   // marks % and pass rate), computed directly from testResults for
   // just this teacher's active batches.
+  //
+  // NOTE: raw testResults records do NOT carry a batchId — they're
+  // keyed by scheduleEntryId + studentId (Result Profile resolves the
+  // batch via the schedule/LP entry). Re-deriving that entry lookup
+  // here would need private helpers resultProfile.js doesn't export,
+  // so instead we attribute each result to a batch via the student's
+  // active enrolment in one of this teacher's batches — correct for
+  // the normal case of one enrolment per student per teacher.
   _computeBatchHealth(activeBatches) {
+    const studentToBatch = {};
+    activeBatches.forEach(batch => {
+      this._rosterFor(batch.id).forEach(stu => { studentToBatch[stu.id] = batch; });
+    });
+
     const results = AppState.get('testResults') || [];
+    const byBatchId = {};
+    results.forEach(r => {
+      if (r.marks == null || r.absent || !r.totalMarks) return;
+      const batch = studentToBatch[r.studentId];
+      if (!batch) return; // result belongs to a student not in any of this teacher's active batches
+      (byBatchId[batch.id] = byBatchId[batch.id] || { batch, recs: [] }).recs.push(r);
+    });
+
     return activeBatches.map(batch => {
-      const recs = results.filter(r =>
-        r.batchId === batch.id && r.marks != null && !r.absent && r.totalMarks
-      );
-      if (!recs.length) return null;
+      const bucket = byBatchId[batch.id];
+      if (!bucket || !bucket.recs.length) return null;
 
       let sumPct = 0, passCount = 0;
-      recs.forEach(r => {
+      bucket.recs.forEach(r => {
         const pct = (Number(r.marks) / Number(r.totalMarks)) * 100;
         sumPct += pct;
         const passMark = r.passMark != null ? Number(r.passMark) : Math.ceil(Number(r.totalMarks) * 0.5);
@@ -250,9 +269,9 @@ export const TeacherHorizonModule = {
 
       return {
         batch,
-        avgMarks: Math.round(sumPct / recs.length),
-        passRate: Math.round((passCount / recs.length) * 100),
-        count: recs.length,
+        avgMarks: Math.round(sumPct / bucket.recs.length),
+        passRate: Math.round((passCount / bucket.recs.length) * 100),
+        count: bucket.recs.length,
       };
     }).filter(Boolean);
   },
