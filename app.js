@@ -276,7 +276,7 @@ function showApp(user) {
   window.history.replaceState({}, '', window.location.pathname);
 
   try {
-    Router.navigate(user.role === 'teacher' ? 'teacherPortal' : 'dashboard');
+    Router.navigate(user.role === 'teacher' ? 'teacherHorizonView' : 'dashboard');
   } catch (navErr) {
     console.error('[Router] Navigation failed:', navErr);
     showLogin();
