@@ -260,6 +260,10 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
         <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="10"/></svg></span>
         <span class="nav-label sb-hide">Analytics</span>
       </a>
+      <a class="nav-item" data-route="teacherHorizonView" data-requires="teacherPortal" data-role="teacher">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+        <span class="nav-label sb-hide">Horizon View</span>
+      </a>
       <a class="nav-item" data-route="teacherPortal" data-requires="teacherPortal" data-role="teacher">
         <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
         <span class="nav-label sb-hide">My Batches</span>
@@ -445,6 +449,11 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
       <!-- BATCHES -->
       <div data-view="batches">
         <div id="batchMount"></div>
+      </div>
+
+      <!-- TEACHER HORIZON VIEW — dashboard: tasks, attendance risk, LP progress -->
+      <div data-view="teacherHorizonView">
+        <div id="teacherHorizonViewMount"></div>
       </div>
 
       <!-- TEACHER PORTAL -->
