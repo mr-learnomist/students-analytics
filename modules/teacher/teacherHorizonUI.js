@@ -94,6 +94,7 @@ function _injectStyles() {
     .hz-batch-tier-label.critical { color:var(--red); }
     .hz-batch-tier-label.risk     { color:#d97706; }
     .hz-batch-tier-label.alert    { color:#ca8a04; }
+    .hz-batch-tier-label.good     { color:var(--green); }
 
     /* By-student rows */
     .hz-student-row { border:1px solid var(--border2); border-radius:10px; margin-bottom:6px; overflow:hidden; }
@@ -111,6 +112,7 @@ function _injectStyles() {
     .critical-text { color:var(--red); }
     .risk-text     { color:#d97706; }
     .alert-text    { color:#ca8a04; }
+    .good-text     { color:var(--green); }
   `;
   document.head.appendChild(style);
 }
@@ -127,7 +129,7 @@ const ICON = {
   chev:  `<svg class="hz-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>`,
 };
 
-const TIER_LABEL = { critical: 'Critical', risk: 'Risk', alert: 'Alert' };
+const TIER_LABEL = { critical: 'Critical', risk: 'Risk', alert: 'Alert', good: 'Good' };
 
 export const TeacherHorizonModule = {
 
@@ -187,7 +189,7 @@ export const TeacherHorizonModule = {
     if (pct < 80) return 'critical';
     if (pct < 85) return 'risk';
     if (pct < 90) return 'alert';
-    return null;
+    return 'good';
   },
 
   // Builds, per active batch: roster with attendance % + P/A/L counts,
@@ -210,8 +212,9 @@ export const TeacherHorizonModule = {
       const critical = students.filter(s => this._tierFor(s.pct) === 'critical').sort((a, b) => a.pct - b.pct);
       const risk     = students.filter(s => this._tierFor(s.pct) === 'risk').sort((a, b) => a.pct - b.pct);
       const alert    = students.filter(s => this._tierFor(s.pct) === 'alert').sort((a, b) => a.pct - b.pct);
+      const good     = students.filter(s => this._tierFor(s.pct) === 'good').sort((a, b) => b.pct - a.pct);
 
-      return { batch, critical, risk, alert, flaggedCount: critical.length + risk.length + alert.length };
+      return { batch, students, critical, risk, alert, good, flaggedCount: critical.length + risk.length + alert.length };
     });
 
     const allFlagged = [];
@@ -398,23 +401,25 @@ export const TeacherHorizonModule = {
 
     body.innerHTML = sorted.map(b => {
       const isOpen = this._expandedBatches.has(b.batch.id);
+      const hasStudents = b.students.length > 0;
       return `
         <div class="hz-batch-row">
           <div class="hz-batch-row-hdr" data-toggle-batch="${b.batch.id}">
             ${ICON.chev.replace('class="hz-chev"', `class="hz-chev${isOpen ? ' open' : ''}"`)}
             <span class="name">${_esc(b.batch.batchName)}</span>
-            <span class="tally">
-              ${b.critical.length ? `<span class="hz-tier-tag critical">${b.critical.length} Critical</span>` : ''}
-              ${b.risk.length     ? `<span class="hz-tier-tag risk">${b.risk.length} Risk</span>`         : ''}
-              ${b.alert.length    ? `<span class="hz-tier-tag alert">${b.alert.length} Alert</span>`       : ''}
-              ${!b.flaggedCount   ? `<span class="hz-tier-tag ok">All good</span>`                          : ''}
-            </span>
+            ${hasStudents ? `
+              <span class="tally">
+                ${b.critical.length ? `<span class="hz-tier-tag critical">${b.critical.length} Critical</span>` : ''}
+                ${b.risk.length     ? `<span class="hz-tier-tag risk">${b.risk.length} Risk</span>`         : ''}
+                ${b.alert.length    ? `<span class="hz-tier-tag alert">${b.alert.length} Alert</span>`       : ''}
+                ${b.good.length     ? `<span class="hz-tier-tag ok">${b.good.length} Good</span>`             : ''}
+              </span>` : ''}
           </div>
           ${isOpen ? `
             <div class="hz-batch-row-body">
-              ${b.flaggedCount
-                ? tierListHTML('critical', b.critical) + tierListHTML('risk', b.risk) + tierListHTML('alert', b.alert)
-                : `<div class="hz-empty" style="padding:6px 0">No students below 90% attendance in this batch.</div>`}
+              ${hasStudents
+                ? tierListHTML('critical', b.critical) + tierListHTML('risk', b.risk) + tierListHTML('alert', b.alert) + tierListHTML('good', b.good)
+                : `<div class="hz-empty" style="padding:6px 0">No attendance data recorded for this batch yet.</div>`}
             </div>` : ''}
         </div>`;
     }).join('');
