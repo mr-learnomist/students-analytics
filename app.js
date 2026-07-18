@@ -300,6 +300,7 @@ function updateBadges() {
 function registerRoutes() {
   Router
     .register('dashboard',  { permission: 'dashboard',  title: 'Dashboard',   mount: null })
+    .register('teacherHorizonView', { permission: 'teacherPortal', title: 'Horizon View', mount: (el) => TeacherPortalModule.mountHorizonView(el.querySelector('#teacherHorizonViewMount')) })
     .register('teacherPortal', { permission: 'teacherPortal', title: 'My Batches', mount: (el) => TeacherPortalModule.mount(el.querySelector('#teacherPortalMount')) })
     .register('teacherLecturePlan', { permission: 'teacherPortal', title: 'Lecture Plans', mount: (el) => TeacherPortalModule.mountLecturePlans(el.querySelector('#teacherLecturePlanMount')) })
     // ── Placeholder routes — pages exist (sidebar + container) but have
