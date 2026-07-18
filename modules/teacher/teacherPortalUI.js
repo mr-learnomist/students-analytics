@@ -17,6 +17,7 @@ import { LecturePlanService } from '../lecturePlan/lecturePlanService.js';
 import { AssessmentCalendarTab } from '../testing/assessmentCalendar.js';
 import { TeacherNotesModule } from './teacherNotesUI.js';
 import { ResultProfile } from '../analytics/reports/testResults/resultProfile.js';
+import { TeacherHorizonModule } from './teacherHorizonUI.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -525,6 +526,36 @@ export const TeacherPortalModule = {
 
     el.innerHTML = `<div id="tpResultProfileMount"></div>`;
     ResultProfile.mount(el.querySelector('#tpResultProfileMount'), { allowedBatchIds });
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // HORIZON VIEW — sidebar entry point, own route. First item in
+  // the Teacher Portal section — an at-a-glance dashboard of high
+  // priority tasks, attendance risk, and near-complete Lecture Plans.
+  // ══════════════════════════════════════════════════════════
+  mountHorizonView(el) {
+    if (!el) return;
+    _injectStyles();
+
+    const session = Auth.getCurrentUser();
+    if (!session || !session.isTeacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          This page is only available to teacher accounts.
+        </div>`;
+      return;
+    }
+
+    const teacher = AppState.findById('teachers', session.userId);
+    if (!teacher) {
+      el.innerHTML = `
+        <div class="tp-empty">
+          Your teacher profile could not be found. Please contact your administrator.
+        </div>`;
+      return;
+    }
+
+    TeacherHorizonModule.mount(el, { teacher });
   },
 
   _renderLecturePlans(el, teacher) {
