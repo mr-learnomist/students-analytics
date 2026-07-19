@@ -243,6 +243,7 @@ export const TeacherPortalModule = {
         <div class="tp-search-row">
           <div class="tp-filter-tabs" id="tpFilterTabs">
             <button class="tp-filter-tab" data-filter="active">Active</button>
+            <button class="tp-filter-tab" data-filter="upcoming">Upcoming</button>
             <button class="tp-filter-tab" data-filter="closed">Closed</button>
             <button class="tp-filter-tab" data-filter="all">All</button>
           </div>
@@ -256,11 +257,12 @@ export const TeacherPortalModule = {
     const searchEl = el.querySelector('#tpSearch');
     const tabsEl   = el.querySelector('#tpFilterTabs');
 
-    // A batch is "closed" once its closing date has passed, "active"
-    // otherwise. The closing date is either the manual endDate, or —
-    // when the batch follows the Lecture Plan (endDateMode:'lp' or
-    // unset) — the last dated row of its LP assignment, same logic
-    // used in the admin Batches table.
+    // A batch is "upcoming" if its start date hasn't arrived yet,
+    // "closed" once its closing date has passed, "active" otherwise.
+    // The closing date is either the manual endDate, or — when the
+    // batch follows the Lecture Plan (endDateMode:'lp' or unset) —
+    // the last dated row of its LP assignment, same logic used in
+    // the admin Batches table.
     const today = toISODate(new Date());
     const lpaMap = AppState.get('lpAssignments') || {};
 
@@ -274,6 +276,7 @@ export const TeacherPortalModule = {
 
     // No known closing date (no manual date, no LP assigned) → treat as active.
     const _status = (b) => {
+      if (b.startDate && b.startDate > today) return 'upcoming';
       const end = _effectiveEndDate(b);
       return end && end < today ? 'closed' : 'active';
     };
