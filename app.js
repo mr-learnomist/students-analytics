@@ -33,6 +33,8 @@ import { EnrolmentModule }   from './modules/enrolment/enrolmentUI.js';
 import { AnalyticsModule }  from './modules/analytics/analyticsUI.js';
 import { BackupModule }     from './modules/backupUI.js';
 import { BackupManager }    from './utils/backupManager.js';
+import { fetchAndSyncNotifications } from './modules/notification/notificationService.js';
+import { updateNotifBadge } from './modules/notification/notifBadge.js';
 
 // ── Boot sequence ─────────────────────────────────────────────
 // ✅ FIX: doLogin() ka reference yahan rakhte hain taake showLogin()
@@ -287,6 +289,8 @@ function showApp(user) {
   AppState.subscribe('batches', updateBadges);
   updateBadges();
 
+  fetchAndSyncNotifications(user.userId).then(() => updateNotifBadge(user.userId));
+
   setTimeout(() => Toast.success('Welcome back, ' + user.name.split(' ')[0] + '!'), 600);
 }
 
@@ -313,7 +317,7 @@ function registerRoutes() {
     .register('teacherResultProfile',      { permission: 'teacherPortal', title: 'Result Profile',       mount: (el) => TeacherPortalModule.mountResultProfile(el.querySelector('#teacherResultProfileMount')) })
     .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: (el) => TeacherPortalModule.mountNotes(el.querySelector('#teacherNotesMount')) })
     .register('teacherLeaves',             { permission: 'teacherPortal', title: 'Leaves',               mount: null })
-    .register('teacherNotification',       { permission: 'teacherPortal', title: 'Notification',         mount: null })
+    .register('teacherNotification',       { permission: 'teacherPortal', title: 'Notification',         mount: (el) => TeacherPortalModule.mountNotifications(el.querySelector('#teacherNotificationMount')) })
     .register('batches',    { permission: 'batches',    title: 'Batches',     mount: (el) => BatchModule.mount(el.querySelector('#batchMount')) })
     .register('admin',      { permission: 'admin',      title: 'Admin Panel', mount: () => initAdminTabs() })
     .register('students',   { permission: 'students',   title: 'Students',    mount: (el) => StudentModule.mount(el.querySelector('#studentMount')) })
@@ -562,6 +566,14 @@ document.addEventListener('click', e => {
 // ── Navbar wiring ─────────────────────────────────────────────
 function wireNavbar() {
   applyTheme(localStorage.getItem('sms_theme') || 'light');
+
+  document.getElementById('nbBellBtn')?.addEventListener('click', () => {
+    const user = Auth.getCurrentUser();
+    if (user?.role === 'teacher') {
+      Router.navigate('teacherNotification');
+    }
+    // Non-teacher roles: no notification page wired up yet — no-op for now.
+  });
 
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
     Auth.logout();
