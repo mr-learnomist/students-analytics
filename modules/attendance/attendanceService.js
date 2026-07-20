@@ -36,7 +36,10 @@ const RECORDS_KEY   = 'attendanceRecords';
 // Race condition safe: har record independently upsert hota hai
 // 100 teachers ek saath mark kar sakte hain bina data overwrite ke
 const _API_BASE = '/api/attendance';
-const _API_KEY  = () => window.__SMS_API_KEY__ || '';
+// ✅ FIX: window.__SMS_API_KEY__ kabhi set nahi hota tha — hamesha ''
+// bhejta tha, jo server ke SECRET_KEY se match nahi karti thi (401).
+// storage.js jaisi hardcoded key use karte hain taake consistent rahe.
+const _API_KEY  = () => 'malik@2020';
 
 async function _apiUpsert(records) {
   try {
