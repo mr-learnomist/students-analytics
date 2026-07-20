@@ -10,7 +10,7 @@ import { AppState } from '../../utils/state.js';
 import { Toast }    from '../../utils/helpers.js';
 import {
   AttendanceService,
-  fetchAndSyncBatchAttendance,
+  fetchAndSyncBatchesAttendance,
 } from '../attendance/attendanceService.js';
 import { TeacherNotesService, fetchAndSyncTeacherNotes } from '../../utils/teacherNotesStorage.js';
 
@@ -153,9 +153,13 @@ export const TeacherHorizonModule = {
     // compute real percentages — a deliberate, heavier fetch that only
     // happens when a teacher actually opens Horizon View, not on every
     // login. Only active batches are pulled; closed batches are skipped.
+    // ✅ FIX: was firing one /api/attendance request PER active batch
+    // (N parallel cold-start-prone serverless hits — the actual cause
+    // of the 7-8s load time). Now a single batched request covers all
+    // active batches in one round-trip.
     await Promise.allSettled([
       fetchAndSyncTeacherNotes(teacher.id),
-      ...activeBatches.map(b => fetchAndSyncBatchAttendance(b.id)),
+      fetchAndSyncBatchesAttendance(activeBatches.map(b => b.id)),
     ]);
 
     this._render(myBatches, activeBatches);
