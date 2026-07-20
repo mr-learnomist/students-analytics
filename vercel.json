@@ -1,6 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/backup/:action*", "destination": "/api/backup.js" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/backup/:action*", "destination": "/api/backup.js" }
   ]
 }
