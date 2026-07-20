@@ -16,7 +16,15 @@ let indexesEnsured = false;
 async function connectDB() {
   if (cachedClient) return cachedClient;
   if (!MONGO_URI) throw new Error('MONGODB_URI environment variable not set');
-  const client = new MongoClient(MONGO_URI);
+  // ✅ maxPoolSize raised — on a warm serverless instance, many teachers'
+  // requests can land concurrently and share this one client. Default
+  // pool (100) is usually fine, but we set it explicitly so a burst of
+  // 500+ teachers doesn't get queued behind a small pool while a fresh
+  // instance is still spinning up elsewhere.
+  const client = new MongoClient(MONGO_URI, {
+    maxPoolSize: 150,
+    minPoolSize: 5,
+  });
   await client.connect();
   cachedClient = client;
   return client;
@@ -57,13 +65,21 @@ module.exports = async function handler(req, res) {
     // ── GET — batch ki attendance fetch karo ─────────────────
     // Query: /api/attendance?batchId=xxx
     // Query: /api/attendance?batchId=xxx&date=2025-07-07
+    // Query: /api/attendance?batchIds=xxx,yyy,zzz   (✅ NEW — multi-batch,
+    //        single round-trip. Used by Teacher Horizon View, which
+    //        previously fired one request PER active batch — that's what
+    //        was making it take 7-8s. Existing {batchId:1,date:1} index
+    //        already covers $in on batchId efficiently, no new index needed.)
+    // Query: /api/attendance?batchIds=xxx,yyy&date=2025-07-07
     if (req.method === 'GET') {
-      const { batchId, date } = req.query;
-      if (!batchId) {
-        return res.status(400).json({ success: false, error: 'batchId required' });
+      const { batchId, batchIds, date } = req.query;
+      if (!batchId && !batchIds) {
+        return res.status(400).json({ success: false, error: 'batchId or batchIds required' });
       }
 
-      const filter = { batchId };
+      const filter = batchIds
+        ? { batchId: { $in: batchIds.split(',').map(s => s.trim()).filter(Boolean) } }
+        : { batchId };
       if (date) filter.date = date;
 
       const records = await col.find(filter, { projection: { _id: 0 } }).toArray();
