@@ -18,6 +18,7 @@ import { AssessmentCalendarTab } from '../testing/assessmentCalendar.js';
 import { TeacherNotesModule } from './teacherNotesUI.js';
 import { ResultProfile } from '../analytics/reports/testResults/resultProfile.js';
 import { TeacherHorizonModule } from './teacherHorizonUI.js';
+import { TeacherNotificationModule } from './teacherNotificationUI.js';
 import {
   AttendanceService,
   AttendanceDateGenerator,
@@ -559,6 +560,22 @@ export const TeacherPortalModule = {
     }
 
     TeacherHorizonModule.mount(el, { teacher });
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // NOTIFICATION PAGE — sidebar entry point, own route.
+  // ══════════════════════════════════════════════════════════
+  mountNotifications(el) {
+    if (!el) return;
+    _injectStyles();
+
+    const session = Auth.getCurrentUser();
+    if (!session) {
+      el.innerHTML = `<div class="tp-empty">Please log in to view notifications.</div>`;
+      return;
+    }
+
+    TeacherNotificationModule.mount(el, { userId: session.userId });
   },
 
   _renderLecturePlans(el, teacher) {
