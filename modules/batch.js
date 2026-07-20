@@ -33,6 +33,7 @@ import { Toast } from '../utils/helpers.js';
 import { Auth } from '../utils/auth.js';
 import { getAssignmentForBatch } from './lecturePlan/lecturePlanService.js';
 import { ChangeManager } from '../utils/changeManager.js';
+import { NotificationService } from './notification/notificationService.js';
 import { getSelectableLevels } from './levels.js';
 import {
   applyCampusImpact,
@@ -1480,6 +1481,18 @@ export const BatchModule = {
       status:        data.status || (existing?.status || 'active'),
     });
 
+    // Which teacher(s) were assigned BEFORE this save — used below to
+    // detect newly-added assignments so we only notify teachers who
+    // weren't already on this batch (not on every unrelated edit).
+    const _oldTeacherIds = new Set(
+      existing
+        ? (existing.teachers?.length
+            ? existing.teachers.map(t => t.teacherId).filter(Boolean)
+            : (existing.teacherId ? [existing.teacherId] : []))
+        : []
+    );
+
+    let savedBatchId;
     if (existing) {
       // Safe merge: AppState.update does { ...item, ...patch } internally.
       // batchObj already omits blank dates (via _buildBatchObject spread fix),
@@ -1488,10 +1501,32 @@ export const BatchModule = {
       if (!batchObj.endDate)   delete batchObj.endDate;
       AppState.update(KEY, existing.id, batchObj);
       Toast.success(`Batch "${batchObj.batchName}" has been updated.`);
+      savedBatchId = existing.id;
     } else {
-      AppState.add(KEY, { ...batchObj, id: generateID('batch') });
+      savedBatchId = generateID('batch');
+      AppState.add(KEY, { ...batchObj, id: savedBatchId });
       Toast.success(`Batch "${batchObj.batchName}" has been created.`);
     }
+
+    // Notify newly-assigned teacher(s) — covers both a brand new batch
+    // and an existing batch getting a teacher added/changed. Teachers
+    // already assigned before this save are NOT re-notified.
+    const _newTeacherIds = (batchObj.teachers?.length
+      ? batchObj.teachers.map(t => t.teacherId)
+      : (batchObj.teacherId ? [batchObj.teacherId] : [])
+    ).filter(Boolean);
+
+    _newTeacherIds
+      .filter(tid => !_oldTeacherIds.has(tid))
+      .forEach(tid => {
+        NotificationService.create({
+          userId:  tid,
+          type:    'batch_assigned',
+          title:   'New batch assigned',
+          message: `You've been assigned to ${batchObj.batchName}.`,
+          link:    '#teacherPortal',
+        });
+      });
 
     Modal.closeAll();
     this._render(container);
@@ -2711,7 +2746,25 @@ export const BatchModule = {
 
     importBtn.addEventListener('click', () => {
       if (!parsedResult?.success?.length) return;
-      parsedResult.success.forEach(b => AppState.add(KEY, b));
+      parsedResult.success.forEach(b => {
+        AppState.add(KEY, b);
+        // Bulk import always creates brand new batches, so any teacher
+        // named on the row is a newly-assigned teacher — no need to
+        // diff against prior state like the single-batch form does.
+        const importedTeacherIds = (b.teachers?.length
+          ? b.teachers.map(t => t.teacherId)
+          : (b.teacherId ? [b.teacherId] : [])
+        ).filter(Boolean);
+        importedTeacherIds.forEach(tid => {
+          NotificationService.create({
+            userId:  tid,
+            type:    'batch_assigned',
+            title:   'New batch assigned',
+            message: `You've been assigned to ${b.batchName}.`,
+            link:    '#teacherPortal',
+          });
+        });
+      });
       Toast.success(`✓ ${parsedResult.success.length} batch${parsedResult.success.length > 1 ? 'es' : ''} imported successfully!`);
       closeModal();
       this._render(el);
