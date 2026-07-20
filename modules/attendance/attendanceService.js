@@ -134,6 +134,64 @@ export async function fetchAndSyncBatchAttendance(batchId, date = null, maxAgeMs
   return _inflight[key];
 }
 
+// ── Batched multi-batch fetch — ONE request, not N ─────────────
+// Used by screens like Teacher Horizon View that need full attendance
+// history for SEVERAL batches at once. The old pattern called
+// fetchAndSyncBatchAttendance() once per batch (N parallel requests) —
+// each one its own cold-start-prone serverless hit. This collapses
+// that into a single request using the backend's `batchIds` param,
+// which is what actually made Horizon View slow to load (7-8s with
+// several active batches, worse under concurrent teacher load).
+const _lastFetchAtBatches = {}; // sorted-batchIds-key -> timestamp
+const _inflightBatches    = {};
+
+export async function fetchAndSyncBatchesAttendance(batchIds, date = null, maxAgeMs = 0) {
+  const ids = [...new Set(batchIds)].filter(Boolean);
+  if (!ids.length) return true;
+
+  const key = `${[...ids].sort().join(',')}__${date || 'all'}`;
+
+  if (maxAgeMs > 0 && _lastFetchAtBatches[key] && (Date.now() - _lastFetchAtBatches[key]) < maxAgeMs) {
+    return true;
+  }
+  if (_inflightBatches[key]) return _inflightBatches[key];
+
+  const _run = async () => {
+    try {
+      const qs = date
+        ? `batchIds=${ids.join(',')}&date=${encodeURIComponent(date)}`
+        : `batchIds=${ids.join(',')}`;
+      const res = await fetch(`${_API_BASE}?${qs}`, {
+        headers: { 'x-api-key': _API_KEY() },
+      });
+      if (!res.ok) return false;
+      const { records } = await res.json();
+      if (!Array.isArray(records)) return false;
+
+      const existing = AppState.get(RECORDS_KEY) || [];
+      const map = {};
+      existing.forEach(r => { map[r.id] = r; });
+      records.forEach(r => { map[r.id] = r; });
+      AppState._silentSet(RECORDS_KEY, Object.values(map));
+
+      // Also mark each individual batch's own cache key fresh, so a
+      // later single-batch call (maxAgeMs > 0) doesn't needlessly
+      // re-fetch what this batched call already just brought in.
+      ids.forEach(id => { _lastFetchAt[`${id}__${date || 'all'}`] = Date.now(); });
+      _lastFetchAtBatches[key] = Date.now();
+      return true;
+    } catch (e) {
+      console.error('[AttendanceService] fetchAndSyncBatches error:', e.message);
+      return false;
+    } finally {
+      delete _inflightBatches[key];
+    }
+  };
+
+  _inflightBatches[key] = _run();
+  return _inflightBatches[key];
+}
+
 // Day index constants (mirrors JS Date.getDay())
 export const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 export const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
