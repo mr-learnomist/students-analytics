@@ -13,6 +13,7 @@ import { NotificationService, fetchAndSyncNotifications } from './notificationSe
 import { updateNotifBadge } from './notifBadge.js';
 import { Toast } from '../../utils/helpers.js';
 import { Router } from '../../utils/router.js';
+import { TeacherNotificationModule } from '../teacher/teacherNotificationUI.js';
 
 function _esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -65,7 +66,20 @@ function _renderDropdown(userId) {
 
 export function openDropdown(userId) {
   const dd = document.getElementById('nbNotifDropdown');
-  if (!dd) return;
+  const bellBtn = document.getElementById('nbBellBtn');
+  if (!dd || !bellBtn) return;
+
+  // Position via fixed + computed coordinates instead of relying on
+  // CSS absolute positioning inside the navbar — the navbar (or some
+  // ancestor) may clip/stack in a way that makes an absolutely
+  // positioned dropdown invisible or unclickable even though it's
+  // technically in the DOM with display:block.
+  const rect = bellBtn.getBoundingClientRect();
+  dd.style.position = 'fixed';
+  dd.style.top   = `${rect.bottom + 8}px`;
+  dd.style.right = `${window.innerWidth - rect.right}px`;
+  dd.style.left  = 'auto';
+
   _renderDropdown(userId);
   dd.style.display = 'block';
 }
@@ -117,6 +131,7 @@ export function startNotifPolling(userId, intervalMs = 20000) {
       updateNotifBadge(userId);
       const dd = document.getElementById('nbNotifDropdown');
       if (dd && dd.style.display === 'block') _renderDropdown(userId);
+      if (Router.current() === 'teacherNotification') TeacherNotificationModule.refresh();
     }
     current.forEach(n => _seenIds.add(n.id));
   }, intervalMs);
