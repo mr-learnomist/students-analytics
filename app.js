@@ -35,6 +35,7 @@ import { BackupModule }     from './modules/backupUI.js';
 import { BackupManager }    from './utils/backupManager.js';
 import { fetchAndSyncNotifications } from './modules/notification/notificationService.js';
 import { updateNotifBadge } from './modules/notification/notifBadge.js';
+import { initNotifDropdown, toggleDropdown, startNotifPolling } from './modules/notification/notifDropdown.js';
 
 // ── Boot sequence ─────────────────────────────────────────────
 // ✅ FIX: doLogin() ka reference yahan rakhte hain taake showLogin()
@@ -290,6 +291,10 @@ function showApp(user) {
   updateBadges();
 
   fetchAndSyncNotifications(user.userId).then(() => updateNotifBadge(user.userId));
+  if (user.role === 'teacher') {
+    initNotifDropdown();
+    startNotifPolling(user.userId);
+  }
 
   setTimeout(() => Toast.success('Welcome back, ' + user.name.split(' ')[0] + '!'), 600);
 }
@@ -567,10 +572,11 @@ document.addEventListener('click', e => {
 function wireNavbar() {
   applyTheme(localStorage.getItem('sms_theme') || 'light');
 
-  document.getElementById('nbBellBtn')?.addEventListener('click', () => {
+  document.getElementById('nbBellBtn')?.addEventListener('click', (e) => {
     const user = Auth.getCurrentUser();
     if (user?.role === 'teacher') {
-      Router.navigate('teacherNotification');
+      e.stopPropagation(); // don't let the click-outside listener immediately close it
+      toggleDropdown(user.userId);
     }
     // Non-teacher roles: no notification page wired up yet — no-op for now.
   });
