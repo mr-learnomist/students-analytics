@@ -101,7 +101,7 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 .nb-icon-btn{width:36px;height:36px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--t2);transition:background .15s;position:relative}
 .nb-icon-btn:hover{background:var(--surface2)}
 .notif-dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--blue);border:2px solid var(--surface)}
-.nb-notif-dropdown{position:absolute;top:calc(100% + 8px);right:0;width:320px;max-height:400px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:200;overflow:hidden;display:flex;flex-direction:column}
+.nb-notif-dropdown{position:fixed;width:320px;max-height:400px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:99999;overflow:hidden;display:flex;flex-direction:column}
 .nb-notif-dropdown-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2);font-size:12.5px;font-weight:800;color:var(--t1)}
 .nb-notif-dropdown-hdr button{border:none;background:none;color:var(--blue);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
 #nbNotifDropdownList{overflow-y:auto;max-height:340px}
