@@ -70,6 +70,14 @@ export const TeacherNotificationModule = {
     this._render();
   },
 
+  // Called by the polling loop (modules/notification/notifDropdown.js)
+  // when new notifications arrive WHILE this page is already open —
+  // re-renders from whatever's already in AppState (already synced by
+  // the poll itself), no extra fetch needed here.
+  refresh() {
+    if (this._el && this._ctx) this._render();
+  },
+
   _render() {
     const el = this._el;
     const userId = this._ctx.userId;
