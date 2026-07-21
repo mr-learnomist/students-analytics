@@ -101,6 +101,18 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
 .nb-icon-btn{width:36px;height:36px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--t2);transition:background .15s;position:relative}
 .nb-icon-btn:hover{background:var(--surface2)}
 .notif-dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--blue);border:2px solid var(--surface)}
+.nb-notif-dropdown{position:absolute;top:calc(100% + 8px);right:0;width:320px;max-height:400px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:200;overflow:hidden;display:flex;flex-direction:column}
+.nb-notif-dropdown-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2);font-size:12.5px;font-weight:800;color:var(--t1)}
+.nb-notif-dropdown-hdr button{border:none;background:none;color:var(--blue);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
+#nbNotifDropdownList{overflow-y:auto;max-height:340px}
+.nb-notif-item{padding:10px 14px;border-bottom:1px solid var(--border2);cursor:pointer}
+.nb-notif-item:last-child{border-bottom:none}
+.nb-notif-item:hover{background:var(--surface2)}
+.nb-notif-item.unread{background:color-mix(in srgb, var(--blue) 6%, var(--surface))}
+.nb-notif-item-title{font-size:12px;font-weight:700;color:var(--t1)}
+.nb-notif-item-msg{font-size:11px;color:var(--t2);margin-top:2px}
+.nb-notif-item-time{font-size:10px;color:var(--t4);margin-top:4px}
+.nb-notif-empty{padding:24px 14px;text-align:center;font-size:12px;color:var(--t3)}
 .nb-profile{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:var(--r-sm);cursor:pointer;border:1px solid var(--border);margin-left:4px;transition:background .15s}
 .nb-profile:hover{background:var(--surface2)}
 .nb-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
@@ -369,10 +381,19 @@ radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.06) 0%,transparent 60%),#f0
           <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
         </button>
-        <button class="nb-icon-btn" id="nbBellBtn" style="position:relative">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="notif-dot" id="nbNotifDot" style="display:none"></span>
-        </button>
+        <div style="position:relative">
+          <button class="nb-icon-btn" id="nbBellBtn" style="position:relative">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notif-dot" id="nbNotifDot" style="display:none"></span>
+          </button>
+          <div class="nb-notif-dropdown" id="nbNotifDropdown" style="display:none">
+            <div class="nb-notif-dropdown-hdr">
+              <span>Notifications</span>
+              <button id="nbNotifViewAll">View all</button>
+            </div>
+            <div id="nbNotifDropdownList"></div>
+          </div>
+        </div>
         <div class="nb-profile">
           <div class="nb-avatar" id="nbAvatar">UM</div>
           <div style="display:flex;flex-direction:column">
