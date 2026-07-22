@@ -11,8 +11,10 @@ let cachedClient = null;
 async function connectDB() {
   if (cachedClient) return cachedClient;
   if (!MONGO_URI) throw new Error('MONGODB_URI environment variable not set');
+  const t0 = Date.now();
   const client = new MongoClient(MONGO_URI);
   await client.connect();
+  console.log(`[SMS][timing] Mongo connect (cold start): ${Date.now() - t0}ms`);
   cachedClient = client;
   return client;
 }
@@ -92,6 +94,7 @@ module.exports = async function handler(req, res) {
 
     // ── POST — data save karo ────────────────────────────────
     if (req.method === 'POST') {
+      const tStart = Date.now();
       let payload = req.body;
       if (!payload || typeof payload !== 'object') {
         return res.status(400).json({ success: false, error: 'Invalid payload' });
@@ -100,7 +103,10 @@ module.exports = async function handler(req, res) {
       if (payload.appState) delete payload.appState.currentUser;
       if (payload.session)  delete payload.session;
 
+      const tFindStart    = Date.now();
       const existing      = await db.collection(COL_NAME).findOne({ _id: 'main' });
+      console.log(`[SMS][timing] findOne: ${Date.now() - tFindStart}ms`);
+
       const existingState = existing?.data?.appState || {};
       const newState      = payload.appState || {};
 
@@ -131,7 +137,12 @@ module.exports = async function handler(req, res) {
         );
       }
 
+      const tWriteStart = Date.now();
       await Promise.all(writes);
+      console.log(`[SMS][timing] parallel writes: ${Date.now() - tWriteStart}ms`);
+
+      const payloadSizeKB = (Buffer.byteLength(JSON.stringify(payload)) / 1024).toFixed(1);
+      console.log(`[SMS][timing] TOTAL: ${Date.now() - tStart}ms | payload size: ${payloadSizeKB}KB`);
 
       return res.status(200).json({ success: true });
     }
