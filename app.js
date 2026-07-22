@@ -572,14 +572,24 @@ document.addEventListener('click', e => {
 function wireNavbar() {
   applyTheme(localStorage.getItem('sms_theme') || 'light');
 
-  document.getElementById('nbBellBtn')?.addEventListener('click', (e) => {
-    const user = Auth.getCurrentUser();
-    if (user?.role === 'teacher') {
-      e.stopPropagation(); // don't let the click-outside listener immediately close it
-      toggleDropdown(user.userId);
-    }
-    // Non-teacher roles: no notification page wired up yet — no-op for now.
-  });
+  const bellBtn = document.getElementById('nbBellBtn');
+  // Guard against duplicate registration — if wireNavbar() somehow runs
+  // more than once in a page's lifetime (e.g. session-restore path AND
+  // a fresh-login path both firing), this was silently attaching a
+  // SECOND click listener. Two listeners on the same click meant the
+  // dropdown opened and then immediately closed again in the same
+  // click, which looked exactly like "nothing happens" from the UI.
+  if (bellBtn && !bellBtn.dataset.wired) {
+    bellBtn.dataset.wired = 'true';
+    bellBtn.addEventListener('click', (e) => {
+      const user = Auth.getCurrentUser();
+      if (user?.role === 'teacher') {
+        e.stopPropagation(); // don't let the click-outside listener immediately close it
+        toggleDropdown(user.userId);
+      }
+      // Non-teacher roles: no notification page wired up yet — no-op for now.
+    });
+  }
 
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
     Auth.logout();
