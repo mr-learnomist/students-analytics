@@ -14,6 +14,7 @@ const Storage = (() => {
   let _cache   = null;
   let _saving  = false;
   let _pending = false;
+  let _pendingWaiters = []; // ✅ FIX: resolvers waiting on the NEXT save round's result
 
   // ── Internal save with retry ──────────────────────────────
   async function _doSave(data, attempt = 1) {
@@ -45,13 +46,35 @@ const Storage = (() => {
   }
 
   // ── Save queue — concurrent saves prevent karo ────────────
+  // ✅ FIX: pehle ye sirf fire-and-forget tha — kisi ko pata hi nahi
+  // chalta tha ke save actually kamyab hua ya nahi. Ab har caller
+  // apna set()/remove()/clear() await kar sakta hai aur asal
+  // success/failure (retries ke baad) wapas milta hai.
+  //
+  // Note: agar dusra save already chal raha ho (_saving === true),
+  // to hamari mutation _cache mein already ho chuki hoti hai (set()
+  // ne cache pehle hi update kar diya), lekin in-flight request ka
+  // JSON.stringify() usse pehle capture ho chuka ho sakta hai —
+  // isliye hum us in-flight round pe bharosa nahi karte, balke
+  // agle round (jo _pending flag ki wajah se turant chalega) ka
+  // wait karte hain, taake wapas milne wala result hamesha hamari
+  // apni mutation ko reflect kare.
   async function _queueSave() {
-    if (_saving) { _pending = true; return; }
-    _saving  = true;
-    _pending = false;
-    await _doSave(_cache);
+    if (_saving) {
+      _pending = true;
+      return new Promise(resolve => _pendingWaiters.push(resolve));
+    }
+    _saving = true;
+    let success;
+    do {
+      _pending = false;
+      const waitersForThisRound = _pendingWaiters;
+      _pendingWaiters = [];
+      success = await _doSave(_cache);
+      waitersForThisRound.forEach(resolve => resolve(success));
+    } while (_pending); // agar await ke dauran koi naya set() aaya, ek aur round chalao
     _saving = false;
-    if (_pending) { _pending = false; _queueSave(); }
+    return success;
   }
 
   // ── Internal load with retry — ✅ FIX ──────────────────────
@@ -90,13 +113,19 @@ const Storage = (() => {
   return {
 
     // ── set(key, value) ──────────────────────────────────────
-    set(key, value) {
+    // ✅ FIX: ab ek Promise<boolean> return karta hai jo asal
+    // backend save (retries ke baad) ke result se resolve hota hai.
+    // Purane sync callers pe koi asar nahi — Promise ko ignore
+    // karna bhi valid hai, bas ab jo await karna chahe kar sakta hai.
+    async set(key, value) {
       if (!_cache) _cache = {};
       _cache[key] = value;
-      _queueSave().catch(err =>
-        console.error('[Storage] Queue save error:', err.message)
-      );
-      return true;
+      try {
+        return await _queueSave();
+      } catch (err) {
+        console.error('[Storage] Queue save error:', err.message);
+        return false;
+      }
     },
 
     // ── get(key, fallback) ───────────────────────────────────
@@ -110,19 +139,25 @@ const Storage = (() => {
     },
 
     // ── remove(key) ──────────────────────────────────────────
-    remove(key) {
+    async remove(key) {
       if (_cache) delete _cache[key];
-      _queueSave().catch(err =>
-        console.error('[Storage] Remove save error:', err.message)
-      );
+      try {
+        return await _queueSave();
+      } catch (err) {
+        console.error('[Storage] Remove save error:', err.message);
+        return false;
+      }
     },
 
     // ── clear() ──────────────────────────────────────────────
-    clear() {
+    async clear() {
       _cache = {};
-      _queueSave().catch(err =>
-        console.error('[Storage] Clear save error:', err.message)
-      );
+      try {
+        return await _queueSave();
+      } catch (err) {
+        console.error('[Storage] Clear save error:', err.message);
+        return false;
+      }
     },
 
     // ── loadAll() — GET pe bhi auth header, retry + safe-fail ──
