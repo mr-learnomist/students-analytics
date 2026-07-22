@@ -419,35 +419,25 @@ export const UsersModule = {
               b.textContent.includes('Save') || b.textContent.includes('Add User'));
             if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
+            // ✅ FIX: pehle yahan /api/data ko manually poll karke "guess"
+            // kiya jata tha ke save hua ya nahi, sirf 4 seconds tak. Agar
+            // backend save mein retries lag jate (storage.js mein 1s+2s
+            // backoff hai), to poll timeout pehle hi hit ho jata aur
+            // asal save kamyab hone ke bawajood "Save failed" dikhta.
+            // Ab AppState.waitForSave() se seedha asal result milta hai —
+            // koi guessing/timeout race nahi.
             try {
-              await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('timeout')), 4000);
-                const check = async () => {
-                  try {
-                    // ✅ FIX: cache:'no-store' + timestamp — warna ye check
-                    // purana (save se pehle wala) cached response dekh ke
-                    // ghalat "Save failed" dikha sakta tha
-                    const res  = await fetch(`/api/data?_=${Date.now()}`, {headers:{'x-api-key':'malik@2020'}, cache: 'no-store'});
-                    const json = await res.json();
-                    // ✅ FIX: Handle all possible MongoDB response structures
-                    const users = json.data?.appState?.users
-                               || json.data?.users
-                               || json.appState?.users
-                               || [];
-                    const saved = isEdit
-                      ? users.find(u => u.id === existing.id)
-                      : users.find(u => u.username?.toLowerCase() === data.username?.toLowerCase());
-                    if (saved) { clearTimeout(timeout); resolve(); }
-                    else setTimeout(check, 500);
-                  } catch { setTimeout(check, 500); }
-                };
-                check();
-              });
-              Toast.success(isEdit
-                ? `User "${data.name}" updated successfully.`
-                : `User "${data.name}" added successfully. They can now log in.`);
-              Modal.closeAll();
-              this._render(container);
+              const saved = await AppState.waitForSave();
+              if (saved) {
+                Toast.success(isEdit
+                  ? `User "${data.name}" updated successfully.`
+                  : `User "${data.name}" added successfully. They can now log in.`);
+                Modal.closeAll();
+                this._render(container);
+              } else {
+                Toast.error('Save failed. Please check your connection and try again.');
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = isEdit ? 'Save Changes' : 'Add User'; }
+              }
             } catch {
               Toast.error('Save failed. Please check your connection and try again.');
               if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = isEdit ? 'Save Changes' : 'Add User'; }
