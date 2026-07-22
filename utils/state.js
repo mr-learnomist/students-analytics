@@ -46,6 +46,7 @@ const STORAGE_KEY = 'appState';
 const _subscribers = {};
 let _state = DEFAULT_STATE;
 let _loaded = false; // ✅ guard: load complete hua ya nahi
+let _lastSavePromise = Promise.resolve(true); // ✅ FIX: sabse recent saveState() ka asal result
 
 // Lecture-plan related keys — inhe LecturePlanStorage handle karta hai
 const LECTURE_KEYS = ['lecturePlans', 'lpRows', 'lpAssignments'];
@@ -209,7 +210,7 @@ export const AppState = {
     // ✅ Guard: load complete hone se pehle save mat karo
     if (!_loaded) {
       console.warn('[AppState] saveState() called before loadState() — skipped!');
-      return;
+      return Promise.resolve(false);
     }
 
     // ✅ currentUser kabhi save mat karo — session alag handle hoti hai
@@ -222,28 +223,54 @@ export const AppState = {
     delete toSave.lpRows;
     delete toSave.lpAssignments;
 
-    Storage.set(STORAGE_KEY, toSave);
+    // ✅ FIX: har save call ka actual result collect karo — pehle ye
+    // sab fire-and-forget thay, kisi ko pata nahi chalta tha ke save
+    // waqai kamyab hua ya nahi. Ab AppState.waitForSave() se koi bhi
+    // caller (jese users.js) is result ka reliably wait kar sakta hai,
+    // bajaye /api/data ko manually poll karne ke.
+    const savePromises = [Storage.set(STORAGE_KEY, toSave)];
 
     // Students ko alag save karo — sirf jab changedKey na diya gaya ho
     // (e.g. migration/seed ke waqt, jab sab kuch save hota hai) ya
     // jab specifically 'students' change hua ho.
     if (changedKey === undefined || changedKey === 'students') {
-      StudentsStorage.setStudents(_state.students || []);
+      savePromises.push(StudentsStorage.setStudents(_state.students || []));
     }
 
     // Batches ko alag save karo — bilkul students jesa hi.
     if (changedKey === undefined || changedKey === 'batches') {
-      BatchesStorage.setBatches(_state.batches || []);
+      savePromises.push(BatchesStorage.setBatches(_state.batches || []));
     }
 
     // Lecture-plan data (teeno keys ek saath) ko alag save karo.
     if (changedKey === undefined || LECTURE_KEYS.includes(changedKey)) {
-      LecturePlanStorage.setLectureData({
+      savePromises.push(LecturePlanStorage.setLectureData({
         lecturePlans:  _state.lecturePlans  || [],
         lpRows:        _state.lpRows        || {},
         lpAssignments: _state.lpAssignments || {},
-      });
+      }));
     }
+
+    // ✅ Sab writes ko Promise.all mein resolve karo. `.setStudents()`
+    // jese functions agar purane style mein kuch return na karein
+    // (undefined), to unhe truthy treat karte hain — taake behavior
+    // in dedicated storages ke liye backward-compatible rahe, jab tak
+    // wo bhi apna real result return karna shuru na kar dein.
+    _lastSavePromise = Promise.all(savePromises)
+      .then(results => results.every(r => r !== false))
+      .catch(err => {
+        console.error('[AppState] saveState error:', err.message);
+        return false;
+      });
+
+    return _lastSavePromise;
+  },
+
+  // ✅ FIX: naya method — koi bhi caller sabse recent save operation
+  // ka asal (retries ke baad ka) result await kar sakta hai, bajaye
+  // /api/data ko manually poll karne ke.
+  async waitForSave() {
+    return _lastSavePromise;
   },
 
   get(key) {
