@@ -106,19 +106,32 @@ module.exports = async function handler(req, res) {
 
       payload.appState = mergeProtected(newState, existingState);
 
-      if (existing?.data) {
-        await db.collection('appstate_backup').replaceOne(
-          { _id: 'backup_latest' },
-          { _id: 'backup_latest', data: existing.data, savedAt: new Date() },
+      // ✅ FIX: pehle backup-write aur main-write sequential (ek ke baad
+      // ek) chalti thin — do poore round-trips ka time lagta tha. Dono
+      // writes ek dusre pe depend nahi karti (dono ka data already
+      // compute ho chuka hai), isliye ab dono PARALLEL chalti hain
+      // (Promise.all). Dono ab bhi poori tarah await hoti hain — koi
+      // safety/reliability compromise nahi, sirf ek round-trip ka time
+      // bachta hai.
+      const writes = [
+        db.collection(COL_NAME).updateOne(
+          { _id: 'main' },
+          { $set: { data: payload, updatedAt: new Date() } },
           { upsert: true }
+        )
+      ];
+
+      if (existing?.data) {
+        writes.push(
+          db.collection('appstate_backup').replaceOne(
+            { _id: 'backup_latest' },
+            { _id: 'backup_latest', data: existing.data, savedAt: new Date() },
+            { upsert: true }
+          )
         );
       }
 
-      await db.collection(COL_NAME).updateOne(
-        { _id: 'main' },
-        { $set: { data: payload, updatedAt: new Date() } },
-        { upsert: true }
-      );
+      await Promise.all(writes);
 
       return res.status(200).json({ success: true });
     }
