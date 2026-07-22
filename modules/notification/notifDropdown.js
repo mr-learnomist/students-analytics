@@ -80,8 +80,20 @@ export function openDropdown(userId) {
   dd.style.right = `${window.innerWidth - rect.right}px`;
   dd.style.left  = 'auto';
 
-  _renderDropdown(userId);
+  // Show the panel FIRST — if rendering the list below throws for any
+  // reason, the panel still opens (just possibly empty) instead of an
+  // exception silently aborting this whole function before display
+  // ever gets set, which would make clicking the bell look like it
+  // does nothing at all.
   dd.style.display = 'block';
+
+  try {
+    _renderDropdown(userId);
+  } catch (err) {
+    console.error('[notifDropdown] Failed to render list:', err);
+    const list = document.getElementById('nbNotifDropdownList');
+    if (list) list.innerHTML = `<div class="nb-notif-empty">Couldn't load notifications.</div>`;
+  }
 }
 
 export function closeDropdown() {
