@@ -1528,6 +1528,24 @@ export const BatchModule = {
         });
       });
 
+    // Notify teacher(s) who were on this batch BEFORE the save but are
+    // no longer on it now — covers both "teacher removed" and "teacher
+    // A swapped for teacher B" (A gets this, B gets the assigned one
+    // above). Only fires on an edit — a brand new batch has no prior
+    // teachers to remove, so _oldTeacherIds is empty there anyway.
+    const _newTeacherIdSet = new Set(_newTeacherIds);
+    [..._oldTeacherIds]
+      .filter(tid => !_newTeacherIdSet.has(tid))
+      .forEach(tid => {
+        NotificationService.create({
+          userId:  tid,
+          type:    'batch_unassigned',
+          title:   'Removed from batch',
+          message: `You've been removed from ${batchObj.batchName}.`,
+          link:    '#teacherPortal',
+        });
+      });
+
     Modal.closeAll();
     this._render(container);
   },
@@ -2375,6 +2393,23 @@ export const BatchModule = {
       danger:       true,
     });
     if (!ok) return;
+
+    // Notify every teacher currently assigned to this batch — they
+    // should know it's gone even though they can't undo the delete.
+    const _deletedTeacherIds = (row.teachers?.length
+      ? row.teachers.map(t => t.teacherId)
+      : (row.teacherId ? [row.teacherId] : [])
+    ).filter(Boolean);
+    _deletedTeacherIds.forEach(tid => {
+      NotificationService.create({
+        userId:  tid,
+        type:    'batch_removed',
+        title:   'Batch removed',
+        message: `${row.batchName} has been deleted and is no longer assigned to you.`,
+        link:    '#teacherPortal',
+      });
+    });
+
     AppState.remove(KEY, row.id);
     Toast.success(`Batch "${row.batchName}" has been deleted.`);
     this._render(container);
