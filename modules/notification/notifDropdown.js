@@ -111,6 +111,9 @@ export function toggleDropdown(userId) {
 // Wire click-outside-to-close and the "View all" footer link. Call
 // once, after login.
 export function initNotifDropdown() {
+  if (document.body.dataset.notifDropdownInit) return; // already wired — never attach twice
+  document.body.dataset.notifDropdownInit = 'true';
+
   document.addEventListener('click', (e) => {
     const dd = document.getElementById('nbNotifDropdown');
     const bellBtn = document.getElementById('nbBellBtn');
