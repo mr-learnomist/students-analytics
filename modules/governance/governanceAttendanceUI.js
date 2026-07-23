@@ -47,21 +47,17 @@ function _injectStyles() {
   style.id = 'ga-styles';
   style.textContent = `
     .ga-wrap {
-      display:flex; flex-direction:column; gap:14px; max-width:960px;
-      background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px;
-    }
-    .ga-note {
-      font-size:12px; color:var(--t3); background:var(--surface2); border:1px solid var(--border2);
-      border-radius:10px; padding:12px 14px; line-height:1.5;
+      display:flex; flex-direction:column; gap:12px; max-width:680px;
+      background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
     }
     .ga-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
 
     /* Consolidated summary */
-    .ga-summary-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; }
-    @media (max-width:760px) { .ga-summary-grid { grid-template-columns:repeat(2, 1fr); } }
-    .ga-summary-card { border:1px solid var(--border2); border-radius:12px; padding:14px 10px; text-align:center; background:var(--surface); }
-    .ga-summary-num { font-size:24px; font-weight:800; color:var(--t1); }
-    .ga-summary-lbl { font-size:11px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.02em; margin-top:2px; }
+    .ga-summary-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; }
+    @media (max-width:520px) { .ga-summary-grid { grid-template-columns:repeat(2, 1fr); } }
+    .ga-summary-card { border:1px solid var(--border2); border-radius:10px; padding:9px 4px; text-align:center; background:var(--surface); }
+    .ga-summary-num { font-size:18px; font-weight:800; color:var(--t1); }
+    .ga-summary-lbl { font-size:9px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.01em; margin-top:2px; line-height:1.2; }
     .ga-summary-card.critical .ga-summary-num { color:var(--red); }
     .ga-summary-card.risk     .ga-summary-num { color:#d97706; }
     .ga-summary-card.alert    .ga-summary-num { color:#ca8a04; }
@@ -316,11 +312,6 @@ export const GovernanceAttendanceModule = {
 
     el.innerHTML = `
       <div class="ga-wrap">
-        <div class="ga-note">
-          Consolidated attendance health across every campus and discipline you have Governance access to.
-          Tiers: <b class="critical-text">Critical</b> &lt;80%, <b class="risk-text">Risk</b> &lt;85%, <b class="alert-text">Alert</b> &lt;90%, <b class="good-text">Good</b> ≥90%.
-        </div>
-
         <div class="ga-summary-grid">
           <div class="ga-summary-card critical"><div class="ga-summary-num">${tree.grandCounts.critical}</div><div class="ga-summary-lbl">Critical</div></div>
           <div class="ga-summary-card risk"><div class="ga-summary-num">${tree.grandCounts.risk}</div><div class="ga-summary-lbl">Risk</div></div>
@@ -358,7 +349,7 @@ export const GovernanceAttendanceModule = {
   _disciplineRowHTML(campusId, dn) {
     const key = `${campusId}__${dn.disciplineId}`;
     const isOpen = this._expandedDisciplines.has(key);
-    const label = dn.disciplineAbbr ? `${dn.disciplineAbbr} — ${dn.disciplineName}` : dn.disciplineName;
+    const label = dn.disciplineAbbr || dn.disciplineName;
     return `
       <div class="ga-discipline-row">
         <div class="ga-row-hdr" data-toggle-discipline="${key}">
