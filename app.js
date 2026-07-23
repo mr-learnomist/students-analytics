@@ -19,6 +19,7 @@ import { UsersModule }       from './modules/users.js';
 import { TeacherUI }         from './modules/teacher/teacherUI.js';
 import { TeacherPortalModule } from './modules/teacher/teacherPortalUI.js';
 import { GovernanceUsersModule } from './modules/governance/governanceUsersUI.js';
+import { GovernanceAttendanceModule } from './modules/governance/governanceAttendanceUI.js';
 import { StudentModule }     from './modules/student/studentUI.js';
 import { AttendanceModule }  from './modules/attendance/attendanceUI.js';
 import { HolidaysModule }    from './modules/holidays.js';
@@ -332,7 +333,7 @@ function registerRoutes() {
     // HTML content already sitting in the data-view div. When one of
     // these is ready to be built, swap its mount to a real module
     // call — no index.html changes needed at that point.
-    .register('govHorizonView',          { permission: null, title: 'Horizon View',           mount: null })
+    .register('govHorizonView',          { permission: null, title: 'Horizon View',           mount: (el) => GovernanceAttendanceModule.mount(el.querySelector('#govHorizonViewMount'), { user: Auth.getCurrentUser() }) })
     .register('govStudentsPerformance',  { permission: null, title: 'Students Performance',   mount: null })
     .register('govAttendance',           { permission: null, title: 'Attendance',             mount: null })
     .register('govLecturePlan',          { permission: null, title: 'Lecture Plan',           mount: null })
