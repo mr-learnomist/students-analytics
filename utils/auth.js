@@ -73,6 +73,17 @@ const ROLE_PERMISSIONS = {
     'lecturePlan:create', 'lecturePlan:edit',
   ],
 
+  // ── Governance — isolated portal only, like teacher. Higher-level
+  // oversight/board role: cross-campus analytics, teacher/attendance/
+  // budget/conversion reporting, approvals, meetings. WHICH campuses
+  // a given governance user can see is controlled per-user via the
+  // existing campusIds field on their user record (Users module) —
+  // the same mechanism campusAdmin already uses. No new access-
+  // control system needed, just this role + campusIds on the account.
+  governance: [
+    'governancePortal',
+  ],
+
   viewer: [
     'dashboard',
     'students',
@@ -304,6 +315,40 @@ export const Auth = {
     return AppState.get('currentUser') || _sessionStore.get(SESSION_KEY);
   },
 
+  // ── Governance access — ADDITIVE, independent of the user's primary
+  // role. Two ways an account gets governance access:
+  //   1. Their primary role IS 'governance' (board members etc. with
+  //      no other admin capabilities — set via the normal Users module).
+  //   2. ANY other role (admin, campusAdmin, teacher, ...) has been
+  //      individually granted access via the dedicated Governance
+  //      Access module (modules/governance/governanceUsersUI.js),
+  //      which sets `governanceAccess: { enabled, campusIds }` on
+  //      their existing user record WITHOUT changing their role.
+  // This deliberately does NOT go through can()'s "admin sees
+  // everything" bypass — an admin only gets governance access if
+  // explicitly granted it, same as anyone else.
+  hasGovernanceAccess() {
+    const user = this.getCurrentUser();
+    if (!user) return false;
+    if (user.role === 'governance') return true;
+    return !!(user.governanceAccess && user.governanceAccess.enabled);
+  },
+
+  // Which campuses this user can see WITHIN governance specifically.
+  // For a pure 'governance' role user, falls back to their normal
+  // campusIds (set via the standard Users module, same as campusAdmin).
+  // For an admin/etc. granted ADDITIVE access, uses the separate
+  // governance-specific campusIds set via the Governance Access
+  // module — deliberately independent from their main role's campus
+  // scope, since e.g. a campusAdmin might administer one campus but
+  // be granted governance visibility into several others.
+  getGovernanceCampusIds() {
+    const user = this.getCurrentUser();
+    if (!user) return [];
+    if (user.role === 'governance') return user.campusIds || [];
+    return (user.governanceAccess && user.governanceAccess.campusIds) || [];
+  },
+
   // ── Campus-aware data filter ──────────────────────────────────
   // Kisi bhi list ko current user ke allowed campus(es) se filter karo
   // campusKey = us list me campus field ka naam (default: 'campusId')
@@ -448,6 +493,17 @@ export const Auth = {
       const roles   = el.dataset.role.split(',').map(r => r.trim());
       const user    = this.getCurrentUser();
       const allowed = user && roles.includes(user.role);
+      el.style.display      = allowed ? '' : 'none';
+      el.dataset.permHidden = allowed ? 'false' : 'true';
+    });
+
+    // ── data-gov-access: show only if THIS user was individually
+    // granted governance access — additive, works alongside any
+    // primary role. Deliberately separate from data-requires/can(),
+    // since can() auto-grants admins everything and governance access
+    // must stay opt-in per account even for admins.
+    document.querySelectorAll('[data-gov-access]').forEach(el => {
+      const allowed = this.hasGovernanceAccess();
       el.style.display      = allowed ? '' : 'none';
       el.dataset.permHidden = allowed ? 'false' : 'true';
     });
