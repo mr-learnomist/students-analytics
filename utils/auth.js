@@ -116,14 +116,6 @@ const ROLE_PERMISSIONS = {
     'disciplines', 'levels', 'campuses', 'institutes', 'holidays',
   ],
 
-  // ── Governance — board/oversight, zyada tar read-only ──────────
-  governance: [
-    'dashboard', 'analytics', 'analytics:reports',
-    'students', 'attendance', 'tests', 'batches', 'admissions', 'fee',
-    'disciplines', 'levels', 'subjects', 'campuses', 'institutes',
-    'holidays', 'teachers', 'lecturePlan', 'timetable', 'enrolment',
-  ],
-
   // ── Principal — institute-wide managerial access ───────────────
   principal: [
     'dashboard', 'analytics', 'analytics:reports',
