@@ -38,6 +38,7 @@ import {
   AttendanceService,
   fetchAndSyncBatchesAttendance,
 } from '../attendance/attendanceService.js';
+import { getAllAssignments } from '../lecturePlan/lecturePlanService.js';
 
 let _stylesInjected = false;
 function _injectStyles() {
@@ -51,6 +52,14 @@ function _injectStyles() {
       background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
     }
     .ga-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
+
+    /* Active / Closed / All status filter */
+    .ga-status-tabs { display:flex; gap:6px; }
+    .ga-status-tab {
+      flex:1; height:28px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer;
+      font-family:inherit; border:1.5px solid var(--border2); background:var(--surface2); color:var(--t3);
+    }
+    .ga-status-tab.active { border-color:var(--blue); color:var(--blue); background:color-mix(in srgb, var(--blue) 12%, transparent); }
 
     /* Consolidated summary */
     .ga-summary-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; }
@@ -156,15 +165,18 @@ export const GovernanceAttendanceModule = {
 
     const campusIdSet = new Set(campuses.map(c => c.id));
     const allBatches = AppState.get('batches') || [];
-    const inScopeActiveBatches = allBatches.filter(b => campusIdSet.has(b.campusId) && this._isActive(b));
+    const inScopeBatches = allBatches.filter(b => campusIdSet.has(b.campusId));
 
-    // Same reasoning as teacherHorizonUI.js: full attendance history is
-    // needed to compute real percentages, so this heavier fetch only
-    // happens when this page is actually opened, batched into one
-    // request covering every in-scope active batch.
-    await fetchAndSyncBatchesAttendance(inScopeActiveBatches.map(b => b.id));
+    // Fetch attendance for EVERY in-scope batch (active + closed) once,
+    // up front — same heavy-fetch reasoning as teacherHorizonUI.js, but
+    // done for the whole scope so the Active/Closed/All toggle below
+    // can just re-filter in memory instead of re-fetching per click.
+    await fetchAndSyncBatchesAttendance(inScopeBatches.map(b => b.id));
 
-    this._render(campuses, inScopeActiveBatches);
+    this._campuses = campuses;
+    this._allBatches = inScopeBatches;
+    this._statusFilter = 'active'; // 'active' | 'closed' | 'all'
+    this._renderAll();
   },
 
   // ── Campus scoping (see header comment for the two conventions) ──
@@ -178,19 +190,36 @@ export const GovernanceAttendanceModule = {
     return gc.campusIds || [];
   },
 
-  // ── copied 1:1 from teacherHorizonUI.js so "active batch" means the
-  // same thing everywhere in the app ──
-  _isActive(batch) {
-    const today  = new Date().toISOString().slice(0, 10);
-    const lpaMap = AppState.get('lpAssignments') || {};
-    let end = null;
-    if (batch.endDateMode === 'lp' || !batch.endDateMode) {
-      const dated = (lpaMap[batch.id]?.rows || []).filter(r => r.date);
-      end = dated.length ? dated[dated.length - 1].date : null;
-    } else {
-      end = batch.endDate || null;
+  // ── ported from testResultSummary.js's _batchStatus() so "Active"/
+  // "Closed" here means exactly the same thing as in Result Profile —
+  // manual endDate takes priority when set, otherwise falls back to
+  // the Lecture Plan's last dated row. No end date at all = active.
+  // Active = effective end > today (or no effective end); Closed = end <= today.
+  _batchStatus(batch) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    let effectiveEnd = batch.endDate || '';
+
+    if ((!effectiveEnd || batch.endDateMode !== 'manual') && batch.id) {
+      try {
+        const assignment = getAllAssignments()[batch.id];
+        const rows = assignment?.rows || [];
+        const datedRows = rows.filter(r => r.date);
+        if (datedRows.length) {
+          const lpLastDate = datedRows[datedRows.length - 1].date;
+          if (lpLastDate && batch.endDateMode !== 'manual') {
+            effectiveEnd = lpLastDate;
+          } else if (lpLastDate && !effectiveEnd) {
+            effectiveEnd = lpLastDate;
+          }
+        }
+      } catch (e) { /* LP not available — use saved endDate */ }
     }
-    return !(end && end < today);
+
+    if (!effectiveEnd) return 'active';
+
+    const end = new Date(effectiveEnd); end.setHours(0, 0, 0, 0);
+    return end <= today ? 'closed' : 'active';
   },
 
   // ── copied 1:1 from teacherHorizonUI.js: roster from active
@@ -305,6 +334,13 @@ export const GovernanceAttendanceModule = {
       </span>`;
   },
 
+  _renderAll() {
+    const filtered = this._statusFilter === 'all'
+      ? this._allBatches
+      : this._allBatches.filter(b => this._batchStatus(b) === this._statusFilter);
+    this._render(this._campuses, filtered);
+  },
+
   _render(campuses, batches) {
     const el = this._el;
     const tree = this._computeTree(campuses, batches);
@@ -312,6 +348,12 @@ export const GovernanceAttendanceModule = {
 
     el.innerHTML = `
       <div class="ga-wrap">
+        <div class="ga-status-tabs" id="gaStatusTabs">
+          <button class="ga-status-tab ${this._statusFilter === 'active' ? 'active' : ''}" data-status="active">Active</button>
+          <button class="ga-status-tab ${this._statusFilter === 'closed' ? 'active' : ''}" data-status="closed">Closed</button>
+          <button class="ga-status-tab ${this._statusFilter === 'all'    ? 'active' : ''}" data-status="all">All</button>
+        </div>
+
         <div class="ga-summary-grid">
           <div class="ga-summary-card critical"><div class="ga-summary-num">${tree.grandCounts.critical}</div><div class="ga-summary-lbl">Critical</div></div>
           <div class="ga-summary-card risk"><div class="ga-summary-num">${tree.grandCounts.risk}</div><div class="ga-summary-lbl">Risk</div></div>
@@ -325,7 +367,19 @@ export const GovernanceAttendanceModule = {
         </div>
       </div>`;
 
+    this._bindStatusTabs();
     this._bindEvents();
+  },
+
+  _bindStatusTabs() {
+    const el = this._el;
+    el.querySelectorAll('#gaStatusTabs [data-status]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.status === this._statusFilter) return;
+        this._statusFilter = btn.dataset.status;
+        this._renderAll();
+      });
+    });
   },
 
   _campusRowHTML(cn) {
