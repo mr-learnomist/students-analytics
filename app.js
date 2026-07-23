@@ -18,6 +18,7 @@ import { BatchModule }       from './modules/batch.js';
 import { UsersModule }       from './modules/users.js';
 import { TeacherUI }         from './modules/teacher/teacherUI.js';
 import { TeacherPortalModule } from './modules/teacher/teacherPortalUI.js';
+import { GovernanceUsersModule } from './modules/governance/governanceUsersUI.js';
 import { StudentModule }     from './modules/student/studentUI.js';
 import { AttendanceModule }  from './modules/attendance/attendanceUI.js';
 import { HolidaysModule }    from './modules/holidays.js';
@@ -279,7 +280,10 @@ function showApp(user) {
   window.history.replaceState({}, '', window.location.pathname);
 
   try {
-    Router.navigate(user.role === 'teacher' ? 'teacherHorizonView' : 'dashboard');
+    const _defaultRoute = user.role === 'teacher' ? 'teacherHorizonView'
+                         : user.role === 'governance' ? 'govHorizonView'
+                         : 'dashboard';
+    Router.navigate(_defaultRoute);
   } catch (navErr) {
     console.error('[Router] Navigation failed:', navErr);
     showLogin();
@@ -323,6 +327,23 @@ function registerRoutes() {
     .register('teacherNotes',              { permission: 'teacherPortal', title: 'Notes',                mount: (el) => TeacherPortalModule.mountNotes(el.querySelector('#teacherNotesMount')) })
     .register('teacherLeaves',             { permission: 'teacherPortal', title: 'Leaves',               mount: null })
     .register('teacherNotification',       { permission: 'teacherPortal', title: 'Notification',         mount: (el) => TeacherPortalModule.mountNotifications(el.querySelector('#teacherNotificationMount')) })
+    // ── Governance — placeholder routes — pages exist (sidebar +
+    // container) but have no module wired up yet. mount:null = static
+    // HTML content already sitting in the data-view div. When one of
+    // these is ready to be built, swap its mount to a real module
+    // call — no index.html changes needed at that point.
+    .register('govHorizonView',          { permission: null, title: 'Horizon View',           mount: null })
+    .register('govStudentsPerformance',  { permission: null, title: 'Students Performance',   mount: null })
+    .register('govAttendance',           { permission: null, title: 'Attendance',             mount: null })
+    .register('govLecturePlan',          { permission: null, title: 'Lecture Plan',           mount: null })
+    .register('govTeachers',             { permission: null, title: 'Teachers',               mount: null })
+    .register('govBudget',               { permission: null, title: 'Budget',                 mount: null })
+    .register('govConversion',           { permission: null, title: 'Conversion',              mount: null })
+    .register('govUpcomingPlanning',     { permission: null, title: 'Upcoming Planning',       mount: null })
+    .register('govApprovals',            { permission: null, title: 'Approvals',               mount: null })
+    .register('govMeetingLinks',         { permission: null, title: 'Meeting Links',           mount: null })
+    .register('govMinutesOfMeeting',     { permission: null, title: 'Minutes of Meeting',      mount: null })
+    .register('govAccessManage',         { permission: 'users', title: 'Governance Access',    mount: (el) => GovernanceUsersModule.mount(el.querySelector('#govAccessManageMount')) })
     .register('batches',    { permission: 'batches',    title: 'Batches',     mount: (el) => BatchModule.mount(el.querySelector('#batchMount')) })
     .register('admin',      { permission: 'admin',      title: 'Admin Panel', mount: () => initAdminTabs() })
     .register('students',   { permission: 'students',   title: 'Students',    mount: (el) => StudentModule.mount(el.querySelector('#studentMount')) })
