@@ -46,7 +46,10 @@ function _injectStyles() {
   const style = document.createElement('style');
   style.id = 'ga-styles';
   style.textContent = `
-    .ga-wrap { display:flex; flex-direction:column; gap:14px; }
+    .ga-wrap {
+      display:flex; flex-direction:column; gap:14px; max-width:960px;
+      background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px;
+    }
     .ga-note {
       font-size:12px; color:var(--t3); background:var(--surface2); border:1px solid var(--border2);
       border-radius:10px; padding:12px 14px; line-height:1.5;
@@ -277,6 +280,7 @@ export const GovernanceAttendanceModule = {
           discMap.set(discId, {
             disciplineId: discId,
             disciplineName: batch.disciplineName || 'Unassigned Discipline',
+            disciplineAbbr: batch.disciplineAbbr || '',
             batchNodes: [],
           });
         }
@@ -354,11 +358,12 @@ export const GovernanceAttendanceModule = {
   _disciplineRowHTML(campusId, dn) {
     const key = `${campusId}__${dn.disciplineId}`;
     const isOpen = this._expandedDisciplines.has(key);
+    const label = dn.disciplineAbbr ? `${dn.disciplineAbbr} — ${dn.disciplineName}` : dn.disciplineName;
     return `
       <div class="ga-discipline-row">
         <div class="ga-row-hdr" data-toggle-discipline="${key}">
           ${_chevSVG(isOpen)}
-          <span class="ga-row-name small">${_esc(dn.disciplineName)}</span>
+          <span class="ga-row-name small">${_esc(label)}</span>
           ${this._tallyHTML(dn.counts)}
         </div>
         ${isOpen ? `
