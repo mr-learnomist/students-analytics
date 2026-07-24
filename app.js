@@ -346,7 +346,12 @@ function registerRoutes() {
       GovernanceConversionModule.mount(root.querySelector('#govHorizonConversion'), { user });
     } })
     .register('govStudentsPerformance',  { permission: null, title: 'Students Performance',   mount: null })
-    .register('govAttendance',           { permission: null, title: 'Attendance',             mount: null })
+    .register('govAttendance',           { permission: null, title: 'Attendance',             mount: (el) => {
+      const root = el.querySelector('#govAttendanceMount');
+      if (!root) return;
+      const user = Auth.getCurrentUser();
+      GovernanceAttendanceModule.mount(root, { user });
+    } })
     .register('govLecturePlan',          { permission: null, title: 'Lecture Plan',           mount: null })
     .register('govTeachers',             { permission: null, title: 'Teachers',               mount: null })
     .register('govBudget',               { permission: null, title: 'Budget',                 mount: null })
