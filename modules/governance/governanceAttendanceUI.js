@@ -37,6 +37,8 @@ import { AppState } from '../../utils/state.js';
 import {
   AttendanceService,
   fetchAndSyncBatchesAttendance,
+  parseLocalDate,
+  toISODate,
 } from '../attendance/attendanceService.js';
 import { getAllAssignments } from '../lecturePlan/lecturePlanService.js';
 
@@ -148,6 +150,22 @@ function _injectStyles() {
     .risk-text     { color:#d97706; }
     .alert-text    { color:#ca8a04; }
     .good-text     { color:var(--green); }
+
+    /* Trend card — standalone Attendance module only, never in Horizon View */
+    .ga-trend-card {
+      margin-top:16px; max-width:680px; display:flex; flex-direction:column; gap:10px;
+      background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
+    }
+    .ga-trend-header { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .ga-trend-title { font-size:14px; font-weight:800; color:var(--t1); }
+    .ga-trend-range { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--t3); }
+    .ga-trend-range input[type="date"] {
+      height:28px; padding:0 8px; border-radius:8px; border:1px solid var(--border2);
+      background:var(--surface); color:var(--t1); font-size:11.5px; font-family:inherit;
+    }
+    .ga-trend-chart-wrap { position:relative; height:240px; }
+    .ga-trend-chart-wrap canvas { width:100% !important; height:100% !important; }
+    .ga-trend-empty { text-align:center; padding:30px 10px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:10px; }
   `;
   document.head.appendChild(style);
 }
@@ -164,6 +182,15 @@ function _fsIconSVG(isFullscreen) {
   return isFullscreen
     ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`
     : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+}
+
+// Chart.js can't read CSS custom properties directly — resolve them to
+// real color strings so trend lines stay theme-consistent (light/dark).
+function _cssVar(name, fallback) {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  } catch (e) { return fallback; }
 }
 
 const TIER_LABEL = { critical: 'Critical', risk: 'Risk', alert: 'Alert', good: 'Good' };
@@ -183,6 +210,17 @@ export const GovernanceAttendanceModule = {
     this._excludedBatchIds    = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
     this._batchSearch         = new Map(); // disciplineKey -> search text
     this._isFullscreen        = false;
+
+    // Trend graph — ONLY rendered when mounted standalone (the
+    // Attendance module page), never inside the Horizon View widget.
+    // Caller controls this via ctx.standalone (see app.js route registration).
+    this._standalone = !!(this._ctx.standalone);
+    this._trendChart = null;
+    if (!this._trendTo)   this._trendTo   = toISODate(new Date());
+    if (!this._trendFrom) {
+      const d = new Date(); d.setDate(d.getDate() - 29);
+      this._trendFrom = toISODate(d);
+    }
 
     // Native Fullscreen API state can change from outside our button
     // (browser's own ESC handling, swipe-down, etc.) — this listener
@@ -413,6 +451,135 @@ export const GovernanceAttendanceModule = {
       </span>`;
   },
 
+  // ── Trend graph data — standalone Attendance module ONLY ──────────
+  // For every day in [fromDate, toDate], applies that day's attendance
+  // records on top of a running cumulative P/total per student, then
+  // re-tiers every student who has at least one record so far. This
+  // gives a day-by-day picture of how many tracked students are
+  // Critical/Risk/Alert/Good — and the total tracked count — as the
+  // scope's attendance history builds up, using the SAME batches
+  // (status tab + manual exclusions) as the tree above it.
+  _computeTrendSeries(fromDate, toDate) {
+    if (!fromDate || !toDate || toDate < fromDate) return [];
+
+    const inScopeBatches = (this._statusFilter === 'all'
+      ? this._allBatches
+      : this._allBatches.filter(b => this._batchStatus(b) === this._statusFilter)
+    ).filter(b => !this._excludedBatchIds.has(b.id));
+
+    // Group every relevant record by date, once, up front.
+    const recordsByDate = new Map(); // date -> [{studentId, status}]
+    inScopeBatches.forEach(batch => {
+      const rosterIds = new Set(this._rosterFor(batch.id).map(s => s.id));
+      AttendanceService.getRecordsForBatch(batch.id).forEach(r => {
+        if (!rosterIds.has(r.studentId)) return;
+        if (r.date < fromDate || r.date > toDate) return; // outside the chosen range — ignore for the walk below
+        if (!recordsByDate.has(r.date)) recordsByDate.set(r.date, []);
+        recordsByDate.get(r.date).push({ studentId: r.studentId, status: r.status });
+      });
+    });
+
+    const series = [];
+    const cumMap = new Map(); // studentId -> { P, total }
+    let cursor = parseLocalDate(fromDate);
+    const end  = parseLocalDate(toDate);
+
+    while (cursor <= end) {
+      const iso = toISODate(cursor);
+      (recordsByDate.get(iso) || []).forEach(({ studentId, status }) => {
+        if (!cumMap.has(studentId)) cumMap.set(studentId, { P: 0, total: 0 });
+        const c = cumMap.get(studentId);
+        c.total++;
+        if (status === 'P') c.P++;
+      });
+
+      let critical = 0, risk = 0, alert = 0, good = 0, total = 0;
+      cumMap.forEach(c => {
+        if (!c.total) return;
+        total++;
+        const tier = this._tierFor(Math.round((c.P / c.total) * 100));
+        if (tier === 'critical') critical++;
+        else if (tier === 'risk') risk++;
+        else if (tier === 'alert') alert++;
+        else good++;
+      });
+
+      series.push({ date: iso, total, critical, risk, alert, good });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return series;
+  },
+
+  _trendCardHTML(series) {
+    const hasData = series.some(p => p.total > 0);
+    return `
+      <div class="ga-trend-card">
+        <div class="ga-trend-header">
+          <div class="ga-trend-title">Attendance Trend</div>
+          <div class="ga-trend-range">
+            <input type="date" id="gaTrendFrom" value="${this._trendFrom}" max="${this._trendTo}" />
+            <span>to</span>
+            <input type="date" id="gaTrendTo" value="${this._trendTo}" min="${this._trendFrom}" max="${toISODate(new Date())}" />
+          </div>
+        </div>
+        ${hasData
+          ? `<div class="ga-trend-chart-wrap"><canvas id="gaTrendCanvas"></canvas></div>`
+          : `<div class="ga-trend-empty">No attendance data in this date range for the current scope.</div>`}
+      </div>`;
+  },
+
+  _bindTrend(series) {
+    const el = this._el;
+
+    const fromInp = el.querySelector('#gaTrendFrom');
+    const toInp   = el.querySelector('#gaTrendTo');
+    if (fromInp) fromInp.addEventListener('change', () => {
+      if (!fromInp.value) return;
+      this._trendFrom = fromInp.value;
+      this._renderAll();
+    });
+    if (toInp) toInp.addEventListener('change', () => {
+      if (!toInp.value) return;
+      this._trendTo = toInp.value;
+      this._renderAll();
+    });
+
+    if (this._trendChart) { this._trendChart.destroy(); this._trendChart = null; }
+
+    const canvas = el.querySelector('#gaTrendCanvas');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const line = (label, data, color) => ({
+      label, data, borderColor: color, backgroundColor: 'transparent',
+      borderWidth: 2, pointRadius: 0, tension: 0.25,
+    });
+
+    this._trendChart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: series.map(p => p.date),
+        datasets: [
+          line('Total',    series.map(p => p.total),    _cssVar('--blue', '#3b82f6')),
+          line('Good',     series.map(p => p.good),     _cssVar('--green', '#10b981')),
+          line('Alert',    series.map(p => p.alert),    '#ca8a04'),
+          line('Risk',     series.map(p => p.risk),     '#d97706'),
+          line('Critical', series.map(p => p.critical), _cssVar('--red', '#ef4444')),
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
+        },
+      },
+    });
+  },
+
   _renderAll() {
     const filtered = this._statusFilter === 'all'
       ? this._allBatches
@@ -424,6 +591,8 @@ export const GovernanceAttendanceModule = {
     const el = this._el;
     const tree = this._computeTree(campuses, batches);
     this._tree = tree;
+
+    const trendSeries = this._standalone ? this._computeTrendSeries(this._trendFrom, this._trendTo) : null;
 
     el.innerHTML = `
       <div class="ga-wrap${this._isFullscreen ? ' ga-fullscreen' : ''}">
@@ -448,13 +617,15 @@ export const GovernanceAttendanceModule = {
         <div id="gaCampusList">
           ${tree.campusNodes.length ? tree.campusNodes.map(cn => this._campusRowHTML(cn)).join('') : `<div class="ga-empty">No batches with attendance data in your assigned campuses.</div>`}
         </div>
-      </div>`;
+      </div>
+      ${this._standalone ? this._trendCardHTML(trendSeries) : ''}`;
 
     const fsBtn = el.querySelector('#gaFsBtn');
     if (fsBtn) fsBtn.addEventListener('click', () => this._toggleFullscreen());
 
     this._bindStatusTabs();
     this._bindEvents();
+    if (this._standalone) this._bindTrend(trendSeries);
   },
 
   // Toggling full screen just flips a flag and re-renders — all
