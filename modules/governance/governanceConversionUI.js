@@ -84,6 +84,13 @@ function _injectStyles() {
       position:fixed; inset:0; z-index:9999; max-width:none; width:100vw; height:100vh;
       border-radius:0; margin:0; overflow-y:auto;
     }
+    /* True edge-to-edge via the browser Fullscreen API — no address
+       bar, no chrome. Overrides the UA's default centered/black box. */
+    .gc-wrap:fullscreen, .gc-wrap:-webkit-full-screen {
+      width:100vw; height:100vh; max-width:none; max-height:none; margin:0;
+      border-radius:0; overflow-y:auto; background:var(--surface);
+    }
+    .gc-wrap::backdrop, .gc-wrap::-webkit-full-screen-backdrop { background:var(--surface); }
     .gc-header-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
     .gc-fs-btn {
       width:26px; height:26px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
@@ -184,12 +191,33 @@ export const GovernanceConversionModule = {
     this._removeOutliers   = false;     // stats-only toggle — never affects the rollup/drill-down itself
     this._isFullscreen     = false;
 
-    // ESC exits full screen — bound once per mount, guarded so a
-    // remount never stacks duplicate document-level listeners.
+    // Native Fullscreen API state can change from outside our button
+    // (browser's own ESC handling, swipe-down, etc.) — this listener
+    // keeps `this._isFullscreen` and the icon in sync whenever that
+    // happens, bound once so a remount never stacks duplicates.
+    if (!this._fsChangeBound) {
+      this._fsChangeBound = true;
+      const syncFs = () => {
+        const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (active !== this._isFullscreen) {
+          this._isFullscreen = active;
+          document.body.style.overflow = active ? 'hidden' : '';
+          this._render();
+        }
+      };
+      document.addEventListener('fullscreenchange', syncFs);
+      document.addEventListener('webkitfullscreenchange', syncFs);
+    }
+
+    // Fallback path only: if the browser doesn't support the
+    // Fullscreen API, _toggleFullscreen() falls back to the CSS
+    // overlay above, which native ESC handling won't dismiss — so we
+    // still listen for it, but only act when native fullscreen isn't
+    // actually engaged (document.fullscreenElement is empty).
     if (!this._escBound) {
       this._escBound = true;
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && this._isFullscreen) this._toggleFullscreen();
+        if (e.key === 'Escape' && this._isFullscreen && !document.fullscreenElement) this._toggleFullscreen();
       });
     }
 
@@ -484,10 +512,36 @@ export const GovernanceConversionModule = {
   // drill-down state (_expandedCampuses/_expandedSegments/_expandedBatches
   // etc.) lives on `this`, not in the DOM, so it survives the toggle
   // untouched in both directions.
-  _toggleFullscreen() {
-    this._isFullscreen = !this._isFullscreen;
-    document.body.style.overflow = this._isFullscreen ? 'hidden' : '';
-    this._render();
+  //
+  // Uses the real browser Fullscreen API on the card itself so it's
+  // genuinely edge-to-edge (no address bar / browser chrome). Falls
+  // back to a CSS full-viewport overlay only if the API is missing
+  // or the browser blocks the request.
+  async _toggleFullscreen() {
+    const wrap = this._el.querySelector('.gc-wrap');
+
+    if (!this._isFullscreen) {
+      try {
+        const req = wrap && (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.msRequestFullscreen);
+        if (req) {
+          await req.call(wrap);
+          return; // fullscreenchange listener flips the flag + re-renders
+        }
+      } catch (e) { /* blocked/unsupported — fall through to CSS overlay */ }
+      this._isFullscreen = true;
+      document.body.style.overflow = 'hidden';
+      this._render();
+    } else {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        try {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (exit) { await exit.call(document); return; } // fullscreenchange listener handles the rest
+        } catch (e) { /* ignore — fall through to manual reset below */ }
+      }
+      this._isFullscreen = false;
+      document.body.style.overflow = '';
+      this._render();
+    }
   },
 
   _bindOutlierToggle() {
