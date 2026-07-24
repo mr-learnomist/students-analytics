@@ -48,9 +48,20 @@ function _injectStyles() {
   style.id = 'ga-styles';
   style.textContent = `
     .ga-wrap {
-      display:flex; flex-direction:column; gap:12px; max-width:680px;
+      position:relative; display:flex; flex-direction:column; gap:12px; max-width:680px;
       background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
     }
+    .ga-wrap.ga-fullscreen {
+      position:fixed; inset:0; z-index:9999; max-width:none; width:100vw; height:100vh;
+      border-radius:0; margin:0; overflow-y:auto;
+    }
+    .ga-header-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .ga-fs-btn {
+      width:26px; height:26px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+      border-radius:7px; border:1px solid var(--border2); background:var(--surface2); color:var(--t2);
+      cursor:pointer; padding:0;
+    }
+    .ga-fs-btn:hover { background:var(--surface3, var(--border2)); color:var(--t1); }
     .ga-title { font-size:14px; font-weight:800; color:var(--t1); }
     .ga-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
 
@@ -137,6 +148,12 @@ function _chevSVG(isOpen) {
   return `<svg class="ga-chev${isOpen ? ' open' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>`;
 }
 
+function _fsIconSVG(isFullscreen) {
+  return isFullscreen
+    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`
+    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+}
+
 const TIER_LABEL = { critical: 'Critical', risk: 'Risk', alert: 'Alert', good: 'Good' };
 
 export const GovernanceAttendanceModule = {
@@ -152,6 +169,16 @@ export const GovernanceAttendanceModule = {
     this._expandedStudents    = new Set();
     this._excludedBatchIds    = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
     this._batchSearch         = new Map(); // disciplineKey -> search text
+    this._isFullscreen        = false;
+
+    // ESC exits full screen — bound once per mount, guarded so a
+    // remount never stacks duplicate document-level listeners.
+    if (!this._escBound) {
+      this._escBound = true;
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && this._isFullscreen) this._toggleFullscreen();
+      });
+    }
 
     el.innerHTML = `<div class="ga-empty">Loading Governance Attendance View…</div>`;
 
@@ -365,8 +392,11 @@ export const GovernanceAttendanceModule = {
     this._tree = tree;
 
     el.innerHTML = `
-      <div class="ga-wrap">
-        <div class="ga-title">Attendance</div>
+      <div class="ga-wrap${this._isFullscreen ? ' ga-fullscreen' : ''}">
+        <div class="ga-header-row">
+          <div class="ga-title">Attendance</div>
+          <button type="button" class="ga-fs-btn" id="gaFsBtn" title="${this._isFullscreen ? 'Exit full screen' : 'Full screen'}" aria-label="${this._isFullscreen ? 'Exit full screen' : 'Full screen'}">${_fsIconSVG(this._isFullscreen)}</button>
+        </div>
         <div class="ga-status-tabs" id="gaStatusTabs">
           <button class="ga-status-tab ${this._statusFilter === 'active' ? 'active' : ''}" data-status="active">Active</button>
           <button class="ga-status-tab ${this._statusFilter === 'closed' ? 'active' : ''}" data-status="closed">Closed</button>
@@ -386,8 +416,21 @@ export const GovernanceAttendanceModule = {
         </div>
       </div>`;
 
+    const fsBtn = el.querySelector('#gaFsBtn');
+    if (fsBtn) fsBtn.addEventListener('click', () => this._toggleFullscreen());
+
     this._bindStatusTabs();
     this._bindEvents();
+  },
+
+  // Toggling full screen just flips a flag and re-renders — all
+  // drill-down state (_expandedCampuses/_expandedDisciplines/
+  // _expandedBatches/_expandedStudents etc.) lives on `this`, not in
+  // the DOM, so it survives the toggle untouched in both directions.
+  _toggleFullscreen() {
+    this._isFullscreen = !this._isFullscreen;
+    document.body.style.overflow = this._isFullscreen ? 'hidden' : '';
+    this._renderAll();
   },
 
   _bindStatusTabs() {
