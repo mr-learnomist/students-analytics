@@ -18,13 +18,14 @@
 //     PRC (BEI/FA/ECS/QAB) → CAF Group A (FAR/TPC/DSR/BLD)
 //     CAF Group A (FAR/TPC/DSR/BLD) → CAF Group B (MA/CR/BIA/AAE)
 //
-// ONLY CLOSED FROM-STAGE BATCHES COUNT: a student whose FROM-stage
-// batch (e.g. their FA1 batch) is still ACTIVE hasn't finished that
-// course yet, so it's too early to call them "converted" or "not
-// converted" — they're excluded from the base population entirely
-// until their FROM-stage batch closes. Batch status uses the same
-// canonical logic as governanceAttendanceUI.js's _batchStatus(),
-// ported from testResultSummary.js.
+// BATCH-LEVEL RULE (not student-level): a whole batch is judged, not
+// individual students. If a student's FROM-stage batch (e.g. their
+// FA1 batch) is still ACTIVE, none of that batch's students count
+// toward conversion yet — full stop, no exceptions. Only once the
+// FROM-stage batch is CLOSED do its students get counted (converted
+// or not). Batch status uses the same canonical logic as
+// governanceAttendanceUI.js's _batchStatus(), ported from
+// testResultSummary.js.
 //
 // Subject code is read the same way both source reports read it:
 // the batch name's first hyphen-separated segment, with any
@@ -304,18 +305,19 @@ export const GovernanceConversionModule = {
       this._studentHasAny(s, seg.from) && this._studentFromCampusId(s, seg.from) === campusId
     );
 
-    // Exclude students whose FROM-stage batch is still active — their
-    // course isn't finished yet, so it's too early to count them.
-    const closedBase = rawBase.filter(s => {
+    // Batch-level rule: if the FROM-stage batch is still active, none
+    // of its students count toward conversion yet — full stop. We're
+    // judging the batch, not individual students.
+    const eligibleBase = rawBase.filter(s => {
       const batch = this._batchesById.get(this._studentFromBatchId(s, seg.from));
       return batch && this._batchStatus(batch) === 'closed';
     });
 
-    // Group into batches first (ALL closed batches, including any the
+    // Group into batches first (ALL eligible batches, including any the
     // user has manually excluded — they still need to render with
     // their checkbox), then roll up only the non-excluded ones.
     const batchMap = new Map();
-    closedBase.forEach(s => {
+    eligibleBase.forEach(s => {
       const batchId = this._studentFromBatchId(s, seg.from);
       if (!batchMap.has(batchId)) {
         batchMap.set(batchId, { batch: this._batchesById.get(batchId), students: [] });
@@ -351,8 +353,9 @@ export const GovernanceConversionModule = {
       const rawBase = this._students.filter(s => this._studentHasAny(s, seg.from));
       const base = rawBase.filter(s => {
         const batchId = this._studentFromBatchId(s, seg.from);
+        if (this._excludedBatchIds.has(batchId)) return false;
         const batch = this._batchesById.get(batchId);
-        return batch && this._batchStatus(batch) === 'closed' && !this._excludedBatchIds.has(batchId);
+        return batch && this._batchStatus(batch) === 'closed';
       });
       const converted = base.filter(s => this._studentHasAny(s, seg.to));
       const pct = base.length ? Math.round((converted.length / base.length) * 100) : 0;
