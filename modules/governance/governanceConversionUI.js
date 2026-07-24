@@ -77,9 +77,20 @@ function _injectStyles() {
   style.id = 'gc-styles';
   style.textContent = `
     .gc-wrap {
-      display:flex; flex-direction:column; gap:12px; max-width:680px;
+      position:relative; display:flex; flex-direction:column; gap:12px; max-width:680px;
       background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
     }
+    .gc-wrap.gc-fullscreen {
+      position:fixed; inset:0; z-index:9999; max-width:none; width:100vw; height:100vh;
+      border-radius:0; margin:0; overflow-y:auto;
+    }
+    .gc-header-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .gc-fs-btn {
+      width:26px; height:26px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+      border-radius:7px; border:1px solid var(--border2); background:var(--surface2); color:var(--t2);
+      cursor:pointer; padding:0;
+    }
+    .gc-fs-btn:hover { background:var(--surface3, var(--border2)); color:var(--t1); }
     .gc-title { font-size:14px; font-weight:800; color:var(--t1); }
     .gc-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
 
@@ -146,6 +157,12 @@ function _chevSVG(isOpen) {
   return `<svg class="gc-chev${isOpen ? ' open' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>`;
 }
 
+function _fsIconSVG(isFullscreen) {
+  return isFullscreen
+    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`
+    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+}
+
 function _pctTagClass(pct) {
   if (pct >= 70) return 'hi';
   if (pct >= 40) return 'mid';
@@ -165,6 +182,16 @@ export const GovernanceConversionModule = {
     this._excludedBatchIds = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
     this._batchSearch      = new Map(); // segmentKey -> search text
     this._removeOutliers   = false;     // stats-only toggle — never affects the rollup/drill-down itself
+    this._isFullscreen     = false;
+
+    // ESC exits full screen — bound once per mount, guarded so a
+    // remount never stacks duplicate document-level listeners.
+    if (!this._escBound) {
+      this._escBound = true;
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && this._isFullscreen) this._toggleFullscreen();
+      });
+    }
 
     const user = this._ctx.user || AppState.get('currentUser') || AppState.get('user');
     if (!user) {
@@ -419,8 +446,11 @@ export const GovernanceConversionModule = {
     this._tree = tree;
 
     el.innerHTML = `
-      <div class="gc-wrap">
-        <div class="gc-title">Conversion</div>
+      <div class="gc-wrap${this._isFullscreen ? ' gc-fullscreen' : ''}">
+        <div class="gc-header-row">
+          <div class="gc-title">Conversion</div>
+          <button type="button" class="gc-fs-btn" id="gcFsBtn" title="${this._isFullscreen ? 'Exit full screen' : 'Full screen'}" aria-label="${this._isFullscreen ? 'Exit full screen' : 'Full screen'}">${_fsIconSVG(this._isFullscreen)}</button>
+        </div>
 
         <label class="gc-outlier-toggle">
           <input type="checkbox" id="gcRemoveOutliers" ${this._removeOutliers ? 'checked' : ''} />
@@ -443,8 +473,21 @@ export const GovernanceConversionModule = {
         </div>
       </div>`;
 
+    const fsBtn = el.querySelector('#gcFsBtn');
+    if (fsBtn) fsBtn.addEventListener('click', () => this._toggleFullscreen());
+
     this._bindOutlierToggle();
     this._bindEvents();
+  },
+
+  // Toggling full screen just flips a flag and re-renders — all
+  // drill-down state (_expandedCampuses/_expandedSegments/_expandedBatches
+  // etc.) lives on `this`, not in the DOM, so it survives the toggle
+  // untouched in both directions.
+  _toggleFullscreen() {
+    this._isFullscreen = !this._isFullscreen;
+    document.body.style.overflow = this._isFullscreen ? 'hidden' : '';
+    this._render();
   },
 
   _bindOutlierToggle() {
