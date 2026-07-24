@@ -7,7 +7,7 @@
 // up subject-to-subject CONVERSION across every campus the
 // governance user has access to:
 //
-//     Campus → Segment → Student
+//     Campus → Segment → Batch → Student
 //
 // Segments (ported straight from the two existing analytics reports
 // so the numbers always match what those reports show):
@@ -16,7 +16,15 @@
 //     MA track: MA1 → MA2, MA2 → F2
 //   modules/analytics/reports/batches/prcConversionTracking.js
 //     PRC (BEI/FA/ECS/QAB) → CAF Group A (FAR/TPC/DSR/BLD)
-//     PRC (BEI/FA/ECS/QAB) → CAF Group B (MA/CR/BIA/AAE)
+//     CAF Group A (FAR/TPC/DSR/BLD) → CAF Group B (MA/CR/BIA/AAE)
+//
+// ONLY CLOSED FROM-STAGE BATCHES COUNT: a student whose FROM-stage
+// batch (e.g. their FA1 batch) is still ACTIVE hasn't finished that
+// course yet, so it's too early to call them "converted" or "not
+// converted" — they're excluded from the base population entirely
+// until their FROM-stage batch closes. Batch status uses the same
+// canonical logic as governanceAttendanceUI.js's _batchStatus(),
+// ported from testResultSummary.js.
 //
 // Subject code is read the same way both source reports read it:
 // the batch name's first hyphen-separated segment, with any
@@ -36,6 +44,7 @@
 // ============================================================
 
 import { AppState } from '../../utils/state.js';
+import { getAllAssignments } from '../lecturePlan/lecturePlanService.js';
 
 // ── Subject chains — copied 1:1 from the source reports ──────────
 const FA_CHAIN   = ['FA1', 'FA2', 'F3'];
@@ -55,8 +64,8 @@ const SEGMENTS = [
   { key: 'fa2_f3',  label: 'FA2 → F3',              from: ['FA2'],     to: ['F3']  },
   { key: 'ma1_ma2', label: 'MA1 → MA2',             from: ['MA1'],     to: ['MA2'] },
   { key: 'ma2_f2',  label: 'MA2 → F2',              from: ['MA2'],     to: ['F2']  },
-  { key: 'prc_capa', label: 'PRC → CAF Group A',    from: PRC_CODES,   to: CAF_A_CODES },
-  { key: 'prc_capb', label: 'PRC → CAF Group B',    from: PRC_CODES,   to: CAF_B_CODES },
+  { key: 'prc_capa', label: 'PRC → CAF Group A',       from: PRC_CODES,   to: CAF_A_CODES },
+  { key: 'capa_capb', label: 'CAF Group A → Group B',  from: CAF_A_CODES, to: CAF_B_CODES },
 ];
 
 let _stylesInjected = false;
@@ -70,6 +79,7 @@ function _injectStyles() {
       display:flex; flex-direction:column; gap:12px; max-width:680px;
       background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
     }
+    .gc-title { font-size:14px; font-weight:800; color:var(--t1); }
     .gc-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
 
     .gc-summary-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
@@ -90,6 +100,7 @@ function _injectStyles() {
     .gc-campus-row  { border:1px solid var(--border2); border-radius:12px; margin-bottom:10px; overflow:hidden; background:var(--surface); }
     .gc-campus-row > .gc-row-hdr { background:var(--surface2); }
     .gc-segment-row { border:1px solid var(--border2); border-radius:10px; margin-bottom:8px; overflow:hidden; }
+    .gc-batch-row   { border:1px solid var(--border2); border-radius:9px; margin-bottom:6px; overflow:hidden; }
 
     .gc-pct-tag { font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px; white-space:nowrap; }
     .gc-pct-tag.hi  { background:color-mix(in srgb, var(--green) 15%, transparent); color:var(--green); }
@@ -97,6 +108,15 @@ function _injectStyles() {
     .gc-pct-tag.lo  { background:color-mix(in srgb, var(--red) 15%, transparent); color:var(--red); }
     .gc-pct-tag.none { background:var(--surface2); color:var(--t3); }
     .gc-count-sub { font-size:10.5px; color:var(--t3); white-space:nowrap; }
+
+    .gc-batch-check { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+    .gc-row-hdr.excluded { opacity:.5; }
+    .gc-row-hdr.excluded .gc-row-name { text-decoration:line-through; }
+
+    .gc-batch-search {
+      width:100%; height:30px; padding:0 10px; margin-bottom:8px; border-radius:8px;
+      border:1px solid var(--border2); background:var(--surface); color:var(--t1); font-size:12px; box-sizing:border-box;
+    }
 
     .gc-tier-label { font-size:10.5px; font-weight:800; text-transform:uppercase; margin:8px 0 6px; }
     .gc-tier-label:first-child { margin-top:0; }
@@ -133,6 +153,9 @@ export const GovernanceConversionModule = {
     this._ctx = ctx || {};
     this._expandedCampuses = new Set();
     this._expandedSegments = new Set();
+    this._expandedBatches  = new Set();
+    this._excludedBatchIds = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
+    this._batchSearch      = new Map(); // segmentKey -> search text
 
     const user = this._ctx.user || AppState.get('currentUser') || AppState.get('user');
     if (!user) {
@@ -152,8 +175,38 @@ export const GovernanceConversionModule = {
     }
 
     this._campuses = campuses;
+    this._batchesById = new Map((AppState.get('batches') || []).map(b => [b.id, b]));
     this._students = this._buildStudentSubjectMap();
     this._render();
+  },
+
+  // ── ported 1:1 from governanceAttendanceUI.js / testResultSummary.js
+  // so "closed batch" means exactly the same thing everywhere ──
+  _batchStatus(batch) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    let effectiveEnd = batch.endDate || '';
+
+    if ((!effectiveEnd || batch.endDateMode !== 'manual') && batch.id) {
+      try {
+        const assignment = getAllAssignments()[batch.id];
+        const rows = assignment?.rows || [];
+        const datedRows = rows.filter(r => r.date);
+        if (datedRows.length) {
+          const lpLastDate = datedRows[datedRows.length - 1].date;
+          if (lpLastDate && batch.endDateMode !== 'manual') {
+            effectiveEnd = lpLastDate;
+          } else if (lpLastDate && !effectiveEnd) {
+            effectiveEnd = lpLastDate;
+          }
+        }
+      } catch (e) { /* LP not available — use saved endDate */ }
+    }
+
+    if (!effectiveEnd) return 'active';
+
+    const end = new Date(effectiveEnd); end.setHours(0, 0, 0, 0);
+    return end <= today ? 'closed' : 'active';
   },
 
   // ── Campus scoping for the governance user — identical logic to
@@ -210,6 +263,7 @@ export const GovernanceConversionModule = {
         if (!map[enr.studentId].subjects[code]) {
           map[enr.studentId].subjects[code] = {
             campusId: batchRec.campusId || '',
+            batchId: batchRec.id,
             status: sub.status || enr.status || 'active',
           };
         }
@@ -232,16 +286,59 @@ export const GovernanceConversionModule = {
     return '';
   },
 
-  // For one campus + one segment: which students started it (base)
-  // and which of those also reached the target stage (converted).
+  // Batch credited for a segment = batch of the first matching
+  // FROM-stage subject found (same order as _studentFromCampusId).
+  _studentFromBatchId(student, fromCodes) {
+    for (const c of fromCodes) {
+      if (student.subjects[c]) return student.subjects[c].batchId;
+    }
+    return null;
+  },
+
+  // For one campus + one segment: which students started it (base —
+  // ONLY counting students whose FROM-stage batch has closed) and
+  // which of those also reached the target stage (converted),
+  // grouped by their FROM-stage batch for the drill-down.
   _computeSegmentForCampus(campusId, seg) {
-    const base = this._students.filter(s =>
+    const rawBase = this._students.filter(s =>
       this._studentHasAny(s, seg.from) && this._studentFromCampusId(s, seg.from) === campusId
     );
-    const converted = base.filter(s => this._studentHasAny(s, seg.to));
-    const notYet = base.filter(s => !this._studentHasAny(s, seg.to));
+
+    // Exclude students whose FROM-stage batch is still active — their
+    // course isn't finished yet, so it's too early to count them.
+    const closedBase = rawBase.filter(s => {
+      const batch = this._batchesById.get(this._studentFromBatchId(s, seg.from));
+      return batch && this._batchStatus(batch) === 'closed';
+    });
+
+    // Group into batches first (ALL closed batches, including any the
+    // user has manually excluded — they still need to render with
+    // their checkbox), then roll up only the non-excluded ones.
+    const batchMap = new Map();
+    closedBase.forEach(s => {
+      const batchId = this._studentFromBatchId(s, seg.from);
+      if (!batchMap.has(batchId)) {
+        batchMap.set(batchId, { batch: this._batchesById.get(batchId), students: [] });
+      }
+      batchMap.get(batchId).students.push(s);
+    });
+    const batchGroups = [...batchMap.values()].map(g => {
+      const bConverted = g.students.filter(s => this._studentHasAny(s, seg.to));
+      const bNotYet = g.students.filter(s => !this._studentHasAny(s, seg.to));
+      const bPct = g.students.length ? Math.round((bConverted.length / g.students.length) * 100) : 0;
+      return {
+        batch: g.batch, students: g.students, converted: bConverted, notYet: bNotYet, pct: bPct,
+        excluded: this._excludedBatchIds.has(g.batch?.id),
+      };
+    }).sort((a, b) => (a.batch?.batchName || '').localeCompare(b.batch?.batchName || ''));
+
+    const includedGroups = batchGroups.filter(g => !g.excluded);
+    const base      = includedGroups.flatMap(g => g.students);
+    const converted = includedGroups.flatMap(g => g.converted);
+    const notYet    = includedGroups.flatMap(g => g.notYet);
     const pct = base.length ? Math.round((converted.length / base.length) * 100) : 0;
-    return { seg, base, converted, notYet, pct };
+
+    return { seg, base, converted, notYet, pct, batchGroups };
   },
 
   _computeCampusTree() {
@@ -251,7 +348,12 @@ export const GovernanceConversionModule = {
     });
 
     const grandSegments = SEGMENTS.map(seg => {
-      const base      = this._students.filter(s => this._studentHasAny(s, seg.from));
+      const rawBase = this._students.filter(s => this._studentHasAny(s, seg.from));
+      const base = rawBase.filter(s => {
+        const batchId = this._studentFromBatchId(s, seg.from);
+        const batch = this._batchesById.get(batchId);
+        return batch && this._batchStatus(batch) === 'closed' && !this._excludedBatchIds.has(batchId);
+      });
       const converted = base.filter(s => this._studentHasAny(s, seg.to));
       const pct = base.length ? Math.round((converted.length / base.length) * 100) : 0;
       return { seg, base, converted, pct };
@@ -272,6 +374,7 @@ export const GovernanceConversionModule = {
 
     el.innerHTML = `
       <div class="gc-wrap">
+        <div class="gc-title">Conversion</div>
         <div class="gc-summary-grid">
           ${tree.grandSegments.map(g => `
             <div class="gc-summary-card">
@@ -308,6 +411,10 @@ export const GovernanceConversionModule = {
   _segmentRowHTML(campusId, sg) {
     const key = `${campusId}__${sg.seg.key}`;
     const isOpen = this._expandedSegments.has(key);
+    const searchVal = this._batchSearch.get(key) || '';
+    const visibleBatchGroups = searchVal.trim()
+      ? sg.batchGroups.filter(bg => (bg.batch?.batchName || '').toLowerCase().includes(searchVal.trim().toLowerCase()))
+      : sg.batchGroups;
     return `
       <div class="gc-segment-row">
         <div class="gc-row-hdr" data-toggle-segment="${key}">
@@ -318,22 +425,45 @@ export const GovernanceConversionModule = {
         </div>
         ${isOpen ? `
           <div class="gc-row-body">
-            ${sg.base.length ? `
-              ${sg.converted.length ? `
-                <div class="gc-tier-label converted">Converted (${sg.converted.length})</div>
-                ${sg.converted.map(s => `
-                  <div class="gc-student-item">
-                    <span class="name">${_esc(s.studentName)}<span class="code">${_esc(s.studentCode)}</span></span>
-                  </div>`).join('')}
-              ` : ''}
-              ${sg.notYet.length ? `
-                <div class="gc-tier-label notyet">Not Yet (${sg.notYet.length})</div>
-                ${sg.notYet.map(s => `
-                  <div class="gc-student-item">
-                    <span class="name">${_esc(s.studentName)}<span class="code">${_esc(s.studentCode)}</span></span>
-                  </div>`).join('')}
-              ` : ''}
-            ` : `<div class="gc-empty" style="padding:6px 0">No students on this segment for this campus yet.</div>`}
+            ${sg.batchGroups.length > 1 ? `
+              <input type="text" class="gc-batch-search" data-batch-search="${key}" placeholder="Search batch…" value="${_esc(searchVal)}" />
+            ` : ''}
+            ${visibleBatchGroups.length
+              ? visibleBatchGroups.map(bg => this._batchGroupRowHTML(key, bg)).join('')
+              : `<div class="gc-empty" style="padding:6px 0">${sg.batchGroups.length ? `No batch matches "${_esc(searchVal)}".` : 'No closed batches on this segment for this campus yet.'}</div>`}
+          </div>` : ''}
+      </div>`;
+  },
+
+  _batchGroupRowHTML(segKey, bg) {
+    const batchId = bg.batch?.id || 'unknown';
+    const key = `${segKey}__${batchId}`;
+    const isOpen = this._expandedBatches.has(key);
+    return `
+      <div class="gc-batch-row">
+        <div class="gc-row-hdr ${bg.excluded ? 'excluded' : ''}" data-toggle-conv-batch="${key}">
+          <input type="checkbox" class="gc-batch-check" data-toggle-conv-batch-include="${batchId}" title="Include in totals" ${bg.excluded ? '' : 'checked'} />
+          ${_chevSVG(isOpen)}
+          <span class="gc-row-name small">${_esc(bg.batch?.batchName || 'Unknown batch')}</span>
+          <span class="gc-count-sub">${bg.converted.length}/${bg.students.length}</span>
+          ${this._pctTagHTML(bg.pct, bg.students.length)}
+        </div>
+        ${isOpen ? `
+          <div class="gc-row-body">
+            ${bg.converted.length ? `
+              <div class="gc-tier-label converted">Converted (${bg.converted.length})</div>
+              ${bg.converted.map(s => `
+                <div class="gc-student-item">
+                  <span class="name">${_esc(s.studentName)}<span class="code">${_esc(s.studentCode)}</span></span>
+                </div>`).join('')}
+            ` : ''}
+            ${bg.notYet.length ? `
+              <div class="gc-tier-label notyet">Not Yet (${bg.notYet.length})</div>
+              ${bg.notYet.map(s => `
+                <div class="gc-student-item">
+                  <span class="name">${_esc(s.studentName)}<span class="code">${_esc(s.studentCode)}</span></span>
+                </div>`).join('')}
+            ` : ''}
           </div>` : ''}
       </div>`;
   },
@@ -356,6 +486,35 @@ export const GovernanceConversionModule = {
         if (this._expandedSegments.has(key)) this._expandedSegments.delete(key);
         else this._expandedSegments.add(key);
         this._rerenderList();
+      });
+    });
+
+    el.querySelectorAll('[data-toggle-conv-batch]').forEach(hdr => {
+      hdr.addEventListener('click', (e) => {
+        if (e.target.closest('[data-toggle-conv-batch-include]')) return; // checkbox clicks shouldn't expand/collapse
+        const key = hdr.dataset.toggleConvBatch;
+        if (this._expandedBatches.has(key)) this._expandedBatches.delete(key);
+        else this._expandedBatches.add(key);
+        this._rerenderList();
+      });
+    });
+
+    el.querySelectorAll('[data-toggle-conv-batch-include]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = cb.dataset.toggleConvBatchInclude;
+        if (cb.checked) this._excludedBatchIds.delete(id);
+        else this._excludedBatchIds.add(id);
+        this._render(); // exclusion changes every rollup level, so recompute the whole tree
+      });
+    });
+
+    el.querySelectorAll('[data-batch-search]').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const key = inp.dataset.batchSearch;
+        this._batchSearch.set(key, e.target.value);
+        this._rerenderList();
+        const refocused = this._el.querySelector(`[data-batch-search="${key}"]`);
+        if (refocused) { refocused.focus(); refocused.setSelectionRange(refocused.value.length, refocused.value.length); }
       });
     });
   },
