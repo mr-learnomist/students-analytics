@@ -350,7 +350,7 @@ function registerRoutes() {
       const root = el.querySelector('#govAttendanceMount');
       if (!root) return;
       const user = Auth.getCurrentUser();
-      GovernanceAttendanceModule.mount(root, { user });
+      GovernanceAttendanceModule.mount(root, { user, standalone: true });
     } })
     .register('govLecturePlan',          { permission: null, title: 'Lecture Plan',           mount: null })
     .register('govTeachers',             { permission: null, title: 'Teachers',               mount: null })
