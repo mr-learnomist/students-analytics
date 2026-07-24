@@ -85,12 +85,17 @@ function _injectStyles() {
       border-radius:0; margin:0; overflow-y:auto;
     }
     /* True edge-to-edge via the browser Fullscreen API — no address
-       bar, no chrome. Overrides the UA's default centered/black box. */
-    .gc-wrap:fullscreen, .gc-wrap:-webkit-full-screen {
-      width:100vw; height:100vh; max-width:none; max-height:none; margin:0;
-      border-radius:0; overflow-y:auto; background:var(--surface);
+       bar, no chrome. Requested on the STABLE outer host container
+       (never on .gc-wrap, which gets replaced by every _render()
+       call — fullscreening a node that then gets removed from the
+       DOM makes the browser auto-exit fullscreen immediately). */
+    .gc-host:fullscreen, .gc-host:-webkit-full-screen {
+      width:100vw; height:100vh; background:var(--surface); overflow:auto; padding:0; margin:0;
     }
-    .gc-wrap::backdrop, .gc-wrap::-webkit-full-screen-backdrop { background:var(--surface); }
+    .gc-host::backdrop, .gc-host::-webkit-full-screen-backdrop { background:var(--surface); }
+    .gc-host:fullscreen .gc-wrap, .gc-host:-webkit-full-screen .gc-wrap {
+      width:100%; height:100%; max-width:none; margin:0; border-radius:0; overflow-y:auto; box-sizing:border-box;
+    }
     .gc-header-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
     .gc-fs-btn {
       width:26px; height:26px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
@@ -182,6 +187,7 @@ export const GovernanceConversionModule = {
     if (!el) return;
     _injectStyles();
     this._el = el;
+    this._el.classList.add('gc-host'); // stable fullscreen target — never destroyed by re-renders
     this._ctx = ctx || {};
     this._expandedCampuses = new Set();
     this._expandedSegments = new Set();
@@ -518,13 +524,12 @@ export const GovernanceConversionModule = {
   // back to a CSS full-viewport overlay only if the API is missing
   // or the browser blocks the request.
   async _toggleFullscreen() {
-    const wrap = this._el.querySelector('.gc-wrap');
-
     if (!this._isFullscreen) {
       try {
-        const req = wrap && (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.msRequestFullscreen);
+        const host = this._el; // stable across re-renders, unlike .gc-wrap
+        const req = host && (host.requestFullscreen || host.webkitRequestFullscreen || host.msRequestFullscreen);
         if (req) {
-          await req.call(wrap);
+          await req.call(host);
           return; // fullscreenchange listener flips the flag + re-renders
         }
       } catch (e) { /* blocked/unsupported — fall through to CSS overlay */ }
