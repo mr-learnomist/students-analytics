@@ -1,129 +1,131 @@
 // ============================================================
-// modules/governance/governanceAttendanceUI.js — Governance
-// Attendance Watch (consolidated)
+// modules/governance/governanceConversionUI.js — Governance
+// Conversion Watch (consolidated)
 //
-// Governance-scope version of the teacher's "Attendance Watch"
-// (see modules/teacher/teacherHorizonUI.js). Instead of one
-// teacher's batches, this rolls up EVERY batch the governance
-// user has campus access to, and groups it:
+// Governance-scope companion to governanceAttendanceUI.js, shown
+// in the same Horizon View. Instead of attendance tiers, this rolls
+// up subject-to-subject CONVERSION across every campus the
+// governance user has access to:
 //
-//     Campus → Discipline → Batch → Student
+//     Campus → Segment → Batch → Student
 //
-// with a top-level consolidated tally (how many students are
-// Critical / Risk / Alert / Good) across the whole scope, so an
-// admin can see institution-wide attendance health at a glance
-// before drilling in.
+// Segments (ported straight from the two existing analytics reports
+// so the numbers always match what those reports show):
+//   modules/analytics/reports/batches/conversionTracking.js
+//     FA track: FA1 → FA2, FA2 → F3
+//     MA track: MA1 → MA2, MA2 → F2
+//   modules/analytics/reports/batches/prcConversionTracking.js
+//     PRC (BEI/FA/ECS/QAB) → CAF Group A (FAR/TPC/DSR/BLD)
+//     CAF Group A (FAR/TPC/DSR/BLD) → CAF Group B (MA/CR/BIA/AAE)
 //
-// Tier thresholds are IDENTICAL to teacherHorizonUI.js on purpose
-// (critical <80%, risk <85%, alert <90%, good >=90%) — same
-// definition of "at risk" everywhere in the app.
+// ONLY CLOSED FROM-STAGE BATCHES COUNT: a student whose FROM-stage
+// batch (e.g. their FA1 batch) is still ACTIVE hasn't finished that
+// course yet, so it's too early to call them "converted" or "not
+// converted" — they're excluded from the base population entirely
+// until their FROM-stage batch closes. Batch status uses the same
+// canonical logic as governanceAttendanceUI.js's _batchStatus(),
+// ported from testResultSummary.js.
 //
-// CAMPUS SCOPING — two different populations can land on this page:
-//   1) Users whose PRIMARY role is 'governance' — their campus
-//      scope is whatever their normal role's campus scope is.
-//      ASSUMPTION (matches the convention used elsewhere, e.g.
-//      Auth.filterByCampus): empty/undefined campusIds = full
-//      access to all campuses. If Auth.js encodes a different
-//      convention, adjust _accessibleCampusIds() below — it's the
-//      only place this logic lives.
-//   2) Users with ADDITIVE governance access (see
-//      governanceUsersUI.js) — their scope is deliberately opt-in
-//      (user.governanceAccess.campusIds). No campuses checked yet
-//      means NO access, not "all campuses" — different convention
-//      from (1) on purpose, since it's a manually granted extra.
+// Subject code is read the same way both source reports read it:
+// the batch name's first hyphen-separated segment, with any
+// "(...)" paper suffix stripped — e.g. "FA1-June-26-1" → "FA1",
+// "BEI (P3)-June-26-1" → "BEI".
+//
+// CAMPUS SCOPING for a segment: a student is attributed to whichever
+// campus their FROM-stage batch was at (e.g. for FA1 → FA2, the
+// campus of their FA1 enrolment) — same idea as "which campus gets
+// credit for starting this student on the track". For PRC → CAF,
+// the campus of whichever PRC subject was found first (BEI, then
+// FA, then ECS, then QAB) is used.
+//
+// CAMPUS SCOPING for the governance user themself is identical to
+// governanceAttendanceUI.js — see that file's header comment for
+// the two conventions (pure governance role vs additive access).
 // ============================================================
 
 import { AppState } from '../../utils/state.js';
-import {
-  AttendanceService,
-  fetchAndSyncBatchesAttendance,
-} from '../attendance/attendanceService.js';
 import { getAllAssignments } from '../lecturePlan/lecturePlanService.js';
+
+// ── Subject chains — copied 1:1 from the source reports ──────────
+const FA_CHAIN   = ['FA1', 'FA2', 'F3'];
+const MA_CHAIN   = ['MA1', 'MA2', 'F2'];
+const PRC_CODES  = ['BEI', 'FA', 'ECS', 'QAB'];
+const CAF_A_CODES = ['FAR', 'TPC', 'DSR', 'BLD'];
+const CAF_B_CODES = ['MA', 'CR', 'BIA', 'AAE'];
+
+const ALL_TRACK_CODES = [...new Set([
+  ...FA_CHAIN, ...MA_CHAIN, ...PRC_CODES, ...CAF_A_CODES, ...CAF_B_CODES,
+])];
+
+// The exact breakdown requested: FA1→FA2, FA2→F3, MA1→MA2, MA2→F2,
+// PRC→CAF Group A, PRC→CAF Group B.
+const SEGMENTS = [
+  { key: 'fa1_fa2', label: 'FA1 → FA2',            from: ['FA1'],     to: ['FA2'] },
+  { key: 'fa2_f3',  label: 'FA2 → F3',              from: ['FA2'],     to: ['F3']  },
+  { key: 'ma1_ma2', label: 'MA1 → MA2',             from: ['MA1'],     to: ['MA2'] },
+  { key: 'ma2_f2',  label: 'MA2 → F2',              from: ['MA2'],     to: ['F2']  },
+  { key: 'prc_capa', label: 'PRC → CAF Group A',       from: PRC_CODES,   to: CAF_A_CODES },
+  { key: 'capa_capb', label: 'CAF Group A → Group B',  from: CAF_A_CODES, to: CAF_B_CODES },
+];
 
 let _stylesInjected = false;
 function _injectStyles() {
   if (_stylesInjected) return;
   _stylesInjected = true;
   const style = document.createElement('style');
-  style.id = 'ga-styles';
+  style.id = 'gc-styles';
   style.textContent = `
-    .ga-wrap {
+    .gc-wrap {
       display:flex; flex-direction:column; gap:12px; max-width:680px;
       background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px;
     }
-    .ga-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
+    .gc-title { font-size:14px; font-weight:800; color:var(--t1); }
+    .gc-empty { text-align:center; padding:36px 20px; color:var(--t3); font-size:13px; border:1px dashed var(--border2); border-radius:12px; }
 
-    /* Active / Closed / All status filter */
-    .ga-status-tabs { display:flex; gap:6px; }
-    .ga-status-tab {
-      flex:1; height:28px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer;
-      font-family:inherit; border:1.5px solid var(--border2); background:var(--surface2); color:var(--t3);
-    }
-    .ga-status-tab.active { border-color:var(--blue); color:var(--blue); background:color-mix(in srgb, var(--blue) 12%, transparent); }
+    .gc-summary-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    @media (max-width:520px) { .gc-summary-grid { grid-template-columns:repeat(2, 1fr); } }
+    .gc-summary-card { border:1px solid var(--border2); border-radius:10px; padding:9px 4px; text-align:center; background:var(--surface); }
+    .gc-summary-num { font-size:17px; font-weight:800; color:var(--blue); }
+    .gc-summary-lbl { font-size:8.5px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.01em; margin-top:2px; line-height:1.2; }
+    .gc-summary-sub { font-size:8px; color:var(--t3); margin-top:1px; }
 
-    /* Consolidated summary */
-    .ga-summary-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; }
-    @media (max-width:520px) { .ga-summary-grid { grid-template-columns:repeat(2, 1fr); } }
-    .ga-summary-card { border:1px solid var(--border2); border-radius:10px; padding:9px 4px; text-align:center; background:var(--surface); }
-    .ga-summary-num { font-size:18px; font-weight:800; color:var(--t1); }
-    .ga-summary-lbl { font-size:9px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.01em; margin-top:2px; line-height:1.2; }
-    .ga-summary-card.critical .ga-summary-num { color:var(--red); }
-    .ga-summary-card.risk     .ga-summary-num { color:#d97706; }
-    .ga-summary-card.alert    .ga-summary-num { color:#ca8a04; }
-    .ga-summary-card.good     .ga-summary-num { color:var(--green); }
+    .gc-row-hdr { display:flex; align-items:center; gap:8px; padding:11px 13px; cursor:pointer; }
+    .gc-row-hdr:hover { background:var(--surface2); }
+    .gc-row-name { font-size:13px; font-weight:700; color:var(--t1); flex:1; }
+    .gc-row-name.small { font-size:12.5px; font-weight:600; }
+    .gc-row-body { padding:8px 13px 12px 33px; border-top:1px solid var(--border2); }
+    .gc-chev { color:var(--t3); transition:transform .15s; flex-shrink:0; }
+    .gc-chev.open { transform:rotate(90deg); }
 
-    /* Shared row chrome (campus / discipline / batch all reuse this) */
-    .ga-row-hdr { display:flex; align-items:center; gap:8px; padding:11px 13px; cursor:pointer; }
-    .ga-row-hdr:hover { background:var(--surface2); }
-    .ga-row-name { font-size:13px; font-weight:700; color:var(--t1); flex:1; }
-    .ga-row-name.small { font-size:12.5px; font-weight:600; }
-    .ga-row-body { padding:8px 13px 12px 33px; border-top:1px solid var(--border2); }
-    .ga-chev { color:var(--t3); transition:transform .15s; flex-shrink:0; }
-    .ga-chev.open { transform:rotate(90deg); }
+    .gc-campus-row  { border:1px solid var(--border2); border-radius:12px; margin-bottom:10px; overflow:hidden; background:var(--surface); }
+    .gc-campus-row > .gc-row-hdr { background:var(--surface2); }
+    .gc-segment-row { border:1px solid var(--border2); border-radius:10px; margin-bottom:8px; overflow:hidden; }
+    .gc-batch-row   { border:1px solid var(--border2); border-radius:9px; margin-bottom:6px; overflow:hidden; }
 
-    .ga-campus-row     { border:1px solid var(--border2); border-radius:12px; margin-bottom:10px; overflow:hidden; background:var(--surface); }
-    .ga-campus-row > .ga-row-hdr { background:var(--surface2); }
-    .ga-discipline-row { border:1px solid var(--border2); border-radius:10px; margin-bottom:8px; overflow:hidden; }
-    .ga-batch-row       { border:1px solid var(--border2); border-radius:9px; margin-bottom:6px; overflow:hidden; }
+    .gc-pct-tag { font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px; white-space:nowrap; }
+    .gc-pct-tag.hi  { background:color-mix(in srgb, var(--green) 15%, transparent); color:var(--green); }
+    .gc-pct-tag.mid { background:color-mix(in srgb, #ca8a04 15%, transparent); color:#ca8a04; }
+    .gc-pct-tag.lo  { background:color-mix(in srgb, var(--red) 15%, transparent); color:var(--red); }
+    .gc-pct-tag.none { background:var(--surface2); color:var(--t3); }
+    .gc-count-sub { font-size:10.5px; color:var(--t3); white-space:nowrap; }
 
-    .ga-tally { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
-    .ga-tier-tag {
-      font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; text-transform:uppercase;
-      letter-spacing:.02em; white-space:nowrap;
-    }
-    .ga-tier-tag.critical { background:color-mix(in srgb, var(--red) 15%, transparent); color:var(--red); }
-    .ga-tier-tag.risk     { background:color-mix(in srgb, #d97706 15%, transparent); color:#d97706; }
-    .ga-tier-tag.alert    { background:color-mix(in srgb, #ca8a04 15%, transparent); color:#ca8a04; }
-    .ga-tier-tag.ok       { background:color-mix(in srgb, var(--green) 15%, transparent); color:var(--green); }
-    .ga-tier-tag.none     { background:var(--surface2); color:var(--t3); }
+    .gc-batch-check { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+    .gc-row-hdr.excluded { opacity:.5; }
+    .gc-row-hdr.excluded .gc-row-name { text-decoration:line-through; }
 
-    .ga-tier-label { font-size:10.5px; font-weight:800; text-transform:uppercase; margin:8px 0 6px; }
-    .ga-tier-label:first-child { margin-top:0; }
-    .ga-tier-label.critical { color:var(--red); }
-    .ga-tier-label.risk     { color:#d97706; }
-    .ga-tier-label.alert    { color:#ca8a04; }
-    .ga-tier-label.good     { color:var(--green); }
-
-    .ga-student-item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 9px; border-radius:8px; background:var(--surface2); margin-bottom:6px; cursor:pointer; }
-    .ga-student-item:hover { background:var(--surface3, var(--surface2)); }
-    .ga-student-item .name { font-size:12px; font-weight:600; color:var(--t1); }
-    .ga-student-item .pct { font-size:12px; font-weight:800; }
-    .ga-student-detail { display:flex; gap:14px; font-size:11px; color:var(--t3); padding:0 9px 8px; margin-top:-4px; }
-    .ga-student-detail b { color:var(--t1); }
-
-    .ga-batch-check { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
-    .ga-row-hdr.excluded { opacity:.5; }
-    .ga-row-hdr.excluded .ga-row-name { text-decoration:line-through; }
-
-    .ga-batch-search {
+    .gc-batch-search {
       width:100%; height:30px; padding:0 10px; margin-bottom:8px; border-radius:8px;
       border:1px solid var(--border2); background:var(--surface); color:var(--t1); font-size:12px; box-sizing:border-box;
     }
 
-    .critical-text { color:var(--red); }
-    .risk-text     { color:#d97706; }
-    .alert-text    { color:#ca8a04; }
-    .good-text     { color:var(--green); }
+    .gc-tier-label { font-size:10.5px; font-weight:800; text-transform:uppercase; margin:8px 0 6px; }
+    .gc-tier-label:first-child { margin-top:0; }
+    .gc-tier-label.converted  { color:var(--green); }
+    .gc-tier-label.notyet     { color:var(--t3); }
+
+    .gc-student-item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 9px; border-radius:8px; background:var(--surface2); margin-bottom:6px; }
+    .gc-student-item .name { font-size:12px; font-weight:600; color:var(--t1); }
+    .gc-student-item .code { font-size:10.5px; color:var(--t3); margin-left:6px; }
   `;
   document.head.appendChild(style);
 }
@@ -133,33 +135,31 @@ function _esc(s) {
 }
 
 function _chevSVG(isOpen) {
-  return `<svg class="ga-chev${isOpen ? ' open' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>`;
+  return `<svg class="gc-chev${isOpen ? ' open' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 18 15 12 9 6"/></svg>`;
 }
 
-const TIER_LABEL = { critical: 'Critical', risk: 'Risk', alert: 'Alert', good: 'Good' };
+function _pctTagClass(pct) {
+  if (pct >= 70) return 'hi';
+  if (pct >= 40) return 'mid';
+  return 'lo';
+}
 
-export const GovernanceAttendanceModule = {
+export const GovernanceConversionModule = {
 
-  async mount(el, ctx) {
+  mount(el, ctx) {
     if (!el) return;
     _injectStyles();
     this._el = el;
     this._ctx = ctx || {};
-    this._expandedCampuses    = new Set();
-    this._expandedDisciplines = new Set();
-    this._expandedBatches     = new Set();
-    this._expandedStudents    = new Set();
-    this._excludedBatchIds    = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
-    this._batchSearch         = new Map(); // disciplineKey -> search text
+    this._expandedCampuses = new Set();
+    this._expandedSegments = new Set();
+    this._expandedBatches  = new Set();
+    this._excludedBatchIds = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
+    this._batchSearch      = new Map(); // segmentKey -> search text
 
-    el.innerHTML = `<div class="ga-empty">Loading Governance Attendance View…</div>`;
-
-    // Expect ctx.user (the currently signed-in governance user record),
-    // same shape as governanceUsersUI.js reads/writes. Fall back to
-    // AppState in case the router doesn't pass ctx explicitly.
     const user = this._ctx.user || AppState.get('currentUser') || AppState.get('user');
     if (!user) {
-      el.innerHTML = `<div class="ga-empty">Unable to determine the current user.</div>`;
+      el.innerHTML = `<div class="gc-empty">Unable to determine the current user.</div>`;
       return;
     }
 
@@ -170,42 +170,18 @@ export const GovernanceAttendanceModule = {
       : allCampuses.filter(c => scopeCampusIds.includes(c.id));
 
     if (!campuses.length) {
-      el.innerHTML = `<div class="ga-empty">No campus access assigned for Governance yet. Ask an admin to grant campus access from Governance → Access.</div>`;
+      el.innerHTML = `<div class="gc-empty">No campus access assigned for Governance yet. Ask an admin to grant campus access from Governance → Access.</div>`;
       return;
     }
 
-    const campusIdSet = new Set(campuses.map(c => c.id));
-    const allBatches = AppState.get('batches') || [];
-    const inScopeBatches = allBatches.filter(b => campusIdSet.has(b.campusId));
-
-    // Fetch attendance for EVERY in-scope batch (active + closed) once,
-    // up front — same heavy-fetch reasoning as teacherHorizonUI.js, but
-    // done for the whole scope so the Active/Closed/All toggle below
-    // can just re-filter in memory instead of re-fetching per click.
-    await fetchAndSyncBatchesAttendance(inScopeBatches.map(b => b.id));
-
     this._campuses = campuses;
-    this._allBatches = inScopeBatches;
-    this._statusFilter = 'active'; // 'active' | 'closed' | 'all'
-    this._renderAll();
+    this._batchesById = new Map((AppState.get('batches') || []).map(b => [b.id, b]));
+    this._students = this._buildStudentSubjectMap();
+    this._render();
   },
 
-  // ── Campus scoping (see header comment for the two conventions) ──
-  _accessibleCampusIds(user) {
-    const isPureGovernance = user.role === 'governance';
-    if (isPureGovernance) {
-      return (user.campusIds && user.campusIds.length) ? user.campusIds : null; // null = all campuses
-    }
-    const gc = user.governanceAccess;
-    if (!gc || !gc.enabled) return [];
-    return gc.campusIds || [];
-  },
-
-  // ── ported from testResultSummary.js's _batchStatus() so "Active"/
-  // "Closed" here means exactly the same thing as in Result Profile —
-  // manual endDate takes priority when set, otherwise falls back to
-  // the Lecture Plan's last dated row. No end date at all = active.
-  // Active = effective end > today (or no effective end); Closed = end <= today.
+  // ── ported 1:1 from governanceAttendanceUI.js / testResultSummary.js
+  // so "closed batch" means exactly the same thing everywhere ──
   _batchStatus(batch) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
@@ -233,254 +209,261 @@ export const GovernanceAttendanceModule = {
     return end <= today ? 'closed' : 'active';
   },
 
-  // ── copied 1:1 from teacherHorizonUI.js: roster from active
-  // enrolments is the source of truth used by the attendance-marking
-  // screen ──
-  _rosterFor(batchId) {
-    return (AppState.get('enrolments') || [])
-      .filter(e => e.batchId === batchId && e.status === 'active')
-      .map(e => AppState.findById('students', e.studentId))
-      .filter(Boolean);
+  // ── Campus scoping for the governance user — identical logic to
+  // governanceAttendanceUI.js's _accessibleCampusIds() ──
+  _accessibleCampusIds(user) {
+    const isPureGovernance = user.role === 'governance';
+    if (isPureGovernance) {
+      return (user.campusIds && user.campusIds.length) ? user.campusIds : null; // null = all campuses
+    }
+    const gc = user.governanceAccess;
+    if (!gc || !gc.enabled) return [];
+    return gc.campusIds || [];
   },
 
-  // ── same thresholds as teacherHorizonUI.js: critical <80%, risk <85%,
-  // alert <90%, good >=90% ──
-  _tierFor(pct) {
-    if (pct < 80) return 'critical';
-    if (pct < 85) return 'risk';
-    if (pct < 90) return 'alert';
-    return 'good';
-  },
+  // ── Build studentId → { subjects: { CODE: { campusId, status } } } —
+  // reads subject code from batch name exactly like conversionTracking.js
+  // and prcConversionTracking.js do, scoped to the codes this widget cares
+  // about (FA/MA/PRC/CAF).
+  _buildStudentSubjectMap() {
+    const enrolments = AppState.get('enrolments') || [];
+    const batches    = AppState.get('batches')    || [];
+    const students    = AppState.get('students')  || [];
 
-  _countsFromTiers(critical, risk, alert, good) {
-    return {
-      critical: critical.length,
-      risk: risk.length,
-      alert: alert.length,
-      good: good.length,
-      total: critical.length + risk.length + alert.length + good.length,
-    };
-  },
+    const map = {};
 
-  _sumCounts(nodes) {
-    return nodes.reduce((acc, n) => {
-      acc.critical += n.counts.critical;
-      acc.risk     += n.counts.risk;
-      acc.alert    += n.counts.alert;
-      acc.good     += n.counts.good;
-      acc.total    += n.counts.total;
-      return acc;
-    }, { critical: 0, risk: 0, alert: 0, good: 0, total: 0 });
-  },
+    enrolments.forEach(enr => {
+      const student = students.find(s => s.id === enr.studentId);
+      if (!student) return;
 
-  // Per-batch roster + attendance % + P/A/L, split into tiers —
-  // identical computation to teacherHorizonUI.js's _computeWatchData,
-  // just for one batch at a time since batches get grouped by
-  // campus/discipline first here.
-  _computeBatchNode(batch) {
-    const roster  = this._rosterFor(batch.id);
-    const records = AttendanceService.getRecordsForBatch(batch.id);
+      const subjList = Array.isArray(enr.subjects) && enr.subjects.length
+        ? enr.subjects
+        : [{ batchId: enr.batchId, status: enr.status }];
 
-    const students = roster.map(stu => {
-      const recs = records.filter(r => r.studentId === stu.id);
-      const total = recs.length;
-      const P = recs.filter(r => r.status === 'P').length;
-      const A = recs.filter(r => r.status === 'A').length;
-      const L = recs.filter(r => r.status === 'L').length;
-      const pct = total > 0 ? Math.round((P / total) * 100) : null;
-      return { studentId: stu.id, name: stu.studentName, pct, P, A, L, total };
-    }).filter(s => s.pct !== null);
+      subjList.forEach(sub => {
+        const batchId  = sub.batchId || enr.batchId;
+        const batchRec = batches.find(b => b.id === batchId);
+        if (!batchRec) return;
 
-    const critical = students.filter(s => this._tierFor(s.pct) === 'critical').sort((a, b) => a.pct - b.pct);
-    const risk     = students.filter(s => this._tierFor(s.pct) === 'risk').sort((a, b) => a.pct - b.pct);
-    const alert    = students.filter(s => this._tierFor(s.pct) === 'alert').sort((a, b) => a.pct - b.pct);
-    const good     = students.filter(s => this._tierFor(s.pct) === 'good').sort((a, b) => b.pct - a.pct);
+        const batchName  = sub.batchName || batchRec.batchName || '';
+        const parts      = batchName.split('-');
+        // Strip a "(...)" paper suffix, e.g. "BEI (P3)" → "BEI"
+        const rawSubject = (parts[0] || '').trim();
+        const code       = rawSubject.split('(')[0].trim().toUpperCase();
+        if (!ALL_TRACK_CODES.includes(code)) return;
 
-    return {
-      batch, students, critical, risk, alert, good,
-      counts: this._countsFromTiers(critical, risk, alert, good),
-    };
-  },
-
-  // Campus → Discipline → Batch tree, each level carrying a rolled-up
-  // tally so the summary cards and every row header can show counts
-  // without recomputing.
-  _computeTree(campuses, batches) {
-    const campusNodes = campuses.map(campus => {
-      const campusBatches = batches.filter(b => b.campusId === campus.id);
-
-      const discMap = new Map();
-      campusBatches.forEach(batch => {
-        const discId = batch.disciplineId || '__none__';
-        if (!discMap.has(discId)) {
-          discMap.set(discId, {
-            disciplineId: discId,
-            disciplineName: batch.disciplineName || 'Unassigned Discipline',
-            disciplineAbbr: batch.disciplineAbbr || '',
-            batchNodes: [],
-          });
+        if (!map[enr.studentId]) {
+          map[enr.studentId] = {
+            studentId: enr.studentId,
+            studentName: student.studentName || '—',
+            studentCode: student.studentCode || student.admissionNo || '',
+            subjects: {},
+          };
         }
-        discMap.get(discId).batchNodes.push({
-          ...this._computeBatchNode(batch),
-          excluded: this._excludedBatchIds.has(batch.id),
-        });
+        if (!map[enr.studentId].subjects[code]) {
+          map[enr.studentId].subjects[code] = {
+            campusId: batchRec.campusId || '',
+            batchId: batchRec.id,
+            status: sub.status || enr.status || 'active',
+          };
+        }
       });
+    });
 
-      const disciplineNodes = [...discMap.values()]
-        .map(d => ({
-          ...d,
-          counts: this._sumCounts(d.batchNodes.filter(bn => !bn.excluded)),
-        }))
-        .sort((a, b) => (b.counts.critical + b.counts.risk) - (a.counts.critical + a.counts.risk));
-
-      return { campus, disciplineNodes, counts: this._sumCounts(disciplineNodes) };
-    }).sort((a, b) => (b.counts.critical + b.counts.risk) - (a.counts.critical + a.counts.risk));
-
-    const grandCounts = this._sumCounts(campusNodes.length ? campusNodes : [{ counts: { critical: 0, risk: 0, alert: 0, good: 0, total: 0 } }]);
-    return { campusNodes, grandCounts };
+    return Object.values(map);
   },
 
-  _tallyHTML(counts) {
-    return `
-      <span class="ga-tally">
-        ${counts.critical ? `<span class="ga-tier-tag critical">${counts.critical} Critical</span>` : ''}
-        ${counts.risk     ? `<span class="ga-tier-tag risk">${counts.risk} Risk</span>`             : ''}
-        ${counts.alert    ? `<span class="ga-tier-tag alert">${counts.alert} Alert</span>`           : ''}
-        ${counts.good     ? `<span class="ga-tier-tag ok">${counts.good} Good</span>`                : ''}
-        ${!counts.total   ? `<span class="ga-tier-tag none">No data</span>`                          : ''}
-      </span>`;
+  _studentHasAny(student, codes) {
+    return codes.some(c => student.subjects[c]);
   },
 
-  _renderAll() {
-    const filtered = this._statusFilter === 'all'
-      ? this._allBatches
-      : this._allBatches.filter(b => this._batchStatus(b) === this._statusFilter);
-    this._render(this._campuses, filtered);
+  // Campus credited for a segment = campus of the first matching
+  // FROM-stage subject found (in the order the codes are listed).
+  _studentFromCampusId(student, fromCodes) {
+    for (const c of fromCodes) {
+      if (student.subjects[c]) return student.subjects[c].campusId;
+    }
+    return '';
   },
 
-  _render(campuses, batches) {
+  // Batch credited for a segment = batch of the first matching
+  // FROM-stage subject found (same order as _studentFromCampusId).
+  _studentFromBatchId(student, fromCodes) {
+    for (const c of fromCodes) {
+      if (student.subjects[c]) return student.subjects[c].batchId;
+    }
+    return null;
+  },
+
+  // For one campus + one segment: which students started it (base —
+  // ONLY counting students whose FROM-stage batch has closed) and
+  // which of those also reached the target stage (converted),
+  // grouped by their FROM-stage batch for the drill-down.
+  _computeSegmentForCampus(campusId, seg) {
+    const rawBase = this._students.filter(s =>
+      this._studentHasAny(s, seg.from) && this._studentFromCampusId(s, seg.from) === campusId
+    );
+
+    // Exclude students whose FROM-stage batch is still active — their
+    // course isn't finished yet, so it's too early to count them.
+    const closedBase = rawBase.filter(s => {
+      const batch = this._batchesById.get(this._studentFromBatchId(s, seg.from));
+      return batch && this._batchStatus(batch) === 'closed';
+    });
+
+    // Group into batches first (ALL closed batches, including any the
+    // user has manually excluded — they still need to render with
+    // their checkbox), then roll up only the non-excluded ones.
+    const batchMap = new Map();
+    closedBase.forEach(s => {
+      const batchId = this._studentFromBatchId(s, seg.from);
+      if (!batchMap.has(batchId)) {
+        batchMap.set(batchId, { batch: this._batchesById.get(batchId), students: [] });
+      }
+      batchMap.get(batchId).students.push(s);
+    });
+    const batchGroups = [...batchMap.values()].map(g => {
+      const bConverted = g.students.filter(s => this._studentHasAny(s, seg.to));
+      const bNotYet = g.students.filter(s => !this._studentHasAny(s, seg.to));
+      const bPct = g.students.length ? Math.round((bConverted.length / g.students.length) * 100) : 0;
+      return {
+        batch: g.batch, students: g.students, converted: bConverted, notYet: bNotYet, pct: bPct,
+        excluded: this._excludedBatchIds.has(g.batch?.id),
+      };
+    }).sort((a, b) => (a.batch?.batchName || '').localeCompare(b.batch?.batchName || ''));
+
+    const includedGroups = batchGroups.filter(g => !g.excluded);
+    const base      = includedGroups.flatMap(g => g.students);
+    const converted = includedGroups.flatMap(g => g.converted);
+    const notYet    = includedGroups.flatMap(g => g.notYet);
+    const pct = base.length ? Math.round((converted.length / base.length) * 100) : 0;
+
+    return { seg, base, converted, notYet, pct, batchGroups };
+  },
+
+  _computeCampusTree() {
+    const campusNodes = this._campuses.map(campus => {
+      const segments = SEGMENTS.map(seg => this._computeSegmentForCampus(campus.id, seg));
+      return { campus, segments };
+    });
+
+    const grandSegments = SEGMENTS.map(seg => {
+      const rawBase = this._students.filter(s => this._studentHasAny(s, seg.from));
+      const base = rawBase.filter(s => {
+        const batchId = this._studentFromBatchId(s, seg.from);
+        const batch = this._batchesById.get(batchId);
+        return batch && this._batchStatus(batch) === 'closed' && !this._excludedBatchIds.has(batchId);
+      });
+      const converted = base.filter(s => this._studentHasAny(s, seg.to));
+      const pct = base.length ? Math.round((converted.length / base.length) * 100) : 0;
+      return { seg, base, converted, pct };
+    });
+
+    return { campusNodes, grandSegments };
+  },
+
+  _pctTagHTML(pct, baseLen) {
+    if (!baseLen) return `<span class="gc-pct-tag none">No data</span>`;
+    return `<span class="gc-pct-tag ${_pctTagClass(pct)}">${pct}%</span>`;
+  },
+
+  _render() {
     const el = this._el;
-    const tree = this._computeTree(campuses, batches);
+    const tree = this._computeCampusTree();
     this._tree = tree;
 
     el.innerHTML = `
-      <div class="ga-wrap">
-        <div class="ga-status-tabs" id="gaStatusTabs">
-          <button class="ga-status-tab ${this._statusFilter === 'active' ? 'active' : ''}" data-status="active">Active</button>
-          <button class="ga-status-tab ${this._statusFilter === 'closed' ? 'active' : ''}" data-status="closed">Closed</button>
-          <button class="ga-status-tab ${this._statusFilter === 'all'    ? 'active' : ''}" data-status="all">All</button>
+      <div class="gc-wrap">
+        <div class="gc-title">Conversion</div>
+        <div class="gc-summary-grid">
+          ${tree.grandSegments.map(g => `
+            <div class="gc-summary-card">
+              <div class="gc-summary-num">${g.base.length ? g.pct + '%' : '—'}</div>
+              <div class="gc-summary-lbl">${_esc(g.seg.label)}</div>
+              <div class="gc-summary-sub">${g.converted.length}/${g.base.length}</div>
+            </div>
+          `).join('')}
         </div>
 
-        <div class="ga-summary-grid">
-          <div class="ga-summary-card critical"><div class="ga-summary-num">${tree.grandCounts.critical}</div><div class="ga-summary-lbl">Critical</div></div>
-          <div class="ga-summary-card risk"><div class="ga-summary-num">${tree.grandCounts.risk}</div><div class="ga-summary-lbl">Risk</div></div>
-          <div class="ga-summary-card alert"><div class="ga-summary-num">${tree.grandCounts.alert}</div><div class="ga-summary-lbl">Alert</div></div>
-          <div class="ga-summary-card good"><div class="ga-summary-num">${tree.grandCounts.good}</div><div class="ga-summary-lbl">Good</div></div>
-          <div class="ga-summary-card total"><div class="ga-summary-num">${tree.grandCounts.total}</div><div class="ga-summary-lbl">Students Tracked</div></div>
-        </div>
-
-        <div id="gaCampusList">
-          ${tree.campusNodes.length ? tree.campusNodes.map(cn => this._campusRowHTML(cn)).join('') : `<div class="ga-empty">No batches with attendance data in your assigned campuses.</div>`}
+        <div id="gcCampusList">
+          ${tree.campusNodes.length ? tree.campusNodes.map(cn => this._campusRowHTML(cn)).join('') : `<div class="gc-empty">No students found in your assigned campuses.</div>`}
         </div>
       </div>`;
 
-    this._bindStatusTabs();
     this._bindEvents();
-  },
-
-  _bindStatusTabs() {
-    const el = this._el;
-    el.querySelectorAll('#gaStatusTabs [data-status]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (btn.dataset.status === this._statusFilter) return;
-        this._statusFilter = btn.dataset.status;
-        this._renderAll();
-      });
-    });
   },
 
   _campusRowHTML(cn) {
     const isOpen = this._expandedCampuses.has(cn.campus.id);
     return `
-      <div class="ga-campus-row">
-        <div class="ga-row-hdr" data-toggle-campus="${cn.campus.id}">
+      <div class="gc-campus-row">
+        <div class="gc-row-hdr" data-toggle-campus="${cn.campus.id}">
           ${_chevSVG(isOpen)}
-          <span class="ga-row-name">${_esc(cn.campus.campusName)}</span>
-          ${this._tallyHTML(cn.counts)}
+          <span class="gc-row-name">${_esc(cn.campus.campusName)}</span>
         </div>
         ${isOpen ? `
-          <div class="ga-row-body">
-            ${cn.disciplineNodes.length
-              ? cn.disciplineNodes.map(dn => this._disciplineRowHTML(cn.campus.id, dn)).join('')
-              : `<div class="ga-empty" style="padding:10px 0">No batches recorded for this campus yet.</div>`}
+          <div class="gc-row-body">
+            ${cn.segments.map(sg => this._segmentRowHTML(cn.campus.id, sg)).join('')}
           </div>` : ''}
       </div>`;
   },
 
-  _disciplineRowHTML(campusId, dn) {
-    const key = `${campusId}__${dn.disciplineId}`;
-    const isOpen = this._expandedDisciplines.has(key);
-    const label = dn.disciplineAbbr || dn.disciplineName;
+  _segmentRowHTML(campusId, sg) {
+    const key = `${campusId}__${sg.seg.key}`;
+    const isOpen = this._expandedSegments.has(key);
     const searchVal = this._batchSearch.get(key) || '';
-    const visibleBatchNodes = searchVal.trim()
-      ? dn.batchNodes.filter(bn => bn.batch.batchName.toLowerCase().includes(searchVal.trim().toLowerCase()))
-      : dn.batchNodes;
+    const visibleBatchGroups = searchVal.trim()
+      ? sg.batchGroups.filter(bg => (bg.batch?.batchName || '').toLowerCase().includes(searchVal.trim().toLowerCase()))
+      : sg.batchGroups;
     return `
-      <div class="ga-discipline-row">
-        <div class="ga-row-hdr" data-toggle-discipline="${key}">
+      <div class="gc-segment-row">
+        <div class="gc-row-hdr" data-toggle-segment="${key}">
           ${_chevSVG(isOpen)}
-          <span class="ga-row-name small">${_esc(label)}</span>
-          ${this._tallyHTML(dn.counts)}
+          <span class="gc-row-name small">${_esc(sg.seg.label)}</span>
+          <span class="gc-count-sub">${sg.converted.length}/${sg.base.length}</span>
+          ${this._pctTagHTML(sg.pct, sg.base.length)}
         </div>
         ${isOpen ? `
-          <div class="ga-row-body">
-            ${dn.batchNodes.length > 1 ? `
-              <input type="text" class="ga-batch-search" data-batch-search="${key}" placeholder="Search batch…" value="${_esc(searchVal)}" />
+          <div class="gc-row-body">
+            ${sg.batchGroups.length > 1 ? `
+              <input type="text" class="gc-batch-search" data-batch-search="${key}" placeholder="Search batch…" value="${_esc(searchVal)}" />
             ` : ''}
-            ${visibleBatchNodes.length
-              ? visibleBatchNodes.map(bn => this._batchRowHTML(bn)).join('')
-              : `<div class="ga-empty" style="padding:8px 0">No batch matches "${_esc(searchVal)}".</div>`}
+            ${visibleBatchGroups.length
+              ? visibleBatchGroups.map(bg => this._batchGroupRowHTML(key, bg)).join('')
+              : `<div class="gc-empty" style="padding:6px 0">${sg.batchGroups.length ? `No batch matches "${_esc(searchVal)}".` : 'No closed batches on this segment for this campus yet.'}</div>`}
           </div>` : ''}
       </div>`;
   },
 
-  _batchRowHTML(bn) {
-    const isOpen = this._expandedBatches.has(bn.batch.id);
-    const hasStudents = bn.students.length > 0;
-
-    const tierListHTML = (tier, list) => list.length ? `
-      <div class="ga-tier-label ${tier}">${TIER_LABEL[tier]} (${list.length})</div>
-      ${list.map(s => {
-        const sKey = `${s.studentId}__${bn.batch.id}`;
-        const sOpen = this._expandedStudents.has(sKey);
-        return `
-          <div class="ga-student-item" data-toggle-student="${sKey}">
-            <span class="name">${_esc(s.name)}</span>
-            <span class="pct ${tier}-text">${s.pct}%</span>
-          </div>
-          ${sOpen ? `
-            <div class="ga-student-detail">
-              <span>Present: <b>${s.P}</b></span>
-              <span>Absent: <b>${s.A}</b></span>
-              <span>Leave: <b>${s.L}</b></span>
-              <span>Total marked: <b>${s.total}</b></span>
-            </div>` : ''}`;
-      }).join('')}
-    ` : '';
-
+  _batchGroupRowHTML(segKey, bg) {
+    const batchId = bg.batch?.id || 'unknown';
+    const key = `${segKey}__${batchId}`;
+    const isOpen = this._expandedBatches.has(key);
     return `
-      <div class="ga-batch-row">
-        <div class="ga-row-hdr ${bn.excluded ? 'excluded' : ''}" data-toggle-batch="${bn.batch.id}">
-          <input type="checkbox" class="ga-batch-check" data-toggle-batch-include="${bn.batch.id}" title="Include in totals" ${bn.excluded ? '' : 'checked'} />
+      <div class="gc-batch-row">
+        <div class="gc-row-hdr ${bg.excluded ? 'excluded' : ''}" data-toggle-conv-batch="${key}">
+          <input type="checkbox" class="gc-batch-check" data-toggle-conv-batch-include="${batchId}" title="Include in totals" ${bg.excluded ? '' : 'checked'} />
           ${_chevSVG(isOpen)}
-          <span class="ga-row-name small">${_esc(bn.batch.batchName)}</span>
-          ${this._tallyHTML(bn.counts)}
+          <span class="gc-row-name small">${_esc(bg.batch?.batchName || 'Unknown batch')}</span>
+          <span class="gc-count-sub">${bg.converted.length}/${bg.students.length}</span>
+          ${this._pctTagHTML(bg.pct, bg.students.length)}
         </div>
         ${isOpen ? `
-          <div class="ga-row-body">
-            ${hasStudents
-              ? tierListHTML('critical', bn.critical) + tierListHTML('risk', bn.risk) + tierListHTML('alert', bn.alert) + tierListHTML('good', bn.good)
-              : `<div class="ga-empty" style="padding:6px 0">No attendance data recorded for this batch yet.</div>`}
+          <div class="gc-row-body">
+            ${bg.converted.length ? `
+              <div class="gc-tier-label converted">Converted (${bg.converted.length})</div>
+              ${bg.converted.map(s => `
+                <div class="gc-student-item">
+                  <span class="name">${_esc(s.studentName)}<span class="code">${_esc(s.studentCode)}</span></span>
+                </div>`).join('')}
+            ` : ''}
+            ${bg.notYet.length ? `
+              <div class="gc-tier-label notyet">Not Yet (${bg.notYet.length})</div>
+              ${bg.notYet.map(s => `
+                <div class="gc-student-item">
+                  <span class="name">${_esc(s.studentName)}<span class="code">${_esc(s.studentCode)}</span></span>
+                </div>`).join('')}
+            ` : ''}
           </div>` : ''}
       </div>`;
   },
@@ -497,31 +480,31 @@ export const GovernanceAttendanceModule = {
       });
     });
 
-    el.querySelectorAll('[data-toggle-discipline]').forEach(hdr => {
+    el.querySelectorAll('[data-toggle-segment]').forEach(hdr => {
       hdr.addEventListener('click', () => {
-        const key = hdr.dataset.toggleDiscipline;
-        if (this._expandedDisciplines.has(key)) this._expandedDisciplines.delete(key);
-        else this._expandedDisciplines.add(key);
+        const key = hdr.dataset.toggleSegment;
+        if (this._expandedSegments.has(key)) this._expandedSegments.delete(key);
+        else this._expandedSegments.add(key);
         this._rerenderList();
       });
     });
 
-    el.querySelectorAll('[data-toggle-batch]').forEach(hdr => {
+    el.querySelectorAll('[data-toggle-conv-batch]').forEach(hdr => {
       hdr.addEventListener('click', (e) => {
-        if (e.target.closest('[data-toggle-batch-include]')) return; // checkbox clicks shouldn't expand/collapse
-        const id = hdr.dataset.toggleBatch;
-        if (this._expandedBatches.has(id)) this._expandedBatches.delete(id);
-        else this._expandedBatches.add(id);
+        if (e.target.closest('[data-toggle-conv-batch-include]')) return; // checkbox clicks shouldn't expand/collapse
+        const key = hdr.dataset.toggleConvBatch;
+        if (this._expandedBatches.has(key)) this._expandedBatches.delete(key);
+        else this._expandedBatches.add(key);
         this._rerenderList();
       });
     });
 
-    el.querySelectorAll('[data-toggle-batch-include]').forEach(cb => {
+    el.querySelectorAll('[data-toggle-conv-batch-include]').forEach(cb => {
       cb.addEventListener('change', () => {
-        const id = cb.dataset.toggleBatchInclude;
+        const id = cb.dataset.toggleConvBatchInclude;
         if (cb.checked) this._excludedBatchIds.delete(id);
         else this._excludedBatchIds.add(id);
-        this._renderAll(); // exclusion changes every rollup level, so recompute the whole tree
+        this._render(); // exclusion changes every rollup level, so recompute the whole tree
       });
     });
 
@@ -534,24 +517,15 @@ export const GovernanceAttendanceModule = {
         if (refocused) { refocused.focus(); refocused.setSelectionRange(refocused.value.length, refocused.value.length); }
       });
     });
-
-    el.querySelectorAll('[data-toggle-student]').forEach(item => {
-      item.addEventListener('click', () => {
-        const key = item.dataset.toggleStudent;
-        if (this._expandedStudents.has(key)) this._expandedStudents.delete(key);
-        else this._expandedStudents.add(key);
-        this._rerenderList();
-      });
-    });
   },
 
   _rerenderList() {
     const el = this._el;
-    const list = el.querySelector('#gaCampusList');
+    const list = el.querySelector('#gcCampusList');
     if (!list) return;
     list.innerHTML = this._tree.campusNodes.length
       ? this._tree.campusNodes.map(cn => this._campusRowHTML(cn)).join('')
-      : `<div class="ga-empty">No batches with attendance data in your assigned campuses.</div>`;
+      : `<div class="gc-empty">No students found in your assigned campuses.</div>`;
     this._bindEvents();
   },
 };
