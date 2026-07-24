@@ -89,6 +89,13 @@ function _injectStyles() {
     .gc-summary-num { font-size:17px; font-weight:800; color:var(--blue); }
     .gc-summary-lbl { font-size:8.5px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.01em; margin-top:2px; line-height:1.2; }
     .gc-summary-sub { font-size:8px; color:var(--t3); margin-top:1px; }
+    .gc-summary-stat { font-size:8.5px; color:var(--t2); font-weight:600; margin-top:3px; border-top:1px dashed var(--border2); padding-top:3px; }
+    .gc-outlier-count { color:#ca8a04; font-weight:700; }
+
+    .gc-outlier-toggle {
+      display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--t2); cursor:pointer; user-select:none;
+    }
+    .gc-outlier-toggle input { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; }
 
     .gc-row-hdr { display:flex; align-items:center; gap:8px; padding:11px 13px; cursor:pointer; }
     .gc-row-hdr:hover { background:var(--surface2); }
@@ -157,6 +164,7 @@ export const GovernanceConversionModule = {
     this._expandedBatches  = new Set();
     this._excludedBatchIds = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
     this._batchSearch      = new Map(); // segmentKey -> search text
+    this._removeOutliers   = false;     // stats-only toggle — never affects the rollup/drill-down itself
 
     const user = this._ctx.user || AppState.get('currentUser') || AppState.get('user');
     if (!user) {
@@ -343,23 +351,58 @@ export const GovernanceConversionModule = {
     return { seg, base, converted, notYet, pct, batchGroups };
   },
 
+  _mean(arr) {
+    return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  },
+
+  _stddev(arr, mean) {
+    if (arr.length < 2) return 0;
+    const variance = arr.reduce((sum, x) => sum + (x - mean) ** 2, 0) / (arr.length - 1);
+    return Math.sqrt(variance);
+  },
+
+  // Batch-level % values for a segment (across all in-scope campuses,
+  // respecting manual excludes, ignoring batches with 0 students) —
+  // this is a pure STATS layer: it never changes the rollup/drill-down,
+  // only what the average/std-dev line under each card shows.
+  _segmentStats(campusNodes, segIndex) {
+    const values = campusNodes
+      .flatMap(cn => cn.segments[segIndex].batchGroups)
+      .filter(g => !g.excluded && g.students.length > 0)
+      .map(g => g.pct);
+
+    const rawMean = this._mean(values);
+    const rawSd   = this._stddev(values, rawMean);
+
+    if (!this._removeOutliers || values.length < 3 || rawSd === 0) {
+      return { mean: rawMean, stddev: rawSd, n: values.length, removed: 0 };
+    }
+
+    // Outlier = more than 2 standard deviations from the raw mean
+    const kept = values.filter(v => Math.abs(v - rawMean) <= 2 * rawSd);
+    if (!kept.length || kept.length === values.length) {
+      return { mean: rawMean, stddev: rawSd, n: values.length, removed: 0 };
+    }
+    const mean = this._mean(kept);
+    return { mean, stddev: this._stddev(kept, mean), n: kept.length, removed: values.length - kept.length };
+  },
+
   _computeCampusTree() {
     const campusNodes = this._campuses.map(campus => {
       const segments = SEGMENTS.map(seg => this._computeSegmentForCampus(campus.id, seg));
       return { campus, segments };
     });
 
-    const grandSegments = SEGMENTS.map(seg => {
-      const rawBase = this._students.filter(s => this._studentHasAny(s, seg.from));
-      const base = rawBase.filter(s => {
-        const batchId = this._studentFromBatchId(s, seg.from);
-        if (this._excludedBatchIds.has(batchId)) return false;
-        const batch = this._batchesById.get(batchId);
-        return batch && this._batchStatus(batch) === 'closed';
-      });
-      const converted = base.filter(s => this._studentHasAny(s, seg.to));
+    // Grand totals = sum of the already campus-scoped segment results
+    // above (not recomputed from the full unscoped student list) —
+    // this guarantees the top summary cards always match what the
+    // campus drill-down shows, and never include campuses outside
+    // this governance user's access.
+    const grandSegments = SEGMENTS.map((seg, i) => {
+      const base      = campusNodes.flatMap(cn => cn.segments[i].base);
+      const converted = campusNodes.flatMap(cn => cn.segments[i].converted);
       const pct = base.length ? Math.round((converted.length / base.length) * 100) : 0;
-      return { seg, base, converted, pct };
+      return { seg, base, converted, pct, stats: this._segmentStats(campusNodes, i) };
     });
 
     return { campusNodes, grandSegments };
@@ -378,12 +421,19 @@ export const GovernanceConversionModule = {
     el.innerHTML = `
       <div class="gc-wrap">
         <div class="gc-title">Conversion</div>
+
+        <label class="gc-outlier-toggle">
+          <input type="checkbox" id="gcRemoveOutliers" ${this._removeOutliers ? 'checked' : ''} />
+          Remove outliers (batches &gt;2σ from the mean)
+        </label>
+
         <div class="gc-summary-grid">
           ${tree.grandSegments.map(g => `
             <div class="gc-summary-card">
               <div class="gc-summary-num">${g.base.length ? g.pct + '%' : '—'}</div>
               <div class="gc-summary-lbl">${_esc(g.seg.label)}</div>
               <div class="gc-summary-sub">${g.converted.length}/${g.base.length}</div>
+              <div class="gc-summary-stat">${g.stats.n ? `Avg ${g.stats.mean.toFixed(1)}% ± ${g.stats.stddev.toFixed(1)}%` : 'No batch data'}${g.stats.removed ? ` <span class="gc-outlier-count">(${g.stats.removed} excl.)</span>` : ''}</div>
             </div>
           `).join('')}
         </div>
@@ -393,7 +443,19 @@ export const GovernanceConversionModule = {
         </div>
       </div>`;
 
+    this._bindOutlierToggle();
     this._bindEvents();
+  },
+
+  _bindOutlierToggle() {
+    const el = this._el;
+    const outlierCb = el.querySelector('#gcRemoveOutliers');
+    if (outlierCb) {
+      outlierCb.addEventListener('change', () => {
+        this._removeOutliers = outlierCb.checked;
+        this._render();
+      });
+    }
   },
 
   _campusRowHTML(cn) {
