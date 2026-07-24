@@ -20,6 +20,7 @@ import { TeacherUI }         from './modules/teacher/teacherUI.js';
 import { TeacherPortalModule } from './modules/teacher/teacherPortalUI.js';
 import { GovernanceUsersModule } from './modules/governance/governanceUsersUI.js';
 import { GovernanceAttendanceModule } from './modules/governance/governanceAttendanceUI.js';
+import { GovernanceConversionModule } from './modules/governance/governanceConversionUI.js';
 import { StudentModule }     from './modules/student/studentUI.js';
 import { AttendanceModule }  from './modules/attendance/attendanceUI.js';
 import { HolidaysModule }    from './modules/holidays.js';
@@ -333,7 +334,17 @@ function registerRoutes() {
     // HTML content already sitting in the data-view div. When one of
     // these is ready to be built, swap its mount to a real module
     // call — no index.html changes needed at that point.
-    .register('govHorizonView',          { permission: null, title: 'Horizon View',           mount: (el) => GovernanceAttendanceModule.mount(el.querySelector('#govHorizonViewMount'), { user: Auth.getCurrentUser() }) })
+    .register('govHorizonView',          { permission: null, title: 'Horizon View',           mount: (el) => {
+      const root = el.querySelector('#govHorizonViewMount');
+      if (!root) return;
+      const user = Auth.getCurrentUser();
+      root.innerHTML = `
+        <div id="govHorizonAttendance"></div>
+        <div id="govHorizonConversion" style="margin-top:16px"></div>
+      `;
+      GovernanceAttendanceModule.mount(root.querySelector('#govHorizonAttendance'), { user });
+      GovernanceConversionModule.mount(root.querySelector('#govHorizonConversion'), { user });
+    } })
     .register('govStudentsPerformance',  { permission: null, title: 'Students Performance',   mount: null })
     .register('govAttendance',           { permission: null, title: 'Attendance',             mount: null })
     .register('govLecturePlan',          { permission: null, title: 'Lecture Plan',           mount: null })
