@@ -111,6 +111,15 @@ function _injectStyles() {
     .ga-student-detail { display:flex; gap:14px; font-size:11px; color:var(--t3); padding:0 9px 8px; margin-top:-4px; }
     .ga-student-detail b { color:var(--t1); }
 
+    .ga-batch-check { width:14px; height:14px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+    .ga-row-hdr.excluded { opacity:.5; }
+    .ga-row-hdr.excluded .ga-row-name { text-decoration:line-through; }
+
+    .ga-batch-search {
+      width:100%; height:30px; padding:0 10px; margin-bottom:8px; border-radius:8px;
+      border:1px solid var(--border2); background:var(--surface); color:var(--t1); font-size:12px; box-sizing:border-box;
+    }
+
     .critical-text { color:var(--red); }
     .risk-text     { color:#d97706; }
     .alert-text    { color:#ca8a04; }
@@ -140,6 +149,8 @@ export const GovernanceAttendanceModule = {
     this._expandedDisciplines = new Set();
     this._expandedBatches     = new Set();
     this._expandedStudents    = new Set();
+    this._excludedBatchIds    = new Set(); // batches unchecked out of the rollup — in-memory only, never saved
+    this._batchSearch         = new Map(); // disciplineKey -> search text
 
     el.innerHTML = `<div class="ga-empty">Loading Governance Attendance View…</div>`;
 
@@ -309,11 +320,17 @@ export const GovernanceAttendanceModule = {
             batchNodes: [],
           });
         }
-        discMap.get(discId).batchNodes.push(this._computeBatchNode(batch));
+        discMap.get(discId).batchNodes.push({
+          ...this._computeBatchNode(batch),
+          excluded: this._excludedBatchIds.has(batch.id),
+        });
       });
 
       const disciplineNodes = [...discMap.values()]
-        .map(d => ({ ...d, counts: this._sumCounts(d.batchNodes) }))
+        .map(d => ({
+          ...d,
+          counts: this._sumCounts(d.batchNodes.filter(bn => !bn.excluded)),
+        }))
         .sort((a, b) => (b.counts.critical + b.counts.risk) - (a.counts.critical + a.counts.risk));
 
       return { campus, disciplineNodes, counts: this._sumCounts(disciplineNodes) };
@@ -404,6 +421,10 @@ export const GovernanceAttendanceModule = {
     const key = `${campusId}__${dn.disciplineId}`;
     const isOpen = this._expandedDisciplines.has(key);
     const label = dn.disciplineAbbr || dn.disciplineName;
+    const searchVal = this._batchSearch.get(key) || '';
+    const visibleBatchNodes = searchVal.trim()
+      ? dn.batchNodes.filter(bn => bn.batch.batchName.toLowerCase().includes(searchVal.trim().toLowerCase()))
+      : dn.batchNodes;
     return `
       <div class="ga-discipline-row">
         <div class="ga-row-hdr" data-toggle-discipline="${key}">
@@ -413,7 +434,12 @@ export const GovernanceAttendanceModule = {
         </div>
         ${isOpen ? `
           <div class="ga-row-body">
-            ${dn.batchNodes.map(bn => this._batchRowHTML(bn)).join('')}
+            ${dn.batchNodes.length > 1 ? `
+              <input type="text" class="ga-batch-search" data-batch-search="${key}" placeholder="Search batch…" value="${_esc(searchVal)}" />
+            ` : ''}
+            ${visibleBatchNodes.length
+              ? visibleBatchNodes.map(bn => this._batchRowHTML(bn)).join('')
+              : `<div class="ga-empty" style="padding:8px 0">No batch matches "${_esc(searchVal)}".</div>`}
           </div>` : ''}
       </div>`;
   },
@@ -444,7 +470,8 @@ export const GovernanceAttendanceModule = {
 
     return `
       <div class="ga-batch-row">
-        <div class="ga-row-hdr" data-toggle-batch="${bn.batch.id}">
+        <div class="ga-row-hdr ${bn.excluded ? 'excluded' : ''}" data-toggle-batch="${bn.batch.id}">
+          <input type="checkbox" class="ga-batch-check" data-toggle-batch-include="${bn.batch.id}" title="Include in totals" ${bn.excluded ? '' : 'checked'} />
           ${_chevSVG(isOpen)}
           <span class="ga-row-name small">${_esc(bn.batch.batchName)}</span>
           ${this._tallyHTML(bn.counts)}
@@ -480,11 +507,31 @@ export const GovernanceAttendanceModule = {
     });
 
     el.querySelectorAll('[data-toggle-batch]').forEach(hdr => {
-      hdr.addEventListener('click', () => {
+      hdr.addEventListener('click', (e) => {
+        if (e.target.closest('[data-toggle-batch-include]')) return; // checkbox clicks shouldn't expand/collapse
         const id = hdr.dataset.toggleBatch;
         if (this._expandedBatches.has(id)) this._expandedBatches.delete(id);
         else this._expandedBatches.add(id);
         this._rerenderList();
+      });
+    });
+
+    el.querySelectorAll('[data-toggle-batch-include]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = cb.dataset.toggleBatchInclude;
+        if (cb.checked) this._excludedBatchIds.delete(id);
+        else this._excludedBatchIds.add(id);
+        this._renderAll(); // exclusion changes every rollup level, so recompute the whole tree
+      });
+    });
+
+    el.querySelectorAll('[data-batch-search]').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const key = inp.dataset.batchSearch;
+        this._batchSearch.set(key, e.target.value);
+        this._rerenderList();
+        const refocused = this._el.querySelector(`[data-batch-search="${key}"]`);
+        if (refocused) { refocused.focus(); refocused.setSelectionRange(refocused.value.length, refocused.value.length); }
       });
     });
 
